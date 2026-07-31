@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# venv / uv
+.venv/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Tier-2 transient run output. Promoted artifacts live under artifacts/ (tracked);
+# the raw reproduce workdir is not committed — `make promote` copies what matters.
+results/
+data/
+

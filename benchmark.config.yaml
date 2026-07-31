@@ -1,0 +1,46 @@
+# raven.eval — scoring contract
+# Every published number is produced under exactly this config. Changing any
+# field here changes the numbers; the config is committed so third parties see
+# the precise rules our DER/WER values were computed under.
+
+der:
+  scorer_primary: pyannote.metrics      # dscore cross-check WIRED (optional): make dscore-check / raven_diar.dscore_check — gated on a local DSCORE_DIR checkout (dscore is not pip-installable), skips cleanly, not in CI
+  # DER is reported TWICE — the two conventions are NOT comparable, so we publish both:
+  variants:
+    - name: full            # pyannote / DIHARD convention
+      collar: 0.0
+      skip_overlap: false
+    - name: classic         # NIST / CALLHOME convention (Raven's historical value)
+      collar: 0.25
+      skip_overlap: false
+  speaker_mapping: hungarian   # optimal, via scipy.linear_sum_assignment
+  vad: automatic               # no oracle VAD, no oracle #speakers, no per-dataset tuning
+
+wer:
+  scorer: jiwer
+  # The published WER numbers are produced by the flozi-strict method:
+  #   unidecode transliteration + alpha2digit (number WORDS -> digits) +
+  #   jiwer wer_standardize_contiguous transforms, corpus aggregation, raw-text CER.
+  # This is NOT the strict-de lens (that one lowercases inline, runs num2words in the
+  # opposite digits->words direction, and strips fillers) — see the reconciliation
+  # note in the header of scripts/verify.py for why the two do not interchange.
+  normalization: flozi-strict
+  also_reported: [permissive, verbatim, cer, ier]   # diagnostic lenses in raven_eval_core.wer, not the published number
+
+# Public datasets the Tier-2 full-rerun scores against. Audio is pulled by the
+# caller (HF / official mirror); we never redistribute restricted audio.
+datasets:
+  der:
+    - id: callhome-de        # talkbank/callhome, deu config — free, gold, German (2-spk telephone)
+      hf: talkbank/callhome
+      config: deu
+      license: TalkBank (cite-to-use)
+    - id: ami                # CC BY 4.0 — 4-speaker meetings
+      license: CC-BY-4.0
+    - id: voxconverse        # labels CC BY 4.0; audio = YouTube owners
+      license: CC-BY-4.0 (labels)
+  wer:
+    - id: fleurs
+    - id: mls-de
+    - id: voxpopuli-de
+    - id: german-mixed       # avemio / flozi00 asr-german-mixed-evals (Tuda-De CC-BY-4.0, MLS CC-BY-4.0, CV CC0)

@@ -1,0 +1,21 @@
+{
+  "model_id": "pyannote/speaker-diarization-community-1",
+  "label": "pyannote-community-1",
+  "adapter": "pyannote_community1",
+  "model_revision": "3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+  "dataset": "callhome-de",
+  "dataset_revision": "17c8a153215aa7c50b805078fd6284ba81c2fc47",
+  "limit_per_dataset": null,
+  "n_skipped_no_audio": 0,
+  "results": {
+    "callhome-de": {
+      "dataset": "callhome-de",
+      "n_files": 120,
+      "der_full": 20.576782071839414,
+      "der_classic": 16.077866987065555,
+      "miss": 13.464481284721888,
+      "fa": 3.5400793379639675,
+      "conf": 3.572221449153559
+    }
+  }
+}

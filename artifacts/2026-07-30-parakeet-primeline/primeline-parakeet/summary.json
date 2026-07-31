@@ -1,0 +1,35 @@
+{
+  "model_id": "primeline/parakeet-primeline",
+  "label": "primeline-parakeet",
+  "adapter": "vllm_openai",
+  "limit_per_subset": null,
+  "results": [
+    {
+      "subset": "Tuda-De",
+      "n_samples": 414,
+      "wer_pct": 4.0157,
+      "wer_filler_tolerant_pct": 4.0157,
+      "cer_pct": 2.7496,
+      "flozi_reference_wer": 4.11,
+      "drift_pct_vs_flozi": -2.29
+    },
+    {
+      "subset": "multilingual_librispeech",
+      "n_samples": 3996,
+      "wer_pct": 3.0421,
+      "wer_filler_tolerant_pct": 3.0431,
+      "cer_pct": 1.9041,
+      "flozi_reference_wer": 2.6,
+      "drift_pct_vs_flozi": 17.0
+    },
+    {
+      "subset": "common_voice_19_0",
+      "n_samples": 5389,
+      "wer_pct": 2.5758,
+      "wer_filler_tolerant_pct": 2.5768,
+      "cer_pct": 0.8499,
+      "flozi_reference_wer": 3.03,
+      "drift_pct_vs_flozi": -14.99
+    }
+  ]
+}

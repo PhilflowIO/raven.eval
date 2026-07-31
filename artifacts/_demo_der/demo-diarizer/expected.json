@@ -1,0 +1,9 @@
+{
+  "demo-set": {
+    "der_full": 42.5,
+    "der_classic": 42.3077,
+    "miss": 5.0,
+    "fa": 12.5,
+    "conf": 25.0
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "Tuda-De": {
+    "wer_pct": 4.0157,
+    "cer_pct": 2.7496
+  },
+  "multilingual_librispeech": {
+    "wer_pct": 3.0421,
+    "cer_pct": 1.9041
+  },
+  "common_voice_19_0": {
+    "wer_pct": 2.5758,
+    "cer_pct": 0.8499
+  }
+}

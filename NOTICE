@@ -1,0 +1,142 @@
+raven.eval
+Copyright (c) raven.eval contributors
+
+The source code in this repository is licensed under the MIT License (see LICENSE).
+
+This NOTICE covers third-party dataset material whose license requires
+attribution when redistributed. raven.eval never redistributes audio — only,
+where a run has been promoted to a Tier-1 artifact, the reference/hypothesis
+*text* labels under artifacts/.
+
+--------------------------------------------------------------------------------
+Multilingual LibriSpeech (MLS)
+--------------------------------------------------------------------------------
+Reference transcripts for the `multilingual_librispeech` subset (surfaced via
+`flozi00/asr-german-mixed-evals`) derive from Multilingual LibriSpeech.
+
+  Licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/).
+  Citation:
+    Pratap et al., "MLS: A Large-Scale Multilingual Dataset for Speech
+    Research", Interspeech 2020.
+
+Any committed `predictions_*.jsonl` for the `multilingual_librispeech` subset
+contains CC-BY-4.0 reference text and is redistributed under those terms with
+this attribution.
+
+--------------------------------------------------------------------------------
+Tuda-De
+--------------------------------------------------------------------------------
+Reference transcripts for the `Tuda-De` subset (surfaced via
+`flozi00/asr-german-mixed-evals`) derive from the TU Darmstadt German distant
+speech recognition corpus.
+
+  Licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/).
+  Citation:
+    Radeck-Arneth et al., "Open Source German Distant Speech Recognition:
+    Corpus and Acoustic Model", TSD 2015.
+  Source:
+    https://huggingface.co/datasets/uhhlt/Tuda-De
+    https://www.inf.uni-hamburg.de/en/inst/ab/lt/resources/data/acoustic-models.html
+
+Any committed `predictions_*.jsonl` for the `Tuda-De` subset contains
+CC-BY-4.0 reference text and is redistributed under those terms with this
+attribution.
+
+--------------------------------------------------------------------------------
+Common Voice (common_voice_19_0)
+--------------------------------------------------------------------------------
+The `common_voice_19_0` reference transcripts are released under CC0 (public
+domain dedication) and carry no attribution requirement.
+
+Provenance / re-hosting note: the Common Voice reference text committed here was
+obtained via the `flozi00/asr-german-mixed-evals` aggregator, not by accepting
+Mozilla's click-through terms on the Common Voice site directly. CC0 waives
+copyright, so redistributing the reference *text* is legally unencumbered.
+Mozilla additionally *requests* that the Common Voice dataset not be re-hosted
+or mirrored. We keep these committed references for zero-setup Tier-1 re-scoring;
+if this ever becomes an issue we will switch to committing only a reference
+hash/id and regenerating the text from source at re-score time (the escape hatch
+below), rather than continuing to redistribute it.
+
+--------------------------------------------------------------------------------
+VoxConverse (diarization — DER)
+--------------------------------------------------------------------------------
+Gold diarization RTTMs for the `voxconverse` dataset derive from VoxConverse.
+
+  Labels licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/).
+  Citation:
+    Chung et al., "Spot the conversation: speaker diarisation in the wild",
+    Interspeech 2020.
+  Source:
+    https://github.com/joonson/voxconverse
+
+Only the gold/hypothesis *RTTM* labels are ever committed (under artifacts/, if a
+run is promoted) — under CC-BY-4.0 with this attribution. The VoxConverse audio is
+sourced from YouTube (owned by its uploaders) and is never redistributed here; a
+reproducer downloads it themselves.
+
+--------------------------------------------------------------------------------
+AMI Meeting Corpus (diarization — DER)
+--------------------------------------------------------------------------------
+Gold diarization RTTMs for the `ami` dataset derive from the AMI Meeting Corpus
+(via the prepared annotations in pyannote/AMI-diarization-setup).
+
+  Licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/).
+  Citation:
+    Carletta et al., "The AMI Meeting Corpus: A Pre-announcement", MLMI 2005.
+  Source:
+    https://groups.inf.ed.ac.uk/ami/corpus/
+    https://github.com/pyannote/AMI-diarization-setup
+
+Only the RTTM labels are committed (CC-BY-4.0, with this attribution). AMI audio
+is downloaded by the reproducer via the setup repo's script; not redistributed.
+
+--------------------------------------------------------------------------------
+CALLHOME German (diarization — DER)
+--------------------------------------------------------------------------------
+Gold speaker segments for the `callhome-de` dataset derive from CALLHOME German
+(TalkBank / `talkbank/callhome`, config `deu`).
+
+  TalkBank is free to use under its cite-to-use terms (no redistribution of the
+  underlying LDC audio). Citation:
+    MacWhinney, B. (2007). The TalkBank Project. TalkBank.
+    CALLHOME German, LDC.
+  Source:
+    https://ca.talkbank.org/  ·  https://huggingface.co/datasets/talkbank/callhome
+
+Per TalkBank's terms we do NOT redistribute CALLHOME audio; the loader
+materialises it locally from the HF dataset the reproducer downloads. Only derived
+RTTM label text would be a Tier-1 commit candidate.
+
+--------------------------------------------------------------------------------
+If a future dataset forbids redistributing its reference transcripts, do NOT
+commit them: commit only the hypothesis + a reference hash/id, and let
+`scripts/verify.py` pull the references from Hugging Face at re-score time.
+
+--------------------------------------------------------------------------------
+Normalization provenance (flozi normalize_text)
+--------------------------------------------------------------------------------
+The flozi-canonical text normalization in `raven_eval_core/flozi_wer.py`
+(`normalize_flozi`) is ported from the `normalize_text` function published on
+the `flozi00/asr-german-mixed-evals` HuggingFace dataset card. Credit to
+Florian Zimmermeister (flozi00). The upstream dataset card declares no explicit
+license for that snippet; it is ~25 lines of mechanical string transforms
+(regex/transliteration/number-word handling) and is credited here in good faith.
+
+--------------------------------------------------------------------------------
+Third-party runtime dependencies / licenses
+--------------------------------------------------------------------------------
+The package code is MIT (see LICENSE). Reproducing the *published WER numbers*,
+however, hard-depends on two copyleft libraries on the scoring code path, and
+they cannot be swapped for permissively-licensed alternatives without changing
+the numbers:
+
+  - unidecode   — GPL-2.0-or-later. Used for the flozi transliteration step.
+  - num2words   — LGPL. Pulled in on the diagnostic-normalization path.
+    (`text2num`/`alpha2digit` provides the flozi words→digits direction.)
+
+Distributing raven.eval as source keeps the MIT-licensed code MIT — you install
+these deps yourself from PyPI under their own terms. But anyone who ships a
+*bundled* wheel, container image, or other combined/derived distribution that
+includes these libraries inherits their GPL/LGPL copyleft obligations. Bundle
+accordingly.

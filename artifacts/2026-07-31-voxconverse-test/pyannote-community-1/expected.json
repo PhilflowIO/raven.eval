@@ -1,0 +1,9 @@
+{
+  "voxconverse-test": {
+    "der_full": 11.1462,
+    "der_classic": 8.4086,
+    "miss": 3.3833,
+    "fa": 4.0799,
+    "conf": 3.683
+  }
+}

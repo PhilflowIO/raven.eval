@@ -1,0 +1,21 @@
+{
+  "model_id": "pyannote/speaker-diarization-community-1",
+  "label": "pyannote-community-1",
+  "adapter": "pyannote_community1",
+  "model_revision": "3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+  "dataset": "voxconverse-test",
+  "dataset_revision": "24bf60be297701cd7e4ef18550c6d390c1b87365",
+  "limit_per_dataset": null,
+  "n_skipped_no_audio": 0,
+  "results": {
+    "voxconverse-test": {
+      "dataset": "voxconverse-test",
+      "n_files": 232,
+      "der_full": 11.146233847962622,
+      "der_classic": 8.408592816593304,
+      "miss": 3.383343158862498,
+      "fa": 4.0799064152878,
+      "conf": 3.682984273812326
+    }
+  }
+}

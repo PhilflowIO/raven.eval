@@ -1,0 +1,57 @@
+[project]
+name = "raven-eval-core"
+version = "0.1.0"
+description = "Standalone, dependency-standard DER + WER scoring — the metric core of the raven.eval public benchmark."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "raven.eval" }]
+dependencies = [
+    "pyannote.metrics>=3.2",
+    "jiwer",
+    "num2words",
+    "numpy",
+    # Tier-1 re-scorer (scripts/verify.py) mirrors german-asr's flozi WER
+    # pipeline exactly, which needs these two pure-python libs (no GPU/torch):
+    "unidecode",     # foreign-diacritic transliteration (umlauts preserved)
+    "text2num",      # alpha2digit(de): German number words -> digits (imports as text_to_num)
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+# Tier-2 harness (raven_asr): download public HF datasets, run remote/GPU
+# inference, score. Heavier than the Tier-1 core — install only to re-run from
+# raw audio. Adapters talk to their APIs over httpx directly; only the Modal
+# adapter needs an extra SDK (kept separate so the base install stays lean).
+asr = [
+    "datasets",
+    "soundfile",
+    "numpy",
+    "tqdm",
+    "pyyaml",
+    "httpx",
+]
+modal = ["modal"]
+# Tier-2 DER harness (raven_diar): run the pinned diarizer over public audio and
+# score DER. HEAVY (torch + pyannote.audio + a GPU + the gated community-1 model)
+# — isolated here so the Tier-1 DER re-score (scripts/verify.py) and `make verify`
+# stay light: they need only raven_eval_core.der (pyannote.metrics, no torch).
+diar = [
+    "pyannote.audio>=4.0",
+    "torch",
+    "torchaudio",
+    "huggingface-hub",
+    "datasets",
+    "soundfile",
+    "numpy",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["raven_eval_core", "raven_asr", "raven_diar"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

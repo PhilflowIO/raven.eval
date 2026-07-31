@@ -1,0 +1,8 @@
+{"reference": "Guten Morgen zusammen, wir starten das Meeting jetzt.", "prediction": "Guten Morgen zusammen, wir starten das Meeting jetzt.", "latency_s": 0.41}
+{"reference": "Die Straße war heute wegen Bauarbeiten komplett gesperrt.", "prediction": "Die Strasse war heute wegen Bauarbeiten komplett gesperrt.", "latency_s": 0.52}
+{"reference": "Wir haben dreiundzwanzig neue Kunden im letzten Quartal gewonnen.", "prediction": "Wir haben 23 neue Kunden im letzten Quartal gewonnen.", "latency_s": 0.48}
+{"reference": "Können Sie das bitte noch einmal kurz erläutern?", "prediction": "Können Sie das bitte nochmal kurz erläutern?", "latency_s": 0.39}
+{"reference": "Das Budget für das Projekt wurde bereits genehmigt.", "prediction": "Das Budget für das Projekt wurde schon genehmigt.", "latency_s": 0.44}
+{"reference": "Herr Müller übernimmt die Präsentation nach der Pause.", "prediction": "Herr Müller übernimmt jetzt die Präsentation nach der Pause.", "latency_s": 0.50}
+{"reference": "Wir sollten die Deadline auf nächsten Freitag verschieben.", "prediction": "Wir sollten die auf nächsten Freitag verschieben.", "latency_s": 0.43}
+{"reference": "Vielen Dank für Ihre Aufmerksamkeit und einen schönen Tag.", "prediction": "Vielen Dank für Ihre Aufmerksamkeit und einen schönen Tag.", "latency_s": 0.37}
