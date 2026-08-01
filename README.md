@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/image_nano-banana-2_20260731_142913_hero-wordmark-1600w.png" alt="raven.eval" width="100%">
+</p>
+
 # raven.eval
 
 **Verify Raven's speech-AI quality numbers yourself — on public data, with your own scorer.**
