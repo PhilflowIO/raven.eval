@@ -2,26 +2,30 @@
   <img src="assets/image_nano-banana-2_20260731_142913_hero-wordmark-1600w.png" alt="raven.eval" width="100%">
 </p>
 
-# raven.eval
+# raven.eval — reproducible German ASR (WER) and speaker diarization (DER) benchmarks
 
-**Verify Raven's speech-AI quality numbers yourself — on public data, with your own scorer.**
+<p>
+  <a href="https://github.com/PhilflowIO/raven.eval/actions/workflows/ci.yml"><img src="https://github.com/PhilflowIO/raven.eval/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
+</p>
 
-Raven publishes measured numbers for German speech recognition (**WER**, word error
-rate) and speaker diarization (**DER**, diarization error rate). This repository is
-the open toolkit that lets *anyone* reproduce them independently, on freely available
-public datasets, without access to Raven's private data or infrastructure. The scoring
-code here is the same code Raven runs internally — lifted out, stripped of anything
-private, and packaged so a stranger can check our work.
+**Reproduce German speech-recognition (WER) and speaker-diarization (DER) numbers on public data. One command, no GPU, no API keys.**
 
-## It reproduces the vendors' own benchmarks
+Our scorer measures **11.15 % DER** on VoxConverse test with
+`pyannote/speaker-diarization-community-1`. pyannote's own model card says
+**11.2 %**. Run `make verify` and check that yourself in seconds, from committed
+data, on a laptop.
 
-On VoxConverse **test**, our scorer measures **11.15 % DER** for
-`pyannote-community-1` against pyannote's own published **11.2 %** — a **0.05 pp**
-delta, computed here from committed RTTMs with `make verify` (no GPU, no gated model).
-If our instrument reproduces the vendor's number on their benchmark, you can trust the
-same instrument on the datasets they *don't* publish.
+```bash
+make install      # pinned env via uv (uv.lock)
+make verify       # re-scores every published number. no GPU, no keys, no HF token.
+```
 
-## What's reproducible today
+That command re-computes every row below from committed model outputs. It does not
+download a dataset, load a model, or need a license.
+
+## Numbers you can re-score right now
 
 | metric | dataset | number | comparison |
 |--------|---------|--------|------------|
@@ -30,15 +34,37 @@ same instrument on the datasets they *don't* publish.
 | **DER** | CALLHOME-de (DE, telephone) | **16.08 %** @ collar 0.25 | between pyannote 3.1 (19.0) & pyannoteAI (8.3) |
 | **WER** | Tuda-De / CommonVoice / MLS (DE) | 2.6–4.0 % | flozi dataset-card anchors |
 
-Full tables with per-file provenance and pinned model/dataset commits:
-[**`BENCHMARKS.md`**](./BENCHMARKS.md). Every row is re-scored on every push by CI.
-Cost re-computation is not yet wired; latency is Tier-3 (hardware/network-dependent,
-not portably reproducible).
+Every row is re-scored on every push by CI. Full tables with per-file provenance
+and pinned model/dataset commits: [**`BENCHMARKS.md`**](./BENCHMARKS.md).
+Cost is not modelled here; latency is Tier-3 (hardware/network-dependent, not
+portably reproducible).
 
-## Three levels of verifiability
+## Why this repository exists
 
-Not every number is portably reproducible. We are explicit about which is which — and
-we make the reproducible ones *actually* reproducible:
+Raven is a German meeting-transcription product that publishes measured WER and DER
+numbers. This repository is how you check them without asking us for anything:
+public datasets (VoxConverse, CALLHOME-de, Tuda-De, Common Voice, MLS), pinned
+model and dataset commits, and the scoring code Raven runs internally, lifted out
+and stripped of anything private.
+
+It is packaged so a stranger can check our work. That includes you.
+
+## How do you know the scorer itself is correct?
+
+You point it at a benchmark where the answer is already public. raven.eval
+reproduces pyannote's published VoxConverse test DER of 11.2 % to within 0.05 pp
+(measured: 11.15 % at `collar=0.0`, overlapping speech included, no GPU required).
+The delta is computed from committed RTTMs by `make verify`, with no gated model.
+
+An instrument that reproduces the vendor's own number on the vendor's own benchmark
+is an instrument you can hold us to on the datasets nobody publishes. CALLHOME-de
+is one of those: a German-language telephone diarization benchmark, where
+`pyannote/speaker-diarization-community-1` scores **16.08 % DER** at collar 0.25.
+
+## Tier 1, 2, 3: what you can re-run, and what you can't
+
+Not every number is portably reproducible. We are explicit about which is which,
+and we make the reproducible ones *actually* reproducible:
 
 - **Tier 1 — verify in seconds, no GPU, no API keys.**
   We commit the model outputs (per-utterance transcripts for WER; gold + hypothesis
@@ -53,31 +79,50 @@ we make the reproducible ones *actually* reproducible:
   (`make reproduce METRIC=der`) with `pyannote/speaker-diarization-community-1` on
   VoxConverse / CALLHOME-de / AMI (needs an HF token, the gated model license, a GPU,
   and shared FFmpeg libs — see [`docs/TIER2-DER-KEYS.md`](./docs/TIER2-DER-KEYS.md)).
-  You get the same numbers we publish.
+  If it doesn't match what we publish, open an issue.
 
 - **Tier 3 — transparency only (not portably reproducible).**
   Latency / TTFT and any private-fixture result are documented with methodology and an
   explicit reason they can't be re-run elsewhere. No hidden numbers, no pretense.
 
-## The scoring contract
+## Every number states the rules it was computed under
 
-Every DER/WER number states the exact rules it was computed under —
-[`benchmark.config.yaml`](./benchmark.config.yaml). DER is reported at **both**
-`collar=0.0` and `collar=0.25` (the two conventions are not comparable), so our
-numbers line up with the pyannote model cards and the ETH benchmark paper
-(arXiv 2509.26177). DER is always dataset-relative: the same model reads anywhere from
-~7 % to ~27 % depending on the dataset — a bare "DER" without a stated dataset, collar
-and overlap rule is noise.
+The exact scoring rules live in [`benchmark.config.yaml`](./benchmark.config.yaml).
+DER is reported at **both** `collar=0.0` and `collar=0.25` (the two conventions are
+not comparable), so our numbers line up with the pyannote model cards and the ETH
+benchmark paper (arXiv 2509.26177). DER is always dataset-relative: the same model
+reads anywhere from ~7 % to ~27 % depending on the dataset. A bare "DER" without a
+stated dataset, collar and overlap rule is noise.
 
-## Quickstart
+## What is word error rate (WER)?
 
-```bash
-make install      # pinned env via uv (uv.lock)
-make test         # scorer unit tests (the regression guard)
-make verify       # Tier-1: re-score every committed number, no GPU / no keys
-```
+Word error rate (WER) is the standard metric for speech-recognition accuracy: the
+number of substitutions, deletions and insertions needed to turn the transcript into
+the reference, divided by the number of reference words. Lower is better; text
+normalization changes the result, which is why this repo uses one shared normalizer
+(`flozi_wer.py`) for the runner and the re-scorer. On the German public sets here,
+the measured range is 2.6–4.0 % WER.
 
-## What's inside
+**What is a good word error rate?** On clean read speech, strong models score under
+5 %; on spontaneous, noisy or telephone speech, 10–20 % is common. Compare WER only
+under the same normalization and dataset.
+
+**Can WER be above 100 %?** Yes — insertions count as errors, so a hypothesis much
+longer than the reference can push WER past 100 %.
+
+## What is diarization error rate (DER)?
+
+Diarization error rate (DER) measures how accurately a system answers "who spoke
+when". It is the sum of three components, as a fraction of total speech time:
+**missed speech**, **false alarm speech**, and **speaker confusion** (after
+Hungarian mapping of speaker labels). Lower is better.
+
+**What is a good DER?** On clean benchmark data, current models reach 5–10 %; on
+real-world telephone or meeting audio, 15–25 % is typical. The collar (a forgiveness
+window around speaker boundaries, usually 0.0 or 0.25 s) and the overlap rule change
+the number substantially — never compare DER across different rules.
+
+## Repository layout
 
 - **`raven_eval_core/`** — the standalone, secret-free metric core. `der.py`
   (Diarization Error Rate via `pyannote.metrics`, collar + overlap parametrized,
@@ -94,7 +139,7 @@ make verify       # Tier-1: re-score every committed number, no GPU / no keys
   `expected.json` for every published number, re-scored by `make verify`.
 - **`scripts/verify.py`** — the Tier-1 re-scorer.
 
-## Honesty (the whole point)
+## What these numbers are not
 
 - **Public-dataset numbers are not Raven's private-meeting numbers.** Raven's internal
   eval runs on real customer meetings whose audio can't be published (consent); those
@@ -103,7 +148,7 @@ make verify       # Tier-1: re-score every committed number, no GPU / no keys
 - **The demo fixtures** (`artifacts/_demo/`, `artifacts/_demo_der/`) prove the
   re-score mechanism end-to-end; they are **not** Raven product numbers.
 
-## License
+## License and data attribution
 
 Code is **MIT**. Dataset licenses are separate and belong to their owners — see
 [`NOTICE`](./NOTICE) for per-dataset attribution (Tuda-De / MLS = CC-BY, Common Voice
