@@ -129,7 +129,7 @@ published community-1-on-German-CALLHOME number to match exactly, so this is a
 *sanity-banded* reproducible measurement, corroborated by the reference overlap
 fraction (10.8 %, paper ≈ 12.6 %) and the miss-dominated error the literature
 predicts. **Protocol matters:** the same run reads 20.58 % at collar 0.0 vs
-16.08 % at 0.25 — ~7 pp on convention alone, so a CALLHOME DER without a stated
+16.08 % at 0.25 — 4.5 pp on convention alone, so a CALLHOME DER without a stated
 collar + overlap rule is noise.
 
 Reproduce (your HF token + gated license + GPU + shared FFmpeg libs):
