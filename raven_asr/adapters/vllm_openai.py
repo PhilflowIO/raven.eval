@@ -15,6 +15,13 @@ from .base import TranscribeResult, encode_wav_pcm16
 DEFAULT_LANGUAGE = "de"
 DEFAULT_TIMEOUT_S = 300.0
 
+# Legacy default endpoint env-var *names* (values live in the operator's env).
+# ModelSpec.base_url_env / api_key_env override these per model (see
+# raven_asr.config); the runner falls back to these when the spec leaves
+# them unset.
+DEFAULT_BASE_URL_ENV = "VLLM_PRIMELINE_URL"
+DEFAULT_API_KEY_ENV = "VLLM_PRIMELINE_API_KEY"
+
 
 class VllmOpenAIAdapter:
     """Posts WAV bytes to ``{base_url}/audio/transcriptions``."""
@@ -24,8 +31,8 @@ class VllmOpenAIAdapter:
         *,
         provider_id: str,
         model_id: str,
-        base_url_env: str = "VLLM_PRIMELINE_URL",
-        api_key_env: str | None = "VLLM_PRIMELINE_API_KEY",
+        base_url_env: str = DEFAULT_BASE_URL_ENV,
+        api_key_env: str | None = DEFAULT_API_KEY_ENV,
         language: str = DEFAULT_LANGUAGE,
         timeout_s: float = DEFAULT_TIMEOUT_S,
     ) -> None:

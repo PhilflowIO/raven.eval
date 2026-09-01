@@ -28,7 +28,12 @@ for a byte-reproducible reference set.
 | `openai-whisper-1`                   | `openai_whisper` | `OPENAI_API_KEY` |
 | `deepgram-nova-2`                    | `deepgram`       | `DEEPGRAM_API_KEY` |
 | `voxtral-mini-latest`                | `voxtral_mistral`| `MISTRAL_API_KEY` |
-| `primeline/*` (whisper/parakeet)     | `vllm_openai`    | a running vLLM OpenAI-compatible endpoint (self-host GPU); base URL via the adapter's env |
+| `primeline/*` (whisper/parakeet)     | `vllm_openai`    | a running vLLM OpenAI-compatible endpoint (self-host GPU); base URL in `VLLM_PRIMELINE_URL`, optional key in `VLLM_PRIMELINE_API_KEY` |
+| `nvidia/parakeet-tdt-0.6b-v3`, `nvidia/canary-1b-v2` | `vllm_openai` | a running OpenAI-compatible ASR endpoint (self-host GPU, e.g. a NeMo server exposing `/audio/transcriptions`); base URL in `NEMO_BENCH_URL`, optional key in `NEMO_BENCH_API_KEY` |
+| `ibm-granite/granite-speech-4.1-2b-plus`, `CohereLabs/cohere-transcribe-03-2026`, `OpenMOSS-Team/MOSS-Transcribe-Diarize`, `microsoft/Phi-4-multimodal-instruct` | `vllm_openai` | a running OpenAI-compatible ASR endpoint (self-host GPU; any server exposing `/audio/transcriptions` works, e.g. vLLM); base URL in `VLLM_BENCH_URL`, optional key in `VLLM_BENCH_API_KEY` |
+
+The `*_URL` / `*_API_KEY` variables name **your** endpoints — this repo never
+ships URLs or key values, only the env-var names the runner reads.
 
 Set the key in your environment before `make reproduce`. Missing-key failures
 surface per-utterance in the runner log; the run resumes per-subset from
