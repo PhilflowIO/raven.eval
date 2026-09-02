@@ -55,9 +55,10 @@ floating revision, which a published artifact must not carry.
 |----------------|-----------------------------------------------|-----------------|
 | `voxconverse`  | RTTMs shipped in `joonson/voxconverse` (pinned tag) — **easiest, fastest smoke** | `voxconverse_dev_wav.zip` / `_test_wav.zip` → `data/diar/voxconverse/audio/` |
 | `callhome-de`  | `talkbank/callhome` config `deu`, converted to RTTM by the loader — **the German anchor** | materialised from the HF dataset by `prepare()` |
-| `ami`          | prepared RTTMs from `pyannote/AMI-diarization-setup` (pinned commit) | that repo's `download_ami.sh` (Mix-Headset) → `data/diar/ami/audio/` |
+| `ami`          | prepared `only_words` RTTMs from `pyannote/AMI-diarization-setup` (pinned commit; an existing clone is verified against the pin) | fetched by `prepare()` from the Edinburgh AMI mirror — test split only (16 Mix-Headset wavs, ~1.1 GB) → `data/diar/ami/audio/` |
 
-`prepare()` downloads the gold labels and prints the exact audio step; a file
+`prepare()` downloads the gold labels and, where the license allows it (AMI,
+CC-BY-4.0), the audio too; otherwise it prints the exact audio step. A file
 whose audio is missing is **skipped loudly** (never silently scored).
 
 ## Recommended run order

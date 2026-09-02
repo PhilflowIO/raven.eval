@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from raven_diar.config import COLLARS, DER_DATASETS, KNOWN_DIARIZERS
+from raven_diar.datasets.ami import AMILoader, audio_url
 from raven_diar.datasets.callhome_de import segments_from_row
 from raven_diar.promote import _safe_run_name, promote
 from raven_diar.score import score_segment_pairs
@@ -70,6 +71,100 @@ def test_datasets_and_diarizers_registered():
     )
 
 
+def test_dataset_revisions_are_pinned_commits():
+    """A published number must hang on an immutable revision, never a branch."""
+    import re
+
+    specs = [*DER_DATASETS.values(), *KNOWN_DIARIZERS.values()]
+    for spec in specs:
+        assert re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
+            f"{spec}: revision {spec.revision!r} is not a full commit hash"
+        )
+
+
+# ── AMI loader (gold from the pinned setup clone, audio from the mirror) ──────
+
+
+def _fake_setup_clone(base: Path, split: str, file_ids: list[str]) -> str:
+    """Materialise a real (tiny) git repo shaped like AMI-diarization-setup and
+    return its HEAD hash, so prepare()'s pin verification runs for real."""
+    import subprocess
+
+    clone = base / "_setup"
+    src = clone / "only_words" / "rttms" / split
+    src.mkdir(parents=True, exist_ok=True)
+    for fid in file_ids:
+        (src / f"{fid}.rttm").write_text(
+            to_rttm([(0.0, 1.0, "A")], file_id=fid), encoding="utf-8"
+        )
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@t", "PATH": __import__("os").environ["PATH"]}
+    if not (clone / ".git").is_dir():
+        subprocess.run(["git", "init", "-q", str(clone)], check=True, env=env)
+    subprocess.run(["git", "-C", str(clone), "add", "-A"], check=True, env=env)
+    subprocess.run(["git", "-C", str(clone), "commit", "-q", "-m", "gold", "--allow-empty"],
+                   check=True, env=env)
+    return subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], check=True,
+                          capture_output=True, text=True, env=env).stdout.strip()
+
+
+def test_ami_audio_url_matches_download_script():
+    assert audio_url("EN2002a") == (
+        "https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/"
+        "EN2002a/audio/EN2002a.Mix-Headset.wav"
+    )
+
+
+def test_ami_prepare_fetches_only_the_split_and_only_missing(tmp_path: Path):
+    root = tmp_path
+    base = root / "ami"
+    _fake_setup_clone(base, "test", ["EN2002a", "ES2004a"])
+    head = _fake_setup_clone(base, "dev", ["IS1008a"])  # other split — must NOT be fetched
+    (base / "audio").mkdir()
+    (base / "audio" / "ES2004a.Mix-Headset.wav").write_bytes(b"already-here")
+    fetched: list[str] = []
+
+    def fetcher(url: str, dest: Path) -> None:
+        fetched.append(url)
+        dest.write_bytes(b"wav")
+
+    loader = AMILoader(split="test", fetcher=fetcher)
+    loader.prepare(root, revision=head)  # clone exists at the pin → no fetch
+    assert fetched == [audio_url("EN2002a")]
+    files = list(loader.iter_files(root))
+    assert [f.file_id for f in files] == ["EN2002a", "ES2004a"]
+    assert all(f.audio_path is not None for f in files)
+    # Second prepare is a no-op: gold present, audio present.
+    loader.prepare(root, revision=head)
+    assert fetched == [audio_url("EN2002a")]
+
+
+def test_ami_prepare_rejects_stale_clone_it_cannot_move(tmp_path: Path):
+    """A pre-existing clone at the wrong commit is never silently used."""
+    import subprocess
+
+    root = tmp_path
+    _fake_setup_clone(root / "ami", "test", ["EN2002a"])
+    loader = AMILoader(split="test", fetcher=lambda u, d: d.write_bytes(b"wav"))
+    # No remote 'origin' in the fake repo → the fetch to move HEAD fails loudly.
+    with pytest.raises(subprocess.CalledProcessError):
+        loader.prepare(root, revision="0" * 40)
+
+
+def test_ami_failed_download_skips_loudly(tmp_path: Path, capsys):
+    root = tmp_path
+    head = _fake_setup_clone(root / "ami", "test", ["EN2002a"])
+
+    def failing(url: str, dest: Path) -> None:
+        raise OSError("mirror down")
+
+    loader = AMILoader(split="test", fetcher=failing)
+    loader.prepare(root, revision=head)
+    assert "download FAILED" in capsys.readouterr().out
+    (only,) = loader.iter_files(root)
+    assert only.audio_path is None  # runner treats this as skip-with-warning
+
+
 # ── CALLHOME-de converter (the German anchor) ────────────────────────────────
 
 
@@ -126,11 +221,20 @@ def test_promote_builds_tier1_artifact(tmp_path: Path):
         json.dumps({"model_id": "m", "results": {"voxconverse": s.as_dict()}})
     )
 
+    # A stale sibling dataset from an earlier run in the same results dir must
+    # NOT be promoted — it has no expected entry and would fail `make verify`.
+    (run / "gold" / "stale-set").mkdir()
+    (run / "hyp" / "stale-set").mkdir()
+    (run / "gold" / "stale-set" / "old.rttm").write_text(to_rttm([(0, 1, "A")], file_id="old"))
+    (run / "hyp" / "stale-set" / "old.rttm").write_text(to_rttm([(0, 1, "A")], file_id="old"))
+
     dest = promote(run, tmp_path / "artifacts", "2026-07-30")
     expected = json.loads((dest / "expected.json").read_text())
     assert set(expected["voxconverse"]) == {"der_full", "der_classic", "miss", "fa", "conf"}
     assert (dest / "gold" / "voxconverse" / "f1.rttm").exists()
     assert (dest / "hyp" / "voxconverse" / "f1.rttm").exists()
+    assert not (dest / "gold" / "stale-set").exists()
+    assert not (dest / "hyp" / "stale-set").exists()
 
     # And the promoted artifact must re-score green through the Tier-1 verifier.
     import importlib.util

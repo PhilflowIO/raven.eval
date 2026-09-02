@@ -34,7 +34,7 @@ class DiarDatasetSpec:
     split: str | None = None
 
 
-# The three PUBLIC datasets the DER Tier-2 harness scores against. Audio is
+# The PUBLIC datasets the DER Tier-2 harness scores against. Audio is
 # pulled by the caller (never redistributed here); only gold/hyp *RTTM* labels
 # are ever committed under artifacts/ (VoxConverse/AMI labels are CC-BY-4.0,
 # CALLHOME is cite-to-use). See /NOTICE.
@@ -71,7 +71,10 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
         loader="callhome_de",
         license="TalkBank (cite-to-use)",
         source="talkbank/callhome",
-        revision="main",  # TODO(user): pin to the exact HF commit you download.
+        # Pinned to the HF dataset commit the published 16.08 % DER was measured
+        # on (artifacts/2026-07-31-callhome-de/…/summary.json: dataset_revision).
+        # "main" would let a published number drift with the upstream branch.
+        revision="17c8a153215aa7c50b805078fd6284ba81c2fc47",
         notes="config=deu; 2-speaker German telephone; gold from speaker segments.",
     ),
     # AMI — 4-speaker meetings. Prepared gold RTTMs via the canonical
@@ -81,8 +84,17 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
         loader="ami",
         license="CC-BY-4.0",
         source="https://github.com/pyannote/AMI-diarization-setup",
-        revision="0c1b4b6",  # TODO(user): confirm/pin the commit you clone.
-        notes="Mix-Headset audio; gold RTTMs from the only_words annotations.",
+        # Pinned to the setup repo's HEAD as of 2022-10-24 (verified 2026-09-02;
+        # the repo has 22 commits and no tags). The only_words/rttms/test gold
+        # files were last touched in 126863e1 (2020-12-23) and are byte-identical
+        # at this commit. The earlier placeholder "0c1b4b6" was not a commit of
+        # that repository at all.
+        revision="67c2d539286e89f68952d5dcf83912bd9f01dfae",
+        notes=(
+            "test split (16 meetings, Mix-Headset); gold RTTMs from the only_words "
+            "annotations. Audio is fetched by prepare() from the Edinburgh AMI mirror."
+        ),
+        split="test",
     ),
 }
 
@@ -104,10 +116,9 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         model_id="pyannote/speaker-diarization-community-1",
         adapter="pyannote_community1",
         label="pyannote-community-1",
-        # NOTE(stub): the exact accepted-license commit hash cannot be resolved
-        # offline. Defaults to "main"; override with --model-revision <hash> (or
-        # PYANNOTE_COMMUNITY1_REVISION) to pin the commit you actually accepted.
-        revision="main",
+        # Pinned to the HF model commit every published DER row was measured on
+        # (artifacts/*/pyannote-community-1/summary.json: model_revision).
+        revision="3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
     ),
     # Room for later diarizers (sortformer, diarizen) — add a spec + an adapter
     # module; the runner dispatches on ``adapter``.

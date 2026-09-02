@@ -1,0 +1,21 @@
+{
+  "model_id": "pyannote/speaker-diarization-community-1",
+  "label": "pyannote-community-1",
+  "adapter": "pyannote_community1",
+  "model_revision": "3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+  "dataset": "ami",
+  "dataset_revision": "67c2d539286e89f68952d5dcf83912bd9f01dfae",
+  "limit_per_dataset": null,
+  "n_skipped_no_audio": 0,
+  "results": {
+    "ami": {
+      "dataset": "ami",
+      "n_files": 16,
+      "der_full": 17.050423124052532,
+      "der_classic": 13.097475653415575,
+      "miss": 9.52420472226199,
+      "fa": 3.5783281875672737,
+      "conf": 3.9478902142232695
+    }
+  }
+}

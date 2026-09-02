@@ -102,7 +102,7 @@ a self-consistent fixture, **not** a Raven product number.
 
 ## DER — speaker diarization (public datasets)
 
-**Reproduced (Etappe 5).** `pyannote-community-1` was run on VoxConverse; the
+**Reproduced (Etappe 5).** `pyannote-community-1` was run on VoxConverse, CALLHOME-de and AMI; the
 per-file gold + hypothesis RTTMs and `expected.json` are committed under
 `artifacts/`, so `make verify` (and CI) re-score every number below on every push
 with **no GPU and no gated model**. The from-audio run needs an HF token, the
@@ -132,12 +132,22 @@ predicts. **Protocol matters:** the same run reads 20.58 % at collar 0.0 vs
 16.08 % at 0.25 — 4.5 pp on convention alone, so a CALLHOME DER without a stated
 collar + overlap rule is noise.
 
+**The meeting regime (AMI).** On the AMI test split (16 four-speaker meetings,
+Mix-Headset = the IHM condition, gold = the `only_words` RTTMs of
+`pyannote/AMI-diarization-setup` @ `67c2d539`) community-1 scores **17.05 % DER**
+at `collar=0.0, skip_overlap=False` — against pyannote's own published
+**17.0 %** for "AMI (IHM)" under the same protocol: a **0.05 pp** delta, the
+second vendor number this scorer reproduces exactly. At collar 0.25 the same
+run reads 13.10 %. Audio for this set is fetched by `prepare()` from the
+Edinburgh AMI mirror (CC-BY-4.0), so the run below is fully self-contained.
+
 Reproduce (your HF token + gated license + GPU + shared FFmpeg libs):
 
 ```bash
 make reproduce METRIC=der DATASET=voxconverse-test MODEL=pyannote-community-1 \
   MODEL_REV=3533c8cf8e369892e6b79ff1bf80f7b0286a54ee \
   DATASET_REV=24bf60be297701cd7e4ef18550c6d390c1b87365
+make reproduce METRIC=der DATASET=ami MODEL=pyannote-community-1   # revisions pinned in raven_diar/config.py
 make promote   METRIC=der RESULTS=results/reproduce-der/pyannote-community-1 RUN=$(date +%F)
 make verify
 ```
@@ -147,12 +157,14 @@ make verify
 | pyannote-community-1 | voxconverse (dev) | 7.17 | 5.00 | 2.33 | 2.26 | 2.58 | 216 | [2026-07-30](./artifacts/2026-07-30/pyannote-community-1/) |
 | pyannote-community-1 | voxconverse (**test**) | **11.15** | 8.41 | 3.38 | 4.08 | 3.68 | 232 | [2026-07-31](./artifacts/2026-07-31-voxconverse-test/pyannote-community-1/) |
 | pyannote-community-1 | callhome-de (German, telephone) | 20.58 | **16.08** | 13.46 | 3.54 | 3.57 | 120 | [2026-07-31](./artifacts/2026-07-31-callhome-de/pyannote-community-1/) |
+| pyannote-community-1 | ami (test, 4-speaker meetings, IHM) | **17.05** | 13.10 | 9.52 | 3.58 | 3.95 | 16 | [2026-09-02](./artifacts/2026-09-02-ami/pyannote-community-1/) |
 
 > VoxConverse **test** DER@0.0 = 11.15 % vs pyannote's published 11.2 % (Δ 0.05 pp)
 > — a direct, un-caveated reproduction. Dev (7.17 %) is the easier split. For
 > CALLHOME-de the comparable column is **collar 0.25** (16.08 %, the ETH-paper
-> protocol), which lands between pyannote 3.1 and pyannoteAI (see above). AMI lands
-> as its run promotes.
+> protocol), which lands between pyannote 3.1 and pyannoteAI (see above). AMI
+> **test** DER@0.0 = 17.05 % vs pyannote's published 17.0 % for AMI (IHM)
+> (Δ 0.05 pp) — the second direct reproduction.
 
 > Public-dataset DER is **not** Raven's private-meeting DER — it is the externally
 > checkable proxy anyone can reproduce, and it will differ from the internal number.

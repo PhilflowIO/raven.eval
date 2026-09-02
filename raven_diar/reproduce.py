@@ -42,7 +42,7 @@ def _make_loader(loader_name: str, split: str | None = None) -> DiarDatasetLoade
         return CallhomeDeLoader()
     if loader_name == "ami":
         from .datasets.ami import AMILoader
-        return AMILoader()
+        return AMILoader(**({"split": split} if split else {}))
     raise ValueError(f"unknown loader: {loader_name}")
 
 

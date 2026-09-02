@@ -74,14 +74,23 @@ def promote(results_dir: Path, artifacts_dir: Path, run_name: str) -> Path:
     if not expected:
         raise ValueError(f"summary.json in {results_dir} has no results to promote")
 
+    # Copy ONLY the datasets this summary scored. A results dir is reused across
+    # runs (`reproduce` writes gold/<dataset>/ per dataset and never clears its
+    # siblings), so a blind copytree would drag a previous run's RTTMs into the
+    # artifact — `make verify` then fails on a dataset with no expected entry.
     dest = artifacts_dir / _safe_run_name(run_name) / results_dir.name
     dest.mkdir(parents=True, exist_ok=True)
     for sub in ("gold", "hyp"):
-        src = results_dir / sub
         dst = dest / sub
         if dst.exists():
             shutil.rmtree(dst)
-        shutil.copytree(src, dst)
+        for dataset in expected:
+            src = results_dir / sub / dataset
+            if not src.is_dir() or not any(src.glob("*.rttm")):
+                raise FileNotFoundError(
+                    f"summary.json scores {dataset!r} but {src} has no RTTMs"
+                )
+            shutil.copytree(src, dst / dataset)
     (dest / "expected.json").write_text(
         json.dumps(expected, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
