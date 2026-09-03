@@ -100,3 +100,7 @@ class VoxConverseLoader:
             )
             if limit is not None and emitted + 1 >= limit:
                 return
+
+
+#: Registry entry point (see raven_diar.registry) — ``DiarDatasetSpec.loader``.
+LOADER = VoxConverseLoader
