@@ -52,14 +52,35 @@ def test_dialect_ids_are_registered_datasets_and_loaders() -> None:
         assert dataset_id in WER_LOADERS, f"{dataset_id}: no loader registered"
 
 
+# A control spur is dialect-corpus *machinery*, not dialect audio: same speaker,
+# same sentences, Standard German. It is plain dictation, so it is scored with
+# plain WER — and it is named here rather than detected, so that a genuinely
+# dialectal corpus cannot slip past the check below by simply declaring "wer".
+CONTROL_SPUR_IDS = frozenset({"xsid-de-control"})
+
+
 def test_dialect_corpora_declare_the_metric_they_need() -> None:
     """Translation-shaped corpora must say so; the scorer must not guess."""
-    for dataset_id in sorted(DIALECT_DATASET_IDS):
+    for dataset_id in sorted(DIALECT_DATASET_IDS - CONTROL_SPUR_IDS):
         assert WER_DATASETS[dataset_id].metric == "bleu+wer", (
-            f"{dataset_id}: Swiss German audio against a Standard German "
-            f"reference is translation-shaped; WER alone penalises a correct "
-            f"translation for not being a transliteration."
+            f"{dataset_id}: dialect audio against a Standard German reference "
+            f"is translation-shaped; WER alone penalises a correct translation "
+            f"for not being a transliteration."
         )
+
+
+def test_control_spurs_are_scored_as_the_dictation_they_are() -> None:
+    """The control spur's whole job is to be the un-dialectal comparison.
+
+    Scoring it with BLEU would make the Bavarian factor a difference between two
+    metrics rather than between two recordings of one voice.
+    """
+    for dataset_id in sorted(CONTROL_SPUR_IDS):
+        assert dataset_id in DIALECT_DATASET_IDS, (
+            f"{dataset_id}: a control spur still belongs to its dialect corpus "
+            f"and must stay out of every aggregate with it"
+        )
+        assert WER_DATASETS[dataset_id].metric == "wer"
 
 
 # ── no aggregation across dialects, and none into an overall ─────────────────

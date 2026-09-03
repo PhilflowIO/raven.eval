@@ -230,6 +230,8 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
             "SwissText 2021 task 3, 5,750 utterances / 12.72 h across all Swiss "
             "dialect regions. public.tsv + clips.tar out of a checksum-verified "
             "zip; dialect region travels in the sample_id."
+        ),
+    ),
     # ── Dialect probe + control spur (flow.raven#5350) ────────────────────────
     # These two ids are a matched pair. The same person recorded both varieties
     # on the same sentences, so only the DELTA is a dialect statement; either id
