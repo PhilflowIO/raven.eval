@@ -226,6 +226,22 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
                     )
                 ok = ok and bleu_ok
 
+                # The signature, not the word "BLEU", is what makes the number
+                # comparable: tokenizer, case handling, smoothing and sacrebleu
+                # version. Checking only the score would let a tokenizer default
+                # shift inside our `>=2.4,<3` range pass unnoticed whenever the
+                # shift happens to move the score by less than the tolerance —
+                # which is precisely the drift the signature exists to catch.
+                exp_sig = exp.get("bleu_signature")
+                if exp_sig is not None:
+                    sig = bleu_signature()
+                    if sig != exp_sig:
+                        detail = (detail + " " if detail else "") + (
+                            f"bleu_signature drift: committed {exp_sig!r}, "
+                            f"this environment {sig!r}"
+                        )
+                        ok = False
+
             all_ok = all_ok and ok
             row["status"] = "PASS" if ok else "FAIL"
             row["detail"] = detail
