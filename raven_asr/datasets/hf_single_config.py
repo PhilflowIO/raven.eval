@@ -84,9 +84,32 @@ class HFSingleConfigLoader:
             ds = load_dataset(self.hf_dataset_id, self.hf_config, **kwargs)
         else:
             ds = load_dataset(self.hf_dataset_id, **kwargs)
+        ds = self._disable_audio_decoding(ds)
         self._source = "hf-streaming" if self._streaming else "hf-download"
         self._cache = ds
         return ds
+
+    def _disable_audio_decoding(self, ds: Any) -> Any:
+        """Hand back raw ``{bytes, path}`` instead of a decoded waveform.
+
+        ``datasets`` decodes an ``Audio()`` feature while *building the row*, so
+        by the time :meth:`_decode_audio` runs the decode has already happened —
+        or already failed. Since ``datasets`` 5.x that decode goes through
+        ``torchcodec``, which this repo deliberately does not depend on: it
+        ``dlopen``s the FFmpeg ``libav*`` shared objects at runtime, the same
+        trap documented for the DER lane in ``docs/TIER2-DER-KEYS.md``. Pulling
+        it into the WER lane would make a plain ``make reproduce METRIC=wer``
+        require a system FFmpeg build.
+
+        Turning decoding off moves the work to soundfile in
+        :meth:`_decode_audio`, which is already declared in the ``asr`` extra and
+        already implemented — this is what makes that branch reachable. It also
+        means we observe the file's TRUE sample rate rather than the one the
+        dataset card declares, which is the honest input for a published WER.
+        """
+        from datasets import Audio
+
+        return ds.cast_column(self.audio_column, Audio(decode=False))
 
     # ----- per-row extraction ------------------------------------------------
 
@@ -102,11 +125,17 @@ class HFSingleConfigLoader:
                 arr = arr.mean(axis=1).astype(np.float32)
             sr = int(audio_field.get("sampling_rate", TARGET_SAMPLE_RATE))
             return arr, sr
-        # Bytes form (rare for these configs) — decoded with soundfile, which
-        # dodges the torchcodec dependency an Audio() cast would pull in.
+        # Bytes form — the normal path here, because :meth:`_disable_audio_decoding`
+        # switches the Audio() feature off at load time. soundfile decodes it,
+        # which keeps torchcodec (and therefore a system FFmpeg build) out of the
+        # WER lane. ``path`` is carried only for provenance, never opened: a
+        # streaming row's path points into the remote archive, not at a local file.
         raw = audio_field.get("bytes")
         if raw is None:
-            raise ValueError("audio field has neither 'array' nor 'bytes'")
+            raise ValueError(
+                f"audio field has neither 'array' nor 'bytes' "
+                f"(keys: {sorted(audio_field)})"
+            )
         import soundfile as sf
 
         data, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=False)
