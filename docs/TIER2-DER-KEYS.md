@@ -1,11 +1,23 @@
-# Tier-2 DER reproduce — HF token, gated model & GPU (the price of a real DER)
+# Tier-2 DER reproduce — what each diarizer costs you (token, GPU, licence)
 
 Tier-1 (`make verify`) re-scores committed RTTMs and needs **nothing** — no GPU,
 no token. Tier-2 (`make reproduce METRIC=der`) actually runs a diarizer over
-public audio, so it needs three things. This is the honest cost of a from-audio
-DER reproduction — documented here, not hidden.
+public audio, so it costs something. That cost differs per diarizer, and this
+page states it per diarizer rather than hiding it.
 
-## The three requirements
+## Which diarizer costs what
+
+| `MODEL=` | Extra | HF token | Gated licence | GPU | Notes |
+|---|---|---|---|---|---|
+| `pyannote-community-1` | `diar` | **yes** | **yes** (accept on HF) | strongly recommended | needs system FFmpeg *shared* libs (see below) |
+| `sortformer-4spk-v1` | `sortformer` | no | no (weights are public) | strongly recommended | CC-BY-NC-4.0 → **non-commercial**; hard cap of **4 speakers** |
+
+Neither needs an API key: both run locally. Adding a third diarizer is a module
+under `raven_diar/adapters/` exposing an `ADAPTER` factory plus a `DiarizerSpec`
+entry in `raven_diar/config.py` — the runner dispatches through
+`raven_diar/registry.py` and is not edited (see that module's docstring).
+
+## The pyannote community-1 requirements
 
 1. **A Hugging Face token.** Export one of `HF_TOKEN` / `HUGGINGFACE_TOKEN`
    (create at <https://huggingface.co/settings/tokens>).
@@ -23,14 +35,41 @@ DER reproduction — documented here, not hidden.
    On a box without system libav, extract a shared FFmpeg build (e.g. a BtbN
    `*-shared*` FFmpeg 7.x) and point `LD_LIBRARY_PATH` at its `lib/`.
 
+## The Sortformer requirements
+
+`nvidia/diar_sortformer_4spk-v1` is an end-to-end neural diarizer run locally
+through NVIDIA NeMo. What it does **not** need: an HF token, a gated-licence
+acceptance, an API key. What it does need:
+
+1. **The `sortformer` extra** (`nemo_toolkit[asr]` + torch + huggingface-hub).
+   It is its own extra because NeMo is a large dependency tree of its own —
+   nobody should have to install it to score DER or to run the pyannote lane.
+   The adapter imports NeMo lazily, so the repo installs and its tests pass
+   without the extra.
+2. **A GPU.** CPU runs but is impractically slow for meeting-length audio.
+   Override the auto-selected device with `SortformerDiarizer(device=...)`.
+3. **Awareness of two model properties, not bugs:**
+   * The weights are **CC-BY-NC-4.0 — non-commercial**. Read it before you ship
+     a number derived from it into a commercial context.
+   * The checkpoint is **`4spk`**: a hard cap of four speakers. Audio with more
+     speakers gets folded into four tracks, which surfaces as speaker confusion.
+     That is why AMI (4 speakers) and CALLHOME-de (2) are in scope for it.
+
+The revision is pinned via `hf_hub_download` rather than NeMo's
+`from_pretrained`, which accepts no `revision` and would silently track the HF
+branch — a published DER must not be able to drift under a re-upload.
+
 ## Install
 
 ```bash
-uv sync --extra dev --extra diar     # torch + pyannote.audio + datasets + soundfile
+uv sync --extra dev --extra diar        # pyannote lane: torch + pyannote.audio
+uv sync --extra dev --extra sortformer  # sortformer lane: nemo_toolkit[asr] + torch
 ```
 
-The `diar` extra is heavy (torch) and deliberately isolated: Tier-1 verify never
-imports it, so `make verify` stays light and GPU-free.
+Both extras are heavy (torch) and deliberately isolated: Tier-1 verify never
+imports either, so `make verify` stays light and GPU-free. `make reproduce`
+defaults to `diar` for `METRIC=der`; select the other lane with
+`EXTRA=sortformer`.
 
 ## Pin the model & dataset revisions (reproducibility)
 
@@ -41,6 +80,13 @@ numbers used exactly these commits:
 make reproduce METRIC=der DATASET=voxconverse-test MODEL=pyannote-community-1 \
   MODEL_REV=3533c8cf8e369892e6b79ff1bf80f7b0286a54ee \
   DATASET_REV=24bf60be297701cd7e4ef18550c6d390c1b87365
+```
+
+The Sortformer lane pins the same way (its own extra, no token needed):
+
+```bash
+make reproduce METRIC=der DATASET=ami MODEL=sortformer-4spk-v1 EXTRA=sortformer \
+  MODEL_REV=9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08
 ```
 
 `MODEL_REV` → the accepted-license `pyannote/speaker-diarization-community-1` commit;

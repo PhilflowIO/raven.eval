@@ -45,6 +45,18 @@ diar = [
     "soundfile",
     "numpy",
 ]
+# Tier-2 DER, NVIDIA Sortformer lane (raven_diar/adapters/sortformer.py). Its own
+# extra because nemo_toolkit is a large, opinionated dependency tree of its own:
+# nobody should have to install it to score DER, to run the pyannote lane, or to
+# run the tests. The adapter imports nemo lazily, so the repo stays installable
+# and fully testable without this extra.
+sortformer = [
+    "nemo_toolkit[asr]>=2.0",
+    "torch",
+    "huggingface-hub",
+    "soundfile",
+    "numpy",
+]
 
 [build-system]
 requires = ["hatchling"]

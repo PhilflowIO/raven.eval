@@ -24,9 +24,14 @@ verify:             ## Tier-1: re-score committed WER + DER artifacts → reprod
 #   make reproduce METRIC=wer DATASET=common_voice_19_0 MODEL=modal/parakeet
 #   make reproduce METRIC=der DATASET=voxconverse       MODEL=pyannote-community-1
 #   make reproduce METRIC=der DATASET=callhome-de       MODEL=pyannote-community-1 LIMIT=5
+# EXTRA overrides the dependency extra, because a diarizer's backend is its own
+# (pyannote -> `diar`, sortformer -> `sortformer`); nobody installs both to run one:
+#   make reproduce METRIC=der DATASET=ami MODEL=sortformer-4spk-v1 EXTRA=sortformer
 # Keys/GPU/gating: docs/TIER2-KEYS.md (WER) + docs/TIER2-DER-KEYS.md (DER).
+EXTRA ?= $(if $(filter der,$(METRIC)),diar,asr)
+
 reproduce:          ## Tier-2: download public data → infer/diarize → score → table.
-	uv run --extra $(if $(filter der,$(METRIC)),diar,asr) \
+	uv run --extra $(EXTRA) \
 		python -m $(if $(filter der,$(METRIC)),raven_diar,raven_asr).reproduce \
 		--metric $(METRIC) --dataset $(DATASET) --model $(MODEL) \
 		$(if $(LIMIT),--limit $(LIMIT),) \

@@ -120,6 +120,18 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         # (artifacts/*/pyannote-community-1/summary.json: model_revision).
         revision="3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
     ),
-    # Room for later diarizers (sortformer, diarizen) — add a spec + an adapter
-    # module; the runner dispatches on ``adapter``.
+    # NVIDIA Sortformer 4spk-v1. NOT gated, NO API key: public CC-BY-NC-4.0
+    # weights run locally through NeMo (`--extra sortformer`). Hard 4-speaker
+    # cap — see raven_diar/adapters/sortformer.py.
+    "sortformer-4spk-v1": DiarizerSpec(
+        model_id="nvidia/diar_sortformer_4spk-v1",
+        adapter="sortformer",
+        label="sortformer-4spk-v1",
+        # HF `main` as of 2026-09-03 (repo has no tags; lastModified 2025-12-15).
+        revision="9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08",
+    ),
+    # Adding the next diarizer (diarizen, a hosted API, …) is a module under
+    # raven_diar/adapters/ exposing an ``ADAPTER`` factory plus a spec entry
+    # here. The runner resolves ``adapter`` through raven_diar.registry and is
+    # not touched — see that module's docstring.
 }
