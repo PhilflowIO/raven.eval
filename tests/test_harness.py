@@ -25,6 +25,7 @@ import yaml
 from raven_asr import promote as promote_mod
 from raven_asr import runner
 from raven_asr.adapters.base import TranscribeResult
+from raven_asr.config import KNOWN_MODELS, ModelSpec
 from raven_asr.datasets.base import Sample
 
 
@@ -141,6 +142,76 @@ def test_promote_then_verify_round_trips(
     all_ok, rows = verify.verify(artifacts)
     assert rows
     assert all_ok, f"promoted artifact failed re-score: {rows}"
+
+
+def _capture_vllm_adapter(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Replace VllmOpenAIAdapter with a kwargs-recorder (no env/network needed)."""
+    vllm_mod = pytest.importorskip("raven_asr.adapters.vllm_openai")
+    captured: dict[str, Any] = {}
+
+    class _FakeAdapter:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(vllm_mod, "VllmOpenAIAdapter", _FakeAdapter)
+    return captured
+
+
+def test_make_adapter_threads_endpoint_envs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ModelSpec.base_url_env/api_key_env must reach the adapter constructor."""
+    captured = _capture_vllm_adapter(monkeypatch)
+    spec = ModelSpec(
+        model_id="nvidia/canary-1b-v2",
+        adapter="vllm_openai",
+        label="nvidia-canary-1b-v2",
+        base_url_env="NEMO_BENCH_URL",
+        api_key_env="NEMO_BENCH_API_KEY",
+    )
+    runner._make_adapter(spec)
+    assert captured == {
+        "provider_id": "nvidia-canary-1b-v2",
+        "model_id": "nvidia/canary-1b-v2",
+        "base_url_env": "NEMO_BENCH_URL",
+        "api_key_env": "NEMO_BENCH_API_KEY",
+    }
+
+
+def test_make_adapter_default_none_keeps_legacy_envs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Specs without endpoint envs must resolve to the adapter's legacy
+    defaults (VLLM_PRIMELINE_*)."""
+    vllm_mod = pytest.importorskip("raven_asr.adapters.vllm_openai")
+    captured = _capture_vllm_adapter(monkeypatch)
+    spec = KNOWN_MODELS["primeline/whisper-large-v3-german"]
+    assert spec.base_url_env is None and spec.api_key_env is None
+    runner._make_adapter(spec)
+    assert captured == {
+        "provider_id": "primeline-whisper-large-v3-german",
+        "model_id": "primeline/whisper-large-v3-german",
+        "base_url_env": vllm_mod.DEFAULT_BASE_URL_ENV,
+        "api_key_env": vllm_mod.DEFAULT_API_KEY_ENV,
+    }
+    assert captured["base_url_env"] == "VLLM_PRIMELINE_URL"
+    assert captured["api_key_env"] == "VLLM_PRIMELINE_API_KEY"
+
+
+def test_wave2_registry_entries_carry_endpoint_envs() -> None:
+    """The flow.raven#5137 wave-2 entries bind to their bench env pairs."""
+    nemo = {"nvidia/parakeet-tdt-0.6b-v3", "nvidia/canary-1b-v2"}
+    vllm = {
+        "ibm-granite/granite-speech-4.1-2b-plus",
+        "CohereLabs/cohere-transcribe-03-2026",
+        "OpenMOSS-Team/MOSS-Transcribe-Diarize",
+        "microsoft/Phi-4-multimodal-instruct",
+    }
+    for key in nemo | vllm:
+        spec = KNOWN_MODELS[key]
+        assert spec.adapter == "vllm_openai"
+        expected_url = "NEMO_BENCH_URL" if key in nemo else "VLLM_BENCH_URL"
+        expected_key = "NEMO_BENCH_API_KEY" if key in nemo else "VLLM_BENCH_API_KEY"
+        assert spec.base_url_env == expected_url
+        assert spec.api_key_env == expected_key
 
 
 def test_promote_refuses_empty_results(tmp_path: Path) -> None:

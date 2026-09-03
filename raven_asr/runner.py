@@ -51,8 +51,19 @@ class _RunResult:
 
 def _make_adapter(spec: ModelSpec) -> ASRAdapter:
     if spec.adapter == "vllm_openai":
-        from .adapters.vllm_openai import VllmOpenAIAdapter
-        return VllmOpenAIAdapter(provider_id=spec.label, model_id=spec.model_id)
+        from .adapters.vllm_openai import (
+            DEFAULT_API_KEY_ENV,
+            DEFAULT_BASE_URL_ENV,
+            VllmOpenAIAdapter,
+        )
+        # Per-model endpoint env-var names (flow.raven#5137); a spec that
+        # leaves them None keeps the legacy VLLM_PRIMELINE_* defaults.
+        return VllmOpenAIAdapter(
+            provider_id=spec.label,
+            model_id=spec.model_id,
+            base_url_env=spec.base_url_env or DEFAULT_BASE_URL_ENV,
+            api_key_env=spec.api_key_env or DEFAULT_API_KEY_ENV,
+        )
     if spec.adapter == "voxtral_mistral":
         from .adapters.voxtral_mistral import VoxtralMistralAdapter
         return VoxtralMistralAdapter(provider_id=spec.label, model_id=spec.model_id)

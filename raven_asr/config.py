@@ -66,6 +66,11 @@ class ModelSpec:
     model_id: str
     adapter: str  # adapter module name under raven_asr.adapters
     label: str  # short identifier used in result directory names
+    # Optional per-model endpoint env-var *names* (never values). When None the
+    # adapter's own defaults apply (legacy behaviour). Only the env-var names
+    # live in this public repo; the URLs/keys stay in the operator's env.
+    base_url_env: str | None = None
+    api_key_env: str | None = None
 
 
 KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
@@ -98,6 +103,53 @@ KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
         model_id="whisper-1",
         adapter="openai_whisper",
         label="openai-whisper-1",
+    ),
+    # Wave-2 re-bench models (flow.raven#5137). Served on self-hosted
+    # OpenAI-compatible endpoints; per-model endpoint env *names* below.
+    # Of these, only nvidia/parakeet-tdt-0.6b-v3 has a flozi-published anchor
+    # in FLOZI_REFERENCE_WER — the others deliberately carry no anchor (no
+    # published number on this dataset to sanity-check against).
+    "nvidia/parakeet-tdt-0.6b-v3": ModelSpec(
+        model_id="nvidia/parakeet-tdt-0.6b-v3",
+        adapter="vllm_openai",
+        label="nvidia-parakeet-tdt-0.6b-v3",
+        base_url_env="NEMO_BENCH_URL",
+        api_key_env="NEMO_BENCH_API_KEY",
+    ),
+    "nvidia/canary-1b-v2": ModelSpec(
+        model_id="nvidia/canary-1b-v2",
+        adapter="vllm_openai",
+        label="nvidia-canary-1b-v2",
+        base_url_env="NEMO_BENCH_URL",
+        api_key_env="NEMO_BENCH_API_KEY",
+    ),
+    "ibm-granite/granite-speech-4.1-2b-plus": ModelSpec(
+        model_id="ibm-granite/granite-speech-4.1-2b-plus",
+        adapter="vllm_openai",
+        label="granite-speech-4.1-2b-plus",
+        base_url_env="VLLM_BENCH_URL",
+        api_key_env="VLLM_BENCH_API_KEY",
+    ),
+    "CohereLabs/cohere-transcribe-03-2026": ModelSpec(
+        model_id="CohereLabs/cohere-transcribe-03-2026",
+        adapter="vllm_openai",
+        label="cohere-transcribe-03-2026",
+        base_url_env="VLLM_BENCH_URL",
+        api_key_env="VLLM_BENCH_API_KEY",
+    ),
+    "OpenMOSS-Team/MOSS-Transcribe-Diarize": ModelSpec(
+        model_id="OpenMOSS-Team/MOSS-Transcribe-Diarize",
+        adapter="vllm_openai",
+        label="moss-transcribe-diarize",
+        base_url_env="VLLM_BENCH_URL",
+        api_key_env="VLLM_BENCH_API_KEY",
+    ),
+    "microsoft/Phi-4-multimodal-instruct": ModelSpec(
+        model_id="microsoft/Phi-4-multimodal-instruct",
+        adapter="vllm_openai",
+        label="phi-4-multimodal",
+        base_url_env="VLLM_BENCH_URL",
+        api_key_env="VLLM_BENCH_API_KEY",
     ),
     # Modal-hosted STT apps. Each must expose a parameterized
     # `transcribe(audio_bytes, sr)` function.
