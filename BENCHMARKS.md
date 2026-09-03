@@ -7,7 +7,10 @@
 
 ## Scoring contract
 
-See [`benchmark.config.yaml`](./benchmark.config.yaml). DER reported at both
+See [`benchmark.config.yaml`](./benchmark.config.yaml). Every metric declared
+there has an implementation in `raven_eval_core` and vice versa —
+`tests/test_metric_contract.py` fails the build in both directions, the metric-side
+twin of the dataset-list guard in `tests/test_dataset_contract.py`. DER reported at both
 `collar=0.0, skip_overlap=False` (pyannote/DIHARD "full") and `collar=0.25`
 (NIST/CALLHOME classic). Automatic VAD, Hungarian speaker mapping. Primary scorer
 `pyannote.metrics`. A cross-check against `dscore` (nryant/dscore) is wired as an
@@ -17,6 +20,43 @@ gated on a local dscore checkout (dscore is a script repo, not a pip package, so
 it can't be pinned as a normal dependency) and therefore is **not** in CI — it
 skips cleanly when `DSCORE_DIR` is unset.
 
+## BLEU — translation-shaped corpora
+
+Reported for datasets whose reference is a *translation*, not a transcript: Swiss
+German is spoken in dialect and written down in standard German, so WER charges
+every legitimate lexical or word-order choice as an error. Those corpora are
+scored **bleu+wer**, with BLEU as the headline of the pair. Scale is 0–100 and
+**higher is better** — the opposite direction from WER and DER, so never put them
+in one column.
+
+"BLEU" alone is not a number. Every convention that moves it is pinned in
+[`benchmark.config.yaml`](./benchmark.config.yaml) → `bleu.variants`, mirrored by
+the constants in `raven_eval_core/bleu.py`, and asserted equal by
+`tests/test_metric_contract.py`:
+
+| convention | value | why |
+|---|---|---|
+| scorer | `sacrebleu` | pins tokenization and emits a signature; `nltk` scores whatever tokens the caller hands it |
+| tokenizer | `13a` | mteval-v13a, the WMT default |
+| case | sensitive (`case:mixed`) | German capitalizes nouns |
+| smoothing | `exp` | pinned, not inherited from a library default |
+| n-gram order | 4, `effective_order=false` | the standard corpus convention |
+| aggregation | **corpus** | Σ n-gram stats over the subset, never a mean of per-sentence BLEUs |
+
+Every published BLEU carries its sacrebleu signature, e.g.
+`nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0`. That string, not the
+word "BLEU", is what makes the number comparable to somebody else's (Post 2018,
+*A Call for Clarity in Reporting BLEU Scores*). A per-sentence BLEU exists in
+`raven_eval_core.bleu.sentence_bleu_diagnostic` — computed under
+`effective_order=True`, i.e. a *different* convention — and is a diagnostic for
+finding bad rows, never a published number.
+
+**Rows: none yet.** The metric and its Tier-1 re-score path are wired and covered
+by CI; the dialect corpora land separately. `artifacts/_demo_bleu/` proves the
+mechanism today and is **not** a Raven product number — on its eight rows the same
+output scores 14.29 % WER and 72.24 BLEU, which is precisely the mismeasurement
+this metric exists to avoid.
+
 ## Tier-1 re-score (how a WER row becomes reproducible)
 
 Every published WER number is backed by the exact per-utterance model output it
@@ -25,7 +65,8 @@ was computed from, committed under `artifacts/<run>/<model>/`:
 - `predictions_<subset>.jsonl` — one line per utterance:
   `{"reference","prediction","latency_s"}` (the format Raven's eval runner
   writes, `german_asr/runner.py`).
-- `expected.json` — `{"<subset>": {"wer_pct": <float>, "cer_pct": <float>}}`.
+- `expected.json` — `{"<subset>": {"wer_pct": <float>, "cer_pct": <float>}}`,
+  plus an optional `"bleu"` + `"bleu_signature"` on translation-shaped subsets.
 
 `make verify` (→ `scripts/verify.py`) re-scores every `predictions_*.jsonl`
 with our own scorer and asserts each subset matches `expected.json` within
@@ -37,8 +78,16 @@ same predictions in reproduce the same published `wer_pct` out. Reconciliation
 notes (why we do **not** call `raven_eval_core.normalize_strict_de` here) are in
 the header of `scripts/verify.py`.
 
-A committed `artifacts/_demo/` dir proves the mechanism end-to-end; it is a
-self-consistent fixture, **not** a Raven product number.
+BLEU uses the same file and the same ±0.05 tolerance: a subset whose expected
+entry carries a `"bleu"` key is additionally re-scored with
+`raven_eval_core.bleu.corpus_bleu_score` on the **raw** text (BLEU's tokenizer is
+the declared normalization; flozi's punctuation/case stripping would destroy what a
+translation reference asks for). The key is optional, so plain transcription
+subsets are unaffected. `sacrebleu` is a base dependency, not behind an extra,
+exactly so this stays a no-GPU no-network path.
+
+Committed `artifacts/_demo/` and `artifacts/_demo_bleu/` dirs prove the mechanism
+end-to-end; they are self-consistent fixtures, **not** Raven product numbers.
 
 ## WER — German ASR (public datasets)
 

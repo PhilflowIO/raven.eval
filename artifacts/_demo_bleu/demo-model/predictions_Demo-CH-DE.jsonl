@@ -1,0 +1,8 @@
+{"reference": "Guten Morgen zusammen, wir fangen jetzt mit der Sitzung an.", "prediction": "Guten Morgen zusammen, wir beginnen jetzt mit der Sitzung.", "latency_s": 0.44}
+{"reference": "Ich habe gestern lange mit dem Kunden über das Angebot gesprochen.", "prediction": "Ich habe gestern lang mit dem Kunden über das Angebot geredet.", "latency_s": 0.51}
+{"reference": "Das ist doch nicht wahr, das hatten wir letzte Woche anders besprochen.", "prediction": "Das ist doch nicht wahr, das haben wir letzte Woche anders besprochen.", "latency_s": 0.48}
+{"reference": "Schau mal, die Zahlen aus dem dritten Quartal sind schon da.", "prediction": "Schau mal, die Zahlen aus dem dritten Quartal sind schon da.", "latency_s": 0.39}
+{"reference": "Wir müssen den Termin auf nächste Woche verschieben, das geht heute nicht mehr.", "prediction": "Wir müssen den Termin auf nächste Woche schieben, heute geht das nicht mehr.", "latency_s": 0.57}
+{"reference": "Ein bisschen mehr Zeit für die Abstimmung wäre mir schon lieber.", "prediction": "Etwas mehr Zeit für die Abstimmung wäre mir lieber.", "latency_s": 0.46}
+{"reference": "Der Vorstand hat den Bericht am Montag ohne Gegenstimme angenommen.", "prediction": "Der Vorstand hat den Bericht am Montag ohne Gegenstimme angenommen.", "latency_s": 0.42}
+{"reference": "Ich weiss nicht, ob das so richtig ist, das müssen wir noch prüfen.", "prediction": "Ich weiss nicht, ob das so stimmt, das müssen wir noch prüfen.", "latency_s": 0.53}

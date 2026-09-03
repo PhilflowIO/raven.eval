@@ -3968,6 +3968,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pyannote-metrics" },
+    { name = "sacrebleu" },
     { name = "text2num" },
     { name = "unidecode" },
 ]
@@ -4026,6 +4027,7 @@ requires-dist = [
     { name = "pyannote-metrics", specifier = ">=3.2" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pyyaml", marker = "extra == 'asr'" },
+    { name = "sacrebleu", specifier = ">=2.4,<3" },
     { name = "soundfile", marker = "extra == 'asr'" },
     { name = "soundfile", marker = "extra == 'diar'" },
     { name = "soundfile", marker = "extra == 'sortformer'" },

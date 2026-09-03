@@ -27,6 +27,28 @@ wer:
   normalization: flozi-strict
   also_reported: [permissive, verbatim, cer, ier]   # diagnostic lenses in raven_eval_core.wer, not the published number
 
+bleu:
+  scorer: sacrebleu                 # rejected: nltk.translate.bleu_score — no pinned tokenizer, so the single most score-moving convention would sit outside this contract
+  # BLEU is reported for TRANSLATION-SHAPED corpora only: Swiss-German dialect is
+  # SPOKEN in dialect and TRANSCRIBED in standard German, so the reference is a
+  # translation, not a transcript. WER counts every legitimate lexical choice
+  # ("gäll" -> "nicht wahr") as a substitution and mismeasures that shape; such a
+  # dataset is scored bleu+wer, and the BLEU is the headline of the pair.
+  # "BLEU" alone is not a number (Post 2018, "A Call for Clarity in Reporting BLEU
+  # Scores") — every convention that moves it is pinned here and mirrored by the
+  # constants in raven_eval_core/bleu.py. tests/test_metric_contract.py fails the
+  # build if the two ever disagree, in either direction.
+  variants:
+    - name: published               # the number we publish
+      tokenize: 13a                 # mteval-v13a, the WMT default
+      lowercase: false              # case-sensitive (signature reads case:mixed) — German capitalizes nouns
+      smooth_method: exp            # sacrebleu default exponential smoothing, pinned rather than inherited
+      effective_order: false        # all 4 orders at corpus level
+      max_ngram_order: 4
+  aggregation: corpus               # Σ n-gram stats over the subset, NEVER a mean of per-sentence BLEUs
+  signature: sacrebleu              # every published BLEU carries its sacrebleu signature (e.g. nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0) — that string, not the word "BLEU", is what makes it comparable
+  also_reported: [sentence]         # raven_eval_core.bleu.sentence_bleu_diagnostic — per-row diagnostic under effective_order=True, not the published number
+
 # Public datasets the Tier-2 full-rerun scores against. Audio is fetched by the
 # harness itself (HF at a pinned revision / the official mirror); we never
 # redistribute restricted audio. Every id below resolves to a loader in this

@@ -169,6 +169,13 @@ the numbers:
   - num2words   — LGPL. Pulled in on the diagnostic-normalization path.
     (`text2num`/`alpha2digit` provides the flozi words→digits direction.)
 
+The BLEU scoring path adds no copyleft obligation:
+
+  - sacrebleu   — Apache-2.0 (Matt Post et al.). The BLEU numbers published here
+    are produced by it under the conventions pinned in benchmark.config.yaml, and
+    each number is published with the sacrebleu signature that names them. Cite:
+    Matt Post, "A Call for Clarity in Reporting BLEU Scores", WMT 2018.
+
 Distributing raven.eval as source keeps the MIT-licensed code MIT — you install
 these deps yourself from PyPI under their own terms. But anyone who ships a
 *bundled* wheel, container image, or other combined/derived distribution that
