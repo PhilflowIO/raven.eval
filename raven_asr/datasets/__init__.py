@@ -23,12 +23,17 @@ WER_LOADERS: Final[dict[str, str]] = {
     "fleurs": "fleurs_de:FleursDeLoader",
     "mls-de": "mls_german:MlsGermanLoader",
     "voxpopuli-de": "voxpopuli_de:VoxPopuliDeLoader",
+    # Swiss German dialect corpora — translation-shaped (Swiss German audio,
+    # Standard German reference), acquired by URL + sha256 rather than through
+    # a pinned HF revision. See raven_asr.config.DIALECT_DATASET_IDS.
+    "spc-test": "spc_test:SpcTestLoader",
+    "fhnw-all-dialects": "fhnw_all_dialects:FhnwAllDialectsLoader",
 }
 
 # Modules in this package that are infrastructure, not a dataset loader. Kept
 # here so the contract test can tell "unregistered loader" from "shared base".
 NON_LOADER_MODULES: Final[frozenset[str]] = frozenset(
-    {"__init__", "base", "hf_single_config"}
+    {"__init__", "base", "hf_single_config", "local_archive"}
 )
 
 

@@ -60,3 +60,16 @@ datasets:
     - id: german-mixed       # avemio / flozi00 asr-german-mixed-evals (Tuda-De CC-BY-4.0, MLS CC-BY-4.0, CV CC0)
       hf: flozi00/asr-german-mixed-evals
       license: CC-BY-4.0 / CC0-1.0 (per subset)
+    # Swiss German dialect corpora. Translation-shaped — Swiss German spoken,
+    # Standard German written — so `metric: bleu+wer`. Each is reported on its
+    # own: there is no aggregate spanning dialects and no dialect contribution to
+    # any overall average.
+    - id: spc-test           # Swiss Parliaments Corpus test, Bernese cantonal parliament
+      hf: i4ds/SPC_test
+      license: MIT (inferred from upstream FHNW SPC; the HF card carries no license tag)
+      metric: bleu+wer
+      acquisition: two test parquet shards by URL, sha256-verified (raven_asr/datasets/spc_test.py)
+    - id: fhnw-all-dialects  # FHNW All Swiss German Dialects Test Set, SwissText 2021 task 3
+      license: MIT
+      metric: bleu+wer
+      acquisition: Dropbox zip by URL, sha256-verified; durability vendor — a durable mirror is outstanding
