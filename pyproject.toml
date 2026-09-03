@@ -55,11 +55,14 @@ diar = [
     "soundfile",
     "numpy",
 ]
-# Tier-2 DER, HOSTED-API lane (raven_diar/adapters/deepgram.py and the hosted
-# adapters that follow it). No torch, no GPU, no model weights: an HTTP client
-# plus the dataset loader is the whole runtime. Its own extra so running a hosted
-# diarizer never drags in a multi-GB local-inference stack — and so the Tier-1
-# re-score path stays untouched by any of it.
+# Tier-2 DER, HOSTED-API lane (raven_diar/adapters/{deepgram,assemblyai}.py and
+# the hosted adapters that follow them). No torch, no GPU, no model weights: an
+# HTTP client plus the dataset loader is the whole runtime. One extra for the
+# lane rather than one per vendor — a second name for the same dependency set is
+# how the two drift apart. Its own extra so running a hosted diarizer never
+# drags in a multi-GB local-inference stack, and so the Tier-1 re-score path
+# stays untouched by any of it. Adapters import httpx lazily, so listing the
+# registry works without this extra at all.
 diar-hosted = [
     "httpx",
     "datasets",

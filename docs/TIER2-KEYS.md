@@ -47,6 +47,11 @@ for a byte-reproducible reference set.
 The `*_URL` / `*_API_KEY` variables name **your** endpoints — this repo never
 ships URLs or key values, only the env-var names the runner reads.
 
+DER adapters keep their own key table in `docs/TIER2-DER-KEYS.md` — the only
+key-bearing one today is `assemblyai-universal-3-5-pro`
+(`ASSEMBLYAI_API_KEY`, hosted, **billed per hour of audio**). Same rule: names
+here, values only in your environment.
+
 Set the key in your environment before `make reproduce`. Missing-key failures
 surface per-utterance in the runner log; the run resumes per-subset from
 `.done_<subset>.json` markers, so a re-run after fixing a key doesn't repeat

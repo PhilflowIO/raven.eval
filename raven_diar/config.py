@@ -103,16 +103,24 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
 class DiarizerSpec:
     """Identifies a diarizer + its adapter binding for the runner."""
 
-    model_id: str        # HF slug (gated model — needs an accepted license + token)
+    model_id: str        # HF slug, or `<vendor>/<model>` for a hosted API
     adapter: str         # adapter module under raven_diar.adapters
     label: str           # short id used in result/artifact directory names
-    revision: str        # HF revision hash/tag — pin, never floating
-    # True for a diarizer that runs behind a vendor API instead of from weights
-    # we fetch. It changes what a *pin* can be: there is no commit hash to pin,
-    # so ``revision`` carries the vendor's own explicit model version (Deepgram's
-    # ``diarize_model=v2``). The requirement is unchanged — the pin must be
-    # explicit and immutable, never an alias like "latest" — only its shape is.
+    revision: str        # the pin — never floating; strictness per `revision_kind`
+    # WHERE it runs. True for a diarizer behind a vendor API rather than from
+    # weights we fetch: it selects the dependency extra and means an API key
+    # instead of a GPU.
     hosted: bool = False
+    # HOW IMMUTABLE the pin is — a different question from `hosted`, and the one
+    # a published number actually depends on. "commit" = a 40-hex HF/git commit;
+    # the bytes cannot change underneath us. "vendor-alias" = the most specific
+    # selector a hosted API offers, which is a MOVING target: the vendor can
+    # re-train behind it and nothing in the API says so. Declaring that weakness
+    # per diarizer keeps it testable, instead of loosening the rule for everyone
+    # — which would let a local spec silently stop pinning a commit. A hosted
+    # adapter must additionally assert at run time that the response names the
+    # alias it asked for.
+    revision_kind: str = "commit"
     # SPDX-ish slug for the WEIGHTS (for a hosted API: the terms the vendor
     # grants). ``DiarDatasetSpec`` has carried a licence from the start; the
     # diarizer side did not, which left the one fact that decides how a row may
@@ -166,9 +174,30 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         label="deepgram-nova-3",
         revision="v2",
         hosted=True,
+        revision_kind="vendor-alias",
         # A hosted API grants terms of service, not a weights licence. Commercial
         # use is what the paid tier is for, so a Deepgram row may compete.
         license="Deepgram commercial terms of service (paid API)",
+        shippable=True,
+    ),
+    # AssemblyAI Universal-3.5 Pro. HOSTED: needs ASSEMBLYAI_API_KEY, no GPU.
+    # AssemblyAI has NO diarization-only endpoint — diarization is the
+    # `speaker_labels` flag on a transcription request, so a DER run also pays
+    # for a transcript (0.21 $/h model + 0.02 $/h diarization add-on, verified on
+    # assemblyai.com/pricing 2026-09-03). `revision` IS the model alias: the
+    # vendor publishes no immutable version, and its DEFAULT is a two-model
+    # fallback chain, so the adapter sends this alias alone and asserts the
+    # response's `speech_model_used` matches it.
+    "assemblyai-universal-3-5-pro": DiarizerSpec(
+        model_id="assemblyai/universal-3-5-pro",
+        adapter="assemblyai",
+        label="assemblyai-universal-3-5-pro",
+        revision="universal-3-5-pro",
+        revision_kind="vendor-alias",
+        hosted=True,
+        # A hosted API grants terms of service, not a weights licence.
+        # Commercial use is what the paid tier is for, so this row may compete.
+        license="AssemblyAI commercial terms of service (paid API)",
         shippable=True,
     ),
     # Adding the next diarizer (diarizen, a hosted API, …) is a module under

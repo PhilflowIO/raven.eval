@@ -80,29 +80,60 @@ def test_dataset_revisions_are_pinned_commits():
     """A published number must hang on an immutable revision, never a branch."""
     import re
 
-    specs = [
-        *DER_DATASETS.values(),
-        *(d for d in KNOWN_DIARIZERS.values() if not d.hosted),
-    ]
-    for spec in specs:
+    for spec in DER_DATASETS.values():
         assert re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
             f"{spec}: revision {spec.revision!r} is not a full commit hash"
         )
 
 
-def test_hosted_diarizers_pin_an_explicit_vendor_version():
-    """Same requirement, different shape: a hosted model has no commit hash.
+def test_diarizer_revisions_are_commits_unless_the_vendor_offers_none():
+    """Same invariant, one declared exception — hosted APIs publish no commit.
 
-    A vendor API exposes a versioned model name instead, so the rule that
-    survives is the one that matters — the pin must name a version, never an
-    alias that the vendor is free to repoint under a published number.
+    A hosted diarizer (Deepgram, AssemblyAI, …) exposes only a model *alias*,
+    which the vendor can re-train behind. That weakness must be declared per
+    spec (`revision_kind="vendor-alias"`), never smuggled in by loosening the
+    regex for everyone: a local-weights spec that silently stopped pinning a
+    commit would then pass unnoticed.
     """
-    hosted = [d for d in KNOWN_DIARIZERS.values() if d.hosted]
-    assert hosted, "no hosted diarizer registered — delete this test, not the pin rule"
-    for spec in hosted:
-        assert spec.revision.strip().lower() not in FLOATING_ALIASES, (
-            f"{spec}: revision {spec.revision!r} is a floating vendor alias"
-        )
+    import re
+
+    for key, spec in KNOWN_DIARIZERS.items():
+        if spec.revision_kind == "commit":
+            assert re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
+                f"{key}: revision {spec.revision!r} is not a full commit hash"
+            )
+        elif spec.revision_kind == "vendor-alias":
+            assert spec.revision, f"{key}: a vendor alias must still be explicit"
+            assert not re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
+                f"{key}: revision looks like a commit — declare revision_kind"
+                f"='commit' so the strict rule applies"
+            )
+            # "whatever is newest" is the one alias a published number may not
+            # hang on: it moves without us doing anything.
+            assert spec.revision.strip().lower() not in FLOATING_ALIASES, (
+                f"{key}: revision {spec.revision!r} is a floating vendor alias"
+            )
+        else:
+            raise AssertionError(
+                f"{key}: unknown revision_kind {spec.revision_kind!r} — expected "
+                f"'commit' or 'vendor-alias'"
+            )
+
+
+def test_where_it_runs_and_how_it_is_pinned_stay_consistent():
+    """`hosted` and `revision_kind` are different questions with one sane pairing.
+
+    A model whose weights we fetch ourselves always has a commit to pin, so a
+    local spec declaring "vendor-alias" is a spec that quietly stopped pinning.
+    The reverse is deliberately NOT asserted: a hosted API that ever offers a
+    real immutable version should be allowed to claim it.
+    """
+    for key, spec in KNOWN_DIARIZERS.items():
+        if not spec.hosted:
+            assert spec.revision_kind == "commit", (
+                f"{key}: runs from weights we fetch, so it has a commit to pin — "
+                f"'vendor-alias' here would be an unpinned local model"
+            )
 
 
 # ── AMI loader (gold from the pinned setup clone, audio from the mirror) ──────

@@ -209,6 +209,28 @@ predicts. **Protocol matters:** the same run reads 20.58 % at collar 0.0 vs
 16.08 % at 0.25 — 4.5 pp on convention alone, so a CALLHOME DER without a stated
 collar + overlap rule is noise.
 
+**The first hosted diarizer (AssemblyAI).** On the same German telephone set,
+AssemblyAI's Universal-3.5 Pro with `speaker_labels` scores **21.74 % DER** at
+`collar=0.25` against community-1's **16.08 %** under the identical protocol,
+scorer and gold RTTMs — 5.7 pp behind the open local model on German telephone
+speech. The error is **miss-dominated** (21.59 miss vs 3.28 false alarm): the
+hypothesis is derived from a *transcript*, so speech the ASR does not transcribe
+— backchannels, crosstalk, laughter — produces no turn at all and is scored as
+missed speech. That is a structural property of diarization-as-a-transcription-
+flag, not a tuning gap, and it is the reason both collars are published here:
+the same run reads 28.69 % at collar 0.0.
+
+Two things make this row comparable rather than merely adjacent. Both providers'
+turns come from the **same shared aggregator**
+(`raven_diar/adapters/aggregate.py`, 0.5 s gap merge), so the difference measures
+the models and not two vendors' folding rules. And the model is **pinned by
+alias**: AssemblyAI publishes no immutable version, its default is a two-model
+fallback chain, so the adapter sends `speech_models: ["universal-3-5-pro"]` alone
+and fails the file if the response's `speech_model_used` names anything else. An
+alias can still move under a re-train — that limitation is the vendor's, and it
+is stated rather than hidden. Cost of this row: 18.43 h of audio at 0.23 $/h
+(0.21 model + 0.02 diarization add-on) ≈ **4.24 $**.
+
 **The meeting regime (AMI).** On the AMI test split (16 four-speaker meetings,
 Mix-Headset = the IHM condition, gold = the `only_words` RTTMs of
 `pyannote/AMI-diarization-setup` @ `67c2d539`) community-1 scores **17.05 % DER**
@@ -275,13 +297,17 @@ make verify
 | pyannote-community-1 | callhome-de (German, telephone) | 20.58 | **16.08** | 13.46 | 3.54 | 3.57 | 120 | [2026-07-31](./artifacts/2026-07-31-callhome-de/pyannote-community-1/) |
 | pyannote-community-1 | ami (test, 4-speaker meetings, IHM) | **17.05** | 13.10 | 9.52 | 3.58 | 3.95 | 16 | [2026-09-02](./artifacts/2026-09-02-ami/pyannote-community-1/) |
 | sortformer-4spk-v1 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 17.34 | 11.41 | 8.27 | 6.43 | 2.64 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer/sortformer-4spk-v1/) |
+| assemblyai-universal-3-5-pro | callhome-de (German, telephone) | 28.69 | **21.74** | 21.59 | 3.28 | 3.82 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-assemblyai/assemblyai-universal-3-5-pro/) |
 
 > VoxConverse **test** DER@0.0 = 11.15 % vs pyannote's published 11.2 % (Δ 0.05 pp)
 > — a direct, un-caveated reproduction. Dev (7.17 %) is the easier split. For
 > CALLHOME-de the comparable column is **collar 0.25** (16.08 %, the ETH-paper
 > protocol), which lands between pyannote 3.1 and pyannoteAI (see above). AMI
 > **test** DER@0.0 = 17.05 % vs pyannote's published 17.0 % for AMI (IHM)
-> (Δ 0.05 pp) — the second direct reproduction.
+> (Δ 0.05 pp) — the second direct reproduction. On CALLHOME-de the hosted
+> AssemblyAI row (21.74 % at collar 0.25) sits 5.7 pp behind community-1
+> (16.08 %) under the same protocol — a measurement on one public set, not a
+> verdict on either product.
 
 > The `sortformer-4spk-v1` row is a **non-commercial reference measurement**
 > (CC-BY-NC-4.0 weights). It is listed to bound the field on German telephone
