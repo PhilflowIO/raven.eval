@@ -106,9 +106,10 @@ end-to-end; they are self-consistent fixtures, **not** Raven product numbers.
 The last two are Swiss German dialect corpora and are **translation-shaped** —
 Swiss German spoken, Standard German written — so they declare
 `metric = "bleu+wer"`. Each is reported on its own: there is no aggregate
-spanning dialects, and no dialect number feeds any overall average. BLEU itself
-is not implemented here yet; until it lands these two carry a WER number only,
-which is a floor, not the figure to compare on.
+spanning dialects, and no dialect number feeds any overall average. BLEU is
+implemented (`raven_eval_core/bleu.py`, signature pinned in
+`benchmark.config.yaml`), so where a run reports both, BLEU is the figure to
+compare on and the WER beside it is a floor.
 
 They are also the two datasets that are *not* acquired through a pinned Hugging
 Face revision. They are loose files behind a URL, so the pin is an explicit
@@ -239,6 +240,13 @@ checkpoint; forcing v1's streaming path instead is measurably a different (worse
 regime — on ten CALLHOME files it reads 23.13 % / 16.42 % where the offline model
 reads 18.94 % / 12.77 % — so no AMI number is published for v1 rather than one
 published under a silently different protocol.
+
+Those last two comparisons, and the memory curve above, are **Tier-3
+diagnostics, not published numbers**: they were measured on ten files and on one
+particular GPU, and no artifact backs them, so by this repo's own rule they
+cannot be cited or compared. They are recorded because they are the evidence for
+a *decision* — why the AMI cell is empty — not as results. The published
+Sortformer figure is the CALLHOME-de row, and it has an artifact.
 
 Reproduce (your HF token + gated license + GPU + shared FFmpeg libs):
 

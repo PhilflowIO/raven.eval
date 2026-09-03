@@ -68,7 +68,9 @@ acceptance, an API key. What it does need:
      `DiarizerSpec` entry, not a flag on this one. Switching v1 into NeMo's
      streaming path does run in ~1 GB, but it is a different regime and it is
      worse: 23.13 % / 16.42 % DER on ten CALLHOME files where the offline model
-     reads 18.94 % / 12.77 %.
+     reads 18.94 % / 12.77 %. Both of those, and the memory figures above, are
+     Tier-3 diagnostics — ten files, one GPU, no committed artifact — so they
+     explain a decision and are not citable numbers.
 
 The revision is pinned via `hf_hub_download` rather than NeMo's
 `from_pretrained`, which accepts no `revision` and would silently track the HF
