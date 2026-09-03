@@ -90,6 +90,9 @@ and we make the reproducible ones *actually* reproducible:
 ## Every number states the rules it was computed under
 
 The exact scoring rules live in [`benchmark.config.yaml`](./benchmark.config.yaml).
+Every metric declared there has an implementation in `raven_eval_core`, and every
+implementation is declared there — `tests/test_metric_contract.py` fails the build
+in both directions, and for BLEU it compares the pinned conventions field by field.
 DER is reported at **both** `collar=0.0` and `collar=0.25` (the two conventions are
 not comparable), so our numbers line up with the pyannote model cards and the ETH
 benchmark paper (arXiv 2509.26177). DER is always dataset-relative: the same model
@@ -112,6 +115,34 @@ under the same normalization and dataset.
 **Can WER be above 100 %?** Yes — insertions count as errors, so a hypothesis much
 longer than the reference can push WER past 100 %.
 
+## What is BLEU, and why does a speech benchmark report it?
+
+BLEU (bilingual evaluation understudy) scores how many n-grams — word sequences of
+length 1 to 4 — a candidate text shares with a reference, with a brevity penalty
+for output that is too short. It runs 0–100; **higher is better**, the opposite
+direction from WER and DER.
+
+It is here because not every corpus is transcription-shaped. Swiss-German dialect
+speech is *spoken* in dialect and *transcribed* in standard German: the reference
+is a translation of what was said, not a record of it. A correct output can
+legitimately differ in word choice and order ("gäll" → "nicht wahr", "lueg" →
+"schau"), and WER charges every one of those as an error. Such a dataset is scored
+**bleu+wer**, with BLEU as the headline of the pair.
+
+The committed `artifacts/_demo_bleu/` fixture shows the gap on eight rows: the
+same output reads as **14.29 % WER** (a badly broken transcript) and **72.24
+BLEU** (a largely correct translation).
+
+**Which BLEU?** The word alone is not a number — tokenizer, case handling and
+smoothing each move it by whole points, which is why cross-paper BLEU comparisons
+were unreliable for years (Post 2018, *A Call for Clarity in Reporting BLEU
+Scores*). We score with **sacrebleu** under conventions pinned in
+[`benchmark.config.yaml`](./benchmark.config.yaml) — `13a` tokenizer,
+case-sensitive, `exp` smoothing, corpus-level — and publish sacrebleu's signature
+(`nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:…`) next to every number.
+That string, not the word "BLEU", is what makes the number comparable. Per-sentence
+BLEU exists in `raven_eval_core.bleu` as a diagnostic and is never published.
+
 ## What is diarization error rate (DER)?
 
 Diarization error rate (DER) measures how accurately a system answers "who spoke
@@ -128,9 +159,10 @@ the number substantially — never compare DER across different rules.
 
 - **`raven_eval_core/`** — the standalone, secret-free metric core. `der.py`
   (Diarization Error Rate via `pyannote.metrics`, collar + overlap parametrized,
-  Hungarian mapping, RTTM I/O) and `flozi_wer.py` (the single source of truth for
+  Hungarian mapping, RTTM I/O), `flozi_wer.py` (the single source of truth for
   published German WER — same normalization for the runner and the re-scorer, so they
-  can't drift). No hardcoded names, no private data.
+  can't drift) and `bleu.py` (corpus BLEU via `sacrebleu` under pinned conventions,
+  for translation-shaped corpora). No hardcoded names, no private data.
 - **`raven_asr/`** — Tier-2 WER harness: pull a public HF subset → run a model
   (Modal / OpenAI / Deepgram / Mistral / vLLM adapter) → score → `predictions_*.jsonl`.
 - **`raven_diar/`** — Tier-2 DER harness: prepare a public diarization dataset → run
@@ -147,7 +179,8 @@ the number substantially — never compare DER across different rules.
   eval runs on real customer meetings whose audio can't be published (consent); those
   are a separate, non-public datapoint. The numbers *here* are on public datasets and
   will differ — that's expected, and we don't blur them.
-- **The demo fixtures** (`artifacts/_demo/`, `artifacts/_demo_der/`) prove the
+- **The demo fixtures** (`artifacts/_demo/`, `artifacts/_demo_bleu/`,
+  `artifacts/_demo_der/`) prove the
   re-score mechanism end-to-end; they are **not** Raven product numbers.
 
 ## License and data attribution

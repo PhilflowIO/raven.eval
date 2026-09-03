@@ -15,6 +15,16 @@ dependencies = [
     # pipeline exactly, which needs these two pure-python libs (no GPU/torch):
     "unidecode",     # foreign-diacritic transliteration (umlauts preserved)
     "text2num",      # alpha2digit(de): German number words -> digits (imports as text_to_num)
+    # BLEU for translation-shaped corpora (Swiss-German dialect spoken / standard
+    # German transcribed). BASE dependency, deliberately not behind an extra: the
+    # Tier-1 re-scorer (scripts/verify.py) re-scores committed BLEU rows and CI
+    # runs it after `uv sync --locked --extra dev` only. sacrebleu is pure python
+    # (colorama/lxml/numpy/portalocker/regex/tabulate) — no torch, no GPU.
+    # Floor at 2.4: `BLEU(..., references=…)` and the signature API this repo
+    # relies on are stable from there. Capped below 3 because a major release is
+    # exactly where a tokenizer default could move and silently shift every
+    # published BLEU; the signature records the exact version per number.
+    "sacrebleu>=2.4,<3",
 ]
 
 [project.optional-dependencies]

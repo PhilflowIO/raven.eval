@@ -1,0 +1,8 @@
+{
+  "Demo-CH-DE": {
+    "wer_pct": 14.2857,
+    "cer_pct": 10.1313,
+    "bleu": 72.2394,
+    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0"
+  }
+}
