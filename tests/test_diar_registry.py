@@ -326,12 +326,25 @@ def test_deepgram_words_without_a_speaker_are_dropped_not_invented():
 
 
 def test_deepgram_refuses_a_response_where_the_diarizer_did_not_run():
-    """An absent diarize_info means no diarizer ran — never score that as 1 speaker."""
+    """Words but no speaker anywhere = no diarizer ran; never score that as 1 speaker."""
     from raven_diar.adapters.deepgram import words_to_spans
 
-    body = _deepgram_body([{"word": "hallo", "start": 0.0, "end": 0.4}], diarized=False)
-    with pytest.raises(ValueError, match="diarize_info"):
+    body = _deepgram_body([
+        {"word": "hallo", "start": 0.0, "end": 0.4},
+        {"word": "ja", "start": 0.5, "end": 0.7},
+    ], diarized=False)
+    with pytest.raises(ValueError, match="no speaker label"):
         words_to_spans(body)
+
+
+def test_deepgram_does_not_gate_on_the_vendor_metadata_block():
+    """The pin is evidenced by diarize_info, but the run is not hostage to it."""
+    from raven_diar.adapters.deepgram import words_to_spans
+
+    body = _deepgram_body(
+        [{"word": "hallo", "start": 0.0, "end": 0.4, "speaker": 0}], diarized=False
+    )
+    assert words_to_spans(body) == [LabelledSpan(0.0, 0.4, "speaker_0")]
 
 
 def test_deepgram_requires_its_key_and_names_the_env_var(monkeypatch):

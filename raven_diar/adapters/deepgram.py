@@ -36,9 +36,13 @@ vendor's silent model update, so both halves of the request are pinned:
 
 Deepgram also echoes ``metadata.diarize_info`` (``model_uuid`` + ``arch``) on any
 request where a diarizer actually ran. We keep it in :attr:`DiarizeResult.raw`,
-which turns the pin into evidence rather than an assertion — and its *absence* is
-how the API signals "the diarizer did not run", which we raise on rather than
-silently score as a one-speaker file.
+which turns the pin into evidence rather than an assertion. We do **not** gate on
+it, though: the property that has to hold is that speaker labels came back, and
+that is observable directly on the words. Gating on the metadata block instead
+would make the whole run hostage to one documented-but-unverified response field.
+What we do refuse is a response with words and no speaker label anywhere — that
+is a diarizer that did not run, and scoring it would publish a fabricated
+"one speaker throughout" as if it were a prediction.
 
 ``httpx`` is imported lazily inside the request path so importing this module for
 the registry pulls nothing, keeping the Tier-1 re-score path dependency-free.
@@ -88,19 +92,11 @@ def words_to_spans(body: dict) -> list[LabelledSpan]:
     manufacture confusion the model never claimed.
 
     Raises:
-        ValueError: if the diarizer did not run (no ``metadata.diarize_info``) or
-            the response carries no word list at all — both are failures that
-            must not be scored as "this file had one speaker".
+        ValueError: if the response carries no word list, or carries words but no
+            speaker label on any of them — the signature of a request where the
+            diarizer did not run. Either would otherwise be scored as "this file
+            had one speaker throughout", which is a fabricated prediction.
     """
-    metadata = body.get("metadata")
-    if not isinstance(metadata, dict) or not isinstance(
-        metadata.get("diarize_info"), dict
-    ):
-        raise ValueError(
-            "Deepgram response has no metadata.diarize_info — the diarizer did "
-            "not run for this request (check the diarize_model parameter). "
-            "Refusing to score an undiarized transcript."
-        )
     results = body.get("results")
     channels = results.get("channels") if isinstance(results, dict) else None
     if not isinstance(channels, list) or not channels:
@@ -124,6 +120,12 @@ def words_to_spans(body: dict) -> list[LabelledSpan]:
         if start is None or end is None:
             continue
         spans.append(LabelledSpan(float(start), float(end), f"speaker_{speaker}"))
+    if words and not spans:
+        raise ValueError(
+            "Deepgram returned words but no speaker label on any of them — the "
+            "diarizer did not run (check the diarize_model parameter). Refusing "
+            "to score an undiarized transcript as a one-speaker file."
+        )
     return spans
 
 
