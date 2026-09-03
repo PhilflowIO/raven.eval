@@ -107,6 +107,12 @@ class DiarizerSpec:
     adapter: str         # adapter module under raven_diar.adapters
     label: str           # short id used in result/artifact directory names
     revision: str        # HF revision hash/tag — pin, never floating
+    # True for a diarizer that runs behind a vendor API instead of from weights
+    # we fetch. It changes what a *pin* can be: there is no commit hash to pin,
+    # so ``revision`` carries the vendor's own explicit model version (Deepgram's
+    # ``diarize_model=v2``). The requirement is unchanged — the pin must be
+    # explicit and immutable, never an alias like "latest" — only its shape is.
+    hosted: bool = False
 
 
 KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
