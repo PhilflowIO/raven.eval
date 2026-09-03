@@ -82,8 +82,20 @@ class WerDatasetSpec:
     # download first, so the loader streams unless the caller says otherwise.
     stream_by_default: bool = False
     # sha256 of the fetched archive, where the source IS a loose archive rather
-    # than a content-addressed HF revision. None for every HF-backed entry.
+    # than a content-addressed HF revision. None for every HF-backed entry, and
+    # None where a corpus is several loose archives — then the per-artifact
+    # manifest lives in the loader module (see raven_asr.datasets.xsid_audio
+    # ARTIFACTS) because one field cannot hold six checksums.
     sha256: str | None = None
+    # Read speech / one speaker / narrow domain corpora are PROBES, not
+    # benchmarks. "low" is a publication constraint, not a footnote: such a row
+    # never carries a winner mark. Mirrors the loader class attribute.
+    representativeness: str = "medium"
+    # False for a dialect probe. A mean spanning two dialect areas describes no
+    # population, and a dialect row inside a general German average silently
+    # moves that average. Enforced by tests/test_xsid_audio.py; there is no
+    # cross-dataset aggregate in this repo today and this keeps it that way.
+    eligible_for_aggregate: bool = True
     notes: str = ""
 
 
@@ -145,6 +157,48 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         durability="hf",
         stream_by_default=True,
         notes="config=de, split=test; raw_text with normalized_text fallback.",
+    ),
+    # ── Dialect probe + control spur (flow.raven#5350) ────────────────────────
+    # These two ids are a matched pair. The same person recorded both varieties
+    # on the same sentences, so only the DELTA is a dialect statement; either id
+    # alone is a number about one voice. Ship both or neither.
+    "xsid-bar": WerDatasetSpec(
+        id="xsid-bar",
+        loader="xsid_audio",
+        license="CC-BY-SA-4.0 + an authors' no-speech-synthesis condition (see /NOTICE)",
+        source="https://zenodo.org/records/21605015",
+        # Zenodo record VERSION — the pin a published number claims. Zenodo
+        # versions are immutable, so this is as strong as an HF revision hash.
+        revision="0.2",
+        subsets=("xsid-bar",),
+        durability="doi",
+        sha256=None,  # six artifacts; manifest in raven_asr.datasets.xsid_audio.ARTIFACTS
+        representativeness="low",
+        eligible_for_aggregate=False,
+        notes=(
+            "Bavarian (rural Upper Bavaria) read speech, 500 test + 300 valid, "
+            "scored against the parallel Standard German sentence — a "
+            "translation-style task (metric_hint 'bleu+wer'; BLEU not yet "
+            "implemented in this repo, so WER only for now). DOI "
+            "10.5281/zenodo.21605015."
+        ),
+    ),
+    "xsid-de-control": WerDatasetSpec(
+        id="xsid-de-control",
+        loader="xsid_audio",
+        license="CC-BY-SA-4.0 + an authors' no-speech-synthesis condition (see /NOTICE)",
+        source="https://zenodo.org/records/21605015",
+        revision="0.2",
+        subsets=("xsid-de-control",),
+        durability="doi",
+        sha256=None,
+        representativeness="low",
+        eligible_for_aggregate=False,
+        notes=(
+            "Standard German control: SAME speaker, SAME sentences, no dialect. "
+            "Exists so xsid-bar has a factor rather than a voice. Plain "
+            "dictation (metric_hint 'wer')."
+        ),
     ),
 }
 

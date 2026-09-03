@@ -23,6 +23,12 @@ WER_LOADERS: Final[dict[str, str]] = {
     "fleurs": "fleurs_de:FleursDeLoader",
     "mls-de": "mls_german:MlsGermanLoader",
     "voxpopuli-de": "voxpopuli_de:VoxPopuliDeLoader",
+    # Dialect probe + its control spur. Two ids, one module on purpose: the
+    # Bavarian number is only a dialect statement as a DELTA against the
+    # Standard German recording of the same speaker on the same sentences, so
+    # the two are registered and retired together, never one without the other.
+    "xsid-bar": "xsid_audio:XsidBavarianLoader",
+    "xsid-de-control": "xsid_audio:XsidGermanControlLoader",
 }
 
 # Modules in this package that are infrastructure, not a dataset loader. Kept

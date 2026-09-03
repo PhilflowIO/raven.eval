@@ -60,3 +60,32 @@ datasets:
     - id: german-mixed       # avemio / flozi00 asr-german-mixed-evals (Tuda-De CC-BY-4.0, MLS CC-BY-4.0, CV CC0)
       hf: flozi00/asr-german-mixed-evals
       license: CC-BY-4.0 / CC0-1.0 (per subset)
+    # ── Dialect probe + its control spur — read the publication rules below ──
+    - id: xsid-bar           # xSID-audio v0.2, Bavarian (rural Upper Bavaria) read speech
+      zenodo: "21605015"
+      doi: 10.5281/zenodo.21605015
+      version: "0.2"
+      license: CC-BY-SA-4.0 (+ authors' no-speech-synthesis condition — see /NOTICE)
+      representativeness: low
+      eligible_for_aggregate: false
+    - id: xsid-de-control    # SAME speaker, SAME sentences, Standard German
+      zenodo: "21605015"
+      doi: 10.5281/zenodo.21605015
+      version: "0.2"
+      license: CC-BY-SA-4.0 (+ authors' no-speech-synthesis condition — see /NOTICE)
+      representativeness: low
+      eligible_for_aggregate: false
+
+# How the dialect rows above may and may not be published. These are not style
+# preferences; each one names a way the number would otherwise mislead.
+dialect_publication_rules:
+  # One speaker, read speech. The number answers "does the model collapse on
+  # Bavarian at all", not "how good is it on Bavarian".
+  - no dialect row ever carries a winner mark, however many rows exist.
+  # xsid-bar alone measures one voice. xsid-bar minus xsid-de-control measures
+  # the dialect. Ship the pair or ship neither.
+  - a dialect row is published only alongside its same-speaker control row.
+  # A mean over Swiss German and Bavarian describes no population.
+  - never form an aggregate that spans two dialect areas.
+  # eligible_for_aggregate=false in raven_asr.config carries this in code.
+  - dialect datasets stay out of any cross-dataset or `overall` average.

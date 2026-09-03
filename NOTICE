@@ -93,6 +93,46 @@ European-Parliament plenary speech with force-aligned transcripts.
     https://huggingface.co/datasets/facebook/voxpopuli
 
 --------------------------------------------------------------------------------
+xSID-audio (xsid-bar, xsid-de-control — WER)
+--------------------------------------------------------------------------------
+Audio and reference transcripts for the `xsid-bar` (Bavarian) and
+`xsid-de-control` (Standard German, same speaker) datasets derive from
+xSID-audio, the speech companion to the xSID cross-lingual intent corpus.
+
+  Licensed under CC BY-SA 4.0
+  (https://creativecommons.org/licenses/by-sa/4.0/).
+  Citation:
+    Blaschke, V., Winkler, M., & Plank, B. (2026). "Standard-to-Dialect
+    Transfer Trends Differ across Text and Speech", ACL 2026.
+    https://aclanthology.org/2026.acl-long.309/
+    plus, for the underlying German/Bavarian xSID data:
+    van der Goot et al. (2021) and Winkler et al. (2024).
+  Source:
+    https://zenodo.org/records/21605015
+    DOI 10.5281/zenodo.21605015, version 0.2 (published 2026-07-27)
+
+ADDITIONAL AUTHORS' CONDITION — NOT A LICENCE TERM.
+CC BY-SA 4.0 does not carry the restriction below, so it does NOT propagate
+automatically with the licence. Anyone who receives this audio, or a share-alike
+derivative of it, must be told of it separately. Reproduced verbatim from the
+Zenodo record description and the corpus README:
+
+    "We share the audio recordings for research on processing spoken language
+    data, but do not permit their use in the context of speech synthesis or
+    voice cloning."
+
+raven.eval only runs speech recognition on these clips. Nothing from this corpus
+may enter a TTS, voice-conversion or voice-cloning pipeline, and this paragraph
+must travel with any republished clip. The audio itself is fetched from Zenodo by
+the loader and is never redistributed here; committed reference text is
+CC BY-SA 4.0 and is redistributed under those terms with this attribution — note
+that share-alike binds adaptations of that text, unlike the CC-BY corpora above.
+
+Measurement caveat, restated here because a licence file is often the only page
+a re-user reads: one speaker recorded BOTH varieties, and the speech is read, not
+spontaneous. Only the delta between the two ids is a statement about Bavarian.
+
+--------------------------------------------------------------------------------
 VoxConverse (diarization — DER)
 --------------------------------------------------------------------------------
 Gold diarization RTTMs for the `voxconverse` dataset derive from VoxConverse.
