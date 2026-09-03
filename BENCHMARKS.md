@@ -250,13 +250,14 @@ be shipped: no commercial deployment may follow from it, whatever the number say
 Both collars again move the picture by ~6 pp, which is why neither figure means
 anything without its convention stated.
 
-**What the German column shows.** Four diarizers on the same 120 CALLHOME-de
+**What the German column shows.** Five diarizers on the same 120 CALLHOME-de
 files, same gold, same scorer, same two collars. At the classic collar:
 pyannote-community-1 **16.08**, deepgram-nova-3 19.31, assemblyai-universal-3-5-pro
-21.74 — and sortformer-4spk-v1 at 11.41, which is the best number on the page and
-the one we cannot ship, because its weights are non-commercial. So the model
-Raven actually runs is ahead of both metered vendors on German telephone speech,
-and behind a research checkpoint nobody can deploy commercially.
+21.74, sortformer-4spk-v1 11.41 — and sortformer-streaming-4spk-v2 at **8.98**,
+which is the best number on the page and, unlike v1, one we could ship: its
+weights are CC-BY-4.0, not CC-BY-NC-4.0. So on German telephone speech the
+streaming NVIDIA checkpoint is 7.1 pp ahead of the model Raven actually runs,
+which is in turn ahead of both metered vendors.
 
 Read the error columns before the ranking. Both hosted rows are miss-dominated
 (AssemblyAI 21.59 miss against 3.28 false alarm), and that is structural rather
@@ -268,27 +269,52 @@ vendor actually sells.
 
 No winner mark is awarded here. Under ADR-app-0036 a star needs at least two
 rows among *shippable* models on the same set, and it may never go to a
-non-commercial one.
+non-commercial one. CALLHOME-de now carries four shippable rows, so the bar is
+met on that set — but a mark is a product decision and not this document's to
+make, and the AMI column below is the reason to hesitate: the same checkpoint
+that wins German telephone by 7.1 pp loses meetings by 9.9 pp.
 
-**Sortformer has no AMI row, and that is a property of the checkpoint.** The
+**The offline Sortformer still has no AMI row; the streaming one does.** The
 offline `4spk-v1` model attends over the whole recording, so activation memory
 grows with the *square* of the duration: measured on one 3090, peak allocation is
 1.02 GB at 2 min, 4.95 GB at 6 min, 12.65 GB at 10 min, and OOM at 12 min
 (fit: ≈3.5e-5 GB/s²). The **shortest** AMI test meeting is 14 min (≈25 GB) and the
 longest is 50 min (≈310 GB) — so the AMI split is out of reach of a 24 GB GPU by
 construction, not by configuration, and an 80 GB card would still stop at ~25 min.
-NVIDIA's answer for long-form audio is the separate `diar_streaming_sortformer_4spk-v2`
-checkpoint; forcing v1's streaming path instead is measurably a different (worse)
-regime — on ten CALLHOME files it reads 23.13 % / 16.42 % where the offline model
-reads 18.94 % / 12.77 % — so no AMI number is published for v1 rather than one
-published under a silently different protocol.
+Forcing v1's streaming path instead is measurably a different (worse) regime — on
+ten CALLHOME files it reads 23.13 % / 16.42 % where the offline model reads
+18.94 % / 12.77 % — so no AMI number is published for v1 rather than one published
+under a silently different protocol.
 
-Those last two comparisons, and the memory curve above, are **Tier-3
+The `diar_streaming_sortformer_4spk-v2` checkpoint is NVIDIA's own answer to
+exactly that, and it holds: all 16 AMI test meetings completed on the same 24 GB
+3090, the 49.5-minute one in 8.2 s of wall clock. A bounded speaker cache
+replaces quadratic attention, so GPU memory does not track duration — sampled at
+~1.1 GB above idle during a 30-minute meeting, the same order as a 10-minute
+telephone call. Meeting-length audio is reachable.
+
+**Reachable is not the same as good.** On AMI the streaming checkpoint reads
+25.97 % / 23.03 % against community-1's 17.05 % / 13.10 % — 9.9 pp *behind* at
+the classic collar, on the corpus shape that matters most to Raven, and this from
+the model that wins German telephone by 7.1 pp. The error columns say why: miss
+20.52 % against community-1's 9.52 %, with false alarm and confusion both lower
+(2.82 / 2.63 versus 3.58 / 3.95). The streaming model is systematically too
+conservative on meeting speech — it hears less, not the wrong person. That is
+consistent with NVIDIA's own note that a newer `4spk-v2.1` checkpoint exists
+"providing greater robustness for meeting speech"; measuring that one is the
+obvious next row, and it is not measured here.
+
+Both AMI recordings are 4-speaker, inside the checkpoint's hard cap. The cap
+still bounds where the model may be used at all: NVIDIA reports 13.24 % DER at
+≤4 speakers against 42.56 % at ≥5 on DIHARD-III Eval, so a five-person meeting is
+outside what this row says anything about.
+
+The v1 memory curve and the forced-streaming comparison above are **Tier-3
 diagnostics, not published numbers**: they were measured on ten files and on one
 particular GPU, and no artifact backs them, so by this repo's own rule they
 cannot be cited or compared. They are recorded because they are the evidence for
-a *decision* — why the AMI cell is empty — not as results. The published
-Sortformer figure is the CALLHOME-de row, and it has an artifact.
+a *decision* — why the v1 AMI cell is empty — not as results. Both
+`sortformer-streaming-4spk-v2` figures are published rows and have artifacts.
 
 Reproduce (your HF token + gated license + GPU + shared FFmpeg libs):
 
@@ -310,6 +336,19 @@ make promote   METRIC=der RESULTS=results/reproduce-der/sortformer-4spk-v1 RUN=$
 make verify
 ```
 
+The streaming checkpoint is the same extra and the same two commands; it is the
+one that also runs AMI:
+
+```bash
+make reproduce METRIC=der DATASET=callhome-de MODEL=sortformer-streaming-4spk-v2 EXTRA=sortformer \
+  MODEL_REV=5240a64075176943f677d30fa2171c780229f341
+make promote   METRIC=der RESULTS=results/reproduce-der/sortformer-streaming-4spk-v2 RUN=$(date +%F)-callhome-de-sortformer-v2
+make reproduce METRIC=der DATASET=ami MODEL=sortformer-streaming-4spk-v2 EXTRA=sortformer \
+  MODEL_REV=5240a64075176943f677d30fa2171c780229f341
+make promote   METRIC=der RESULTS=results/reproduce-der/sortformer-streaming-4spk-v2 RUN=$(date +%F)-ami-sortformer-v2
+make verify
+```
+
 | model | dataset | DER (collar 0.0) | DER (collar 0.25) | miss | FA | conf | n | run |
 |-------|---------|-----------------:|------------------:|-----:|---:|-----:|--:|-----|
 | pyannote-community-1 | voxconverse (dev) | 7.17 | 5.00 | 2.33 | 2.26 | 2.58 | 216 | [2026-07-30](./artifacts/2026-07-30/pyannote-community-1/) |
@@ -319,6 +358,8 @@ make verify
 | sortformer-4spk-v1 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 17.34 | 11.41 | 8.27 | 6.43 | 2.64 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer/sortformer-4spk-v1/) |
 | assemblyai-universal-3-5-pro | callhome-de (German, telephone) | 28.69 | **21.74** | 21.59 | 3.28 | 3.82 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-assemblyai/assemblyai-universal-3-5-pro/) |
 | deepgram-nova-3 | callhome-de (German, telephone) | 26.12 | **19.31** | 17.27 | 4.16 | 4.69 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-deepgram/deepgram-nova-3/) |
+| sortformer-streaming-4spk-v2 | callhome-de (German, telephone) | 14.82 | **8.98** | 5.94 | 7.20 | 1.68 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer-v2/sortformer-streaming-4spk-v2/) |
+| sortformer-streaming-4spk-v2 | ami (test, 4-speaker meetings, IHM) | **25.97** | 23.03 | 20.52 | 2.82 | 2.63 | 16 | [2026-09-03](./artifacts/2026-09-03-ami-sortformer-v2/sortformer-streaming-4spk-v2/) |
 
 > VoxConverse **test** DER@0.0 = 11.15 % vs pyannote's published 11.2 % (Δ 0.05 pp)
 > — a direct, un-caveated reproduction. Dev (7.17 %) is the easier split. For
@@ -334,6 +375,17 @@ make verify
 > (CC-BY-NC-4.0 weights). It is listed to bound the field on German telephone
 > speech; it is not a candidate for anything Raven ships, and no ranking here
 > implies otherwise. It carries no AMI entry for the reason stated above.
+
+> The two `sortformer-streaming-4spk-v2` rows are **CC-BY-4.0** and therefore
+> shippable — the whole reason to measure this checkpoint rather than only v1.
+> Both were produced with one streaming configuration (NVIDIA's "very high
+> latency" row: chunk 340, right context 40, FIFO 40, update period 300, speaker
+> cache 188, all in 80 ms frames), automatic VAD, no oracle speaker count and no
+> per-dataset post-processing, so the two numbers are comparable to each other
+> and to every other row on this page. NVIDIA's own CALLHOME and DIHARD
+> post-processing YAMLs are per-corpus tuning and are deliberately not applied.
+> The checkpoint is capped at **4 speakers**; both sets are inside that cap, and
+> nothing here says anything about a five-person meeting.
 
 > Public-dataset DER is **not** Raven's private-meeting DER — it is the externally
 > checkable proxy anyone can reproduce, and it will differ from the internal number.

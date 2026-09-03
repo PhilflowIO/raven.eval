@@ -1,0 +1,21 @@
+{
+  "model_id": "nvidia/diar_streaming_sortformer_4spk-v2",
+  "label": "sortformer-streaming-4spk-v2",
+  "adapter": "sortformer",
+  "model_revision": "5240a64075176943f677d30fa2171c780229f341",
+  "dataset": "ami",
+  "dataset_revision": "67c2d539286e89f68952d5dcf83912bd9f01dfae",
+  "limit_per_dataset": null,
+  "n_skipped_no_audio": 0,
+  "results": {
+    "ami": {
+      "dataset": "ami",
+      "n_files": 16,
+      "der_full": 25.974590547270942,
+      "der_classic": 23.029502855154956,
+      "miss": 20.523310534987285,
+      "fa": 2.8189820356396065,
+      "conf": 2.6322979766440495
+    }
+  }
+}
