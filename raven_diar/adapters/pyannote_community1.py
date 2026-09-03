@@ -103,3 +103,8 @@ class PyannoteCommunity1Diarizer:
             latency_s=latency_s,
             raw={"model_id": self.model_id, "revision": self.revision},
         )
+
+
+#: Registry entry point (see raven_diar.registry) — the runner resolves
+#: ``DiarizerSpec.adapter == "pyannote_community1"`` to this attribute.
+ADAPTER = PyannoteCommunity1Diarizer

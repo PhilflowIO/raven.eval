@@ -26,6 +26,7 @@ from raven_eval_core.der import to_rttm
 
 from .config import DER_DATASETS, KNOWN_DIARIZERS
 from .datasets.base import DiarDatasetLoader
+from .registry import DATASET_LOADERS, DIARIZER_ADAPTERS
 from .score import score_rttm_pairs
 
 logger = logging.getLogger("raven_diar.reproduce")
@@ -34,28 +35,25 @@ _SUPPORTED_METRICS = ("der",)
 
 
 def _make_loader(loader_name: str, split: str | None = None) -> DiarDatasetLoader:
-    if loader_name == "voxconverse":
-        from .datasets.voxconverse import VoxConverseLoader
-        return VoxConverseLoader(**({"split": split} if split else {}))
-    if loader_name == "callhome_de":
-        from .datasets.callhome_de import CallhomeDeLoader
-        return CallhomeDeLoader()
-    if loader_name == "ami":
-        from .datasets.ami import AMILoader
-        return AMILoader(**({"split": split} if split else {}))
-    raise ValueError(f"unknown loader: {loader_name}")
+    """Build the loader named by ``DiarDatasetSpec.loader`` (registry dispatch)."""
+    loader_cls = DATASET_LOADERS.resolve(loader_name)
+    return loader_cls(**({"split": split} if split else {}))
 
 
 def _make_diarizer(model_key: str, revision: str | None):
+    """Build the adapter named by ``DiarizerSpec.adapter`` (registry dispatch).
+
+    Every adapter takes the same three kwargs, which is what makes adding a
+    diarizer a module + a spec entry and nothing else. The import happens inside
+    ``resolve`` — torch/nemo are pulled only for the adapter actually selected.
+    """
     spec = KNOWN_DIARIZERS[model_key]
-    if spec.adapter == "pyannote_community1":
-        from .adapters.pyannote_community1 import PyannoteCommunity1Diarizer
-        return PyannoteCommunity1Diarizer(
-            provider_id=spec.label,
-            model_id=spec.model_id,
-            revision=revision or spec.revision,
-        )
-    raise ValueError(f"unknown diarizer adapter: {spec.adapter}")
+    adapter_cls = DIARIZER_ADAPTERS.resolve(spec.adapter)
+    return adapter_cls(
+        provider_id=spec.label,
+        model_id=spec.model_id,
+        revision=revision or spec.revision,
+    )
 
 
 def _print_benchmarks_row(dataset: str, model: str, score) -> None:
