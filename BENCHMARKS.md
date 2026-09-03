@@ -150,6 +150,29 @@ second vendor number this scorer reproduces exactly. At collar 0.25 the same
 run reads 13.10 %. Audio for this set is fetched by `prepare()` from the
 Edinburgh AMI mirror (CC-BY-4.0), so the run below is fully self-contained.
 
+**The second diarizer (Sortformer 4spk-v1) — a reference row, not a shippable
+option.** `nvidia/diar_sortformer_4spk-v1` @ `9f17b10d` is an end-to-end neural
+diarizer run locally through NeMo (no HF token, no gated licence). On CALLHOME-de
+— the same 120 German telephone files, the same gold, the same scorer — it reads
+**17.34 % DER at collar 0.0** and **11.41 % at collar 0.25**. Its weights are
+**CC-BY-NC-4.0 (non-commercial)**, so this row exists to bound the field, not to
+be shipped: no commercial deployment may follow from it, whatever the number says.
+Both collars again move the picture by ~6 pp, which is why neither figure means
+anything without its convention stated.
+
+**Sortformer has no AMI row, and that is a property of the checkpoint.** The
+offline `4spk-v1` model attends over the whole recording, so activation memory
+grows with the *square* of the duration: measured on one 3090, peak allocation is
+1.02 GB at 2 min, 4.95 GB at 6 min, 12.65 GB at 10 min, and OOM at 12 min
+(fit: ≈3.5e-5 GB/s²). The **shortest** AMI test meeting is 14 min (≈25 GB) and the
+longest is 50 min (≈310 GB) — so the AMI split is out of reach of a 24 GB GPU by
+construction, not by configuration, and an 80 GB card would still stop at ~25 min.
+NVIDIA's answer for long-form audio is the separate `diar_streaming_sortformer_4spk-v2`
+checkpoint; forcing v1's streaming path instead is measurably a different (worse)
+regime — on ten CALLHOME files it reads 23.13 % / 16.42 % where the offline model
+reads 18.94 % / 12.77 % — so no AMI number is published for v1 rather than one
+published under a silently different protocol.
+
 Reproduce (your HF token + gated license + GPU + shared FFmpeg libs):
 
 ```bash
@@ -161,12 +184,22 @@ make promote   METRIC=der RESULTS=results/reproduce-der/pyannote-community-1 RUN
 make verify
 ```
 
+Sortformer needs neither a token nor the gated licence — only its own extra:
+
+```bash
+make reproduce METRIC=der DATASET=callhome-de MODEL=sortformer-4spk-v1 EXTRA=sortformer \
+  MODEL_REV=9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08
+make promote   METRIC=der RESULTS=results/reproduce-der/sortformer-4spk-v1 RUN=$(date +%F)-callhome-de-sortformer
+make verify
+```
+
 | model | dataset | DER (collar 0.0) | DER (collar 0.25) | miss | FA | conf | n | run |
 |-------|---------|-----------------:|------------------:|-----:|---:|-----:|--:|-----|
 | pyannote-community-1 | voxconverse (dev) | 7.17 | 5.00 | 2.33 | 2.26 | 2.58 | 216 | [2026-07-30](./artifacts/2026-07-30/pyannote-community-1/) |
 | pyannote-community-1 | voxconverse (**test**) | **11.15** | 8.41 | 3.38 | 4.08 | 3.68 | 232 | [2026-07-31](./artifacts/2026-07-31-voxconverse-test/pyannote-community-1/) |
 | pyannote-community-1 | callhome-de (German, telephone) | 20.58 | **16.08** | 13.46 | 3.54 | 3.57 | 120 | [2026-07-31](./artifacts/2026-07-31-callhome-de/pyannote-community-1/) |
 | pyannote-community-1 | ami (test, 4-speaker meetings, IHM) | **17.05** | 13.10 | 9.52 | 3.58 | 3.95 | 16 | [2026-09-02](./artifacts/2026-09-02-ami/pyannote-community-1/) |
+| sortformer-4spk-v1 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 17.34 | 11.41 | 8.27 | 6.43 | 2.64 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer/sortformer-4spk-v1/) |
 
 > VoxConverse **test** DER@0.0 = 11.15 % vs pyannote's published 11.2 % (Δ 0.05 pp)
 > — a direct, un-caveated reproduction. Dev (7.17 %) is the easier split. For
@@ -174,6 +207,11 @@ make verify
 > protocol), which lands between pyannote 3.1 and pyannoteAI (see above). AMI
 > **test** DER@0.0 = 17.05 % vs pyannote's published 17.0 % for AMI (IHM)
 > (Δ 0.05 pp) — the second direct reproduction.
+
+> The `sortformer-4spk-v1` row is a **non-commercial reference measurement**
+> (CC-BY-NC-4.0 weights). It is listed to bound the field on German telephone
+> speech; it is not a candidate for anything Raven ships, and no ranking here
+> implies otherwise. It carries no AMI entry for the reason stated above.
 
 > Public-dataset DER is **not** Raven's private-meeting DER — it is the externally
 > checkable proxy anyone can reproduce, and it will differ from the internal number.

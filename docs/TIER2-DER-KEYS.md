@@ -54,6 +54,19 @@ acceptance, an API key. What it does need:
    * The checkpoint is **`4spk`**: a hard cap of four speakers. Audio with more
      speakers gets folded into four tracks, which surfaces as speaker confusion.
      That is why AMI (4 speakers) and CALLHOME-de (2) are in scope for it.
+   * **It is an offline model, and its memory grows with the square of the
+     recording length.** Measured on one RTX 3090 (peak CUDA allocation):
+     1.02 GB @ 2 min, 2.51 @ 4, 4.95 @ 6, 8.32 @ 8, 12.65 @ 10, OOM @ 12
+     (≈3.5e-5 GB/s²). So a 24 GB card tops out near 13 minutes of audio and an
+     80 GB card near 25. CALLHOME-de (≈9 min mean) fits; **AMI does not** — its
+     shortest test meeting is 14 min (≈25 GB), its longest 50 min (≈310 GB), so
+     `DATASET=ami MODEL=sortformer-4spk-v1` will OOM on any single GPU. For
+     long-form audio NVIDIA ships a different checkpoint,
+     `nvidia/diar_streaming_sortformer_4spk-v2`; that is a new
+     `DiarizerSpec` entry, not a flag on this one. Switching v1 into NeMo's
+     streaming path does run in ~1 GB, but it is a different regime and it is
+     worse: 23.13 % / 16.42 % DER on ten CALLHOME files where the offline model
+     reads 18.94 % / 12.77 %.
 
 The revision is pinned via `hf_hub_download` rather than NeMo's
 `from_pretrained`, which accepts no `revision` and would silently track the HF
