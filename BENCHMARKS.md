@@ -250,6 +250,26 @@ be shipped: no commercial deployment may follow from it, whatever the number say
 Both collars again move the picture by ~6 pp, which is why neither figure means
 anything without its convention stated.
 
+**What the German column shows.** Four diarizers on the same 120 CALLHOME-de
+files, same gold, same scorer, same two collars. At the classic collar:
+pyannote-community-1 **16.08**, deepgram-nova-3 19.31, assemblyai-universal-3-5-pro
+21.74 — and sortformer-4spk-v1 at 11.41, which is the best number on the page and
+the one we cannot ship, because its weights are non-commercial. So the model
+Raven actually runs is ahead of both metered vendors on German telephone speech,
+and behind a research checkpoint nobody can deploy commercially.
+
+Read the error columns before the ranking. Both hosted rows are miss-dominated
+(AssemblyAI 21.59 miss against 3.28 false alarm), and that is structural rather
+than incidental: neither vendor exposes diarization on its own, so speech the
+ASR does not transcribe — backchannels, interjections, laughter — produces no
+turn at all and scores as missed speech. A diarization-only system has no such
+failure mode. The comparison is still fair, because it is the product each
+vendor actually sells.
+
+No winner mark is awarded here. Under ADR-app-0036 a star needs at least two
+rows among *shippable* models on the same set, and it may never go to a
+non-commercial one.
+
 **Sortformer has no AMI row, and that is a property of the checkpoint.** The
 offline `4spk-v1` model attends over the whole recording, so activation memory
 grows with the *square* of the duration: measured on one 3090, peak allocation is
@@ -298,6 +318,7 @@ make verify
 | pyannote-community-1 | ami (test, 4-speaker meetings, IHM) | **17.05** | 13.10 | 9.52 | 3.58 | 3.95 | 16 | [2026-09-02](./artifacts/2026-09-02-ami/pyannote-community-1/) |
 | sortformer-4spk-v1 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 17.34 | 11.41 | 8.27 | 6.43 | 2.64 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer/sortformer-4spk-v1/) |
 | assemblyai-universal-3-5-pro | callhome-de (German, telephone) | 28.69 | **21.74** | 21.59 | 3.28 | 3.82 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-assemblyai/assemblyai-universal-3-5-pro/) |
+| deepgram-nova-3 | callhome-de (German, telephone) | 26.12 | **19.31** | 17.27 | 4.16 | 4.69 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-deepgram/deepgram-nova-3/) |
 
 > VoxConverse **test** DER@0.0 = 11.15 % vs pyannote's published 11.2 % (Δ 0.05 pp)
 > — a direct, un-caveated reproduction. Dev (7.17 %) is the easier split. For

@@ -1,0 +1,21 @@
+{
+  "model_id": "nova-3-general",
+  "label": "deepgram-nova-3",
+  "adapter": "deepgram",
+  "model_revision": "v2",
+  "dataset": "callhome-de",
+  "dataset_revision": "17c8a153215aa7c50b805078fd6284ba81c2fc47",
+  "limit_per_dataset": null,
+  "n_skipped_no_audio": 0,
+  "results": {
+    "callhome-de": {
+      "dataset": "callhome-de",
+      "n_files": 120,
+      "der_full": 26.116911780246845,
+      "der_classic": 19.31116768032571,
+      "miss": 17.265841639200453,
+      "fa": 4.163159392694419,
+      "conf": 4.687910748351968
+    }
+  }
+}

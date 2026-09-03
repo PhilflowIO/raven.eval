@@ -309,3 +309,24 @@ def test_promote_rejects_empty_run(tmp_path: Path):
     (run / "summary.json").write_text(json.dumps({"results": {}}))
     with pytest.raises(FileNotFoundError):
         promote(run, tmp_path / "artifacts", "r")
+
+
+def test_the_published_gap_threshold_matches_the_contract():
+    """The folding threshold is a published quantity, not an implementation detail.
+
+    A ~1 pp DER swing across a 4x sweep of it is twenty times the reproduction
+    tolerance, so a reader who does not know the value cannot reproduce the
+    number. Config and code must therefore not be able to drift apart.
+    """
+    import yaml
+
+    from raven_diar.adapters.aggregate import DEFAULT_GAP_MERGE_S
+
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "benchmark.config.yaml").read_text()
+    )
+    assert config["der"]["turn_gap_merge_s"] == DEFAULT_GAP_MERGE_S, (
+        "benchmark.config.yaml publishes a turn-folding threshold that the "
+        "shared aggregator does not use — every hosted DER row would be "
+        "measured under rules the committed contract misstates."
+    )

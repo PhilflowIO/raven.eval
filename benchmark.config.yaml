@@ -22,6 +22,21 @@ der:
       skip_overlap: false
   speaker_mapping: hungarian   # optimal, via scipy.linear_sum_assignment
   vad: automatic               # no oracle VAD, no oracle #speakers, no per-dataset tuning
+  # Hosted diarizers return speaker-labelled WORDS, not turns. Folding words
+  # into turns bridges silences up to this many seconds; every hosted adapter
+  # uses the one shared implementation (raven_diar/adapters/aggregate.py) so a
+  # DER gap between two vendors measures the models and not two private
+  # foldings. It is declared here because it is a PUBLISHED quantity: measured
+  # on 10 CALLHOME-de files with Deepgram, DER moves about 1 pp across a 4x
+  # sweep of it — twenty times the 0.05 pp reproduction tolerance.
+  #   gap 0.25 -> 28.96 / 21.22   (full / classic collar)
+  #   gap 0.50 -> 28.33 / 20.30   <- published
+  #   gap 1.00 -> 29.54 / 21.07
+  # The trade is the expected one: a wider gap misses less and false-alarms
+  # more. 0.5 is not tuned, it is the middle of a shallow curve — but a reader
+  # who does not know the value cannot reproduce the number, which is why it
+  # stopped being an implementation detail.
+  turn_gap_merge_s: 0.5
 
 wer:
   scorer: jiwer
