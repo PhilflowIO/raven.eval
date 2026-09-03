@@ -100,6 +100,24 @@ end-to-end; they are self-consistent fixtures, **not** Raven product numbers.
 | `fleurs` | `google/fleurs` | `de_de` / `test` | CC-BY-4.0 |
 | `mls-de` | `facebook/multilingual_librispeech` | `german` / `test` | CC-BY-4.0 |
 | `voxpopuli-de` | `facebook/voxpopuli` | `de` / `test` | CC0-1.0 |
+| `spc-test` | `i4ds/SPC_test` | `test` | MIT — *inferred* from upstream FHNW SPC; the HF card carries no license tag (`/NOTICE`) |
+| `fhnw-all-dialects` | FHNW i4ds, SwissText 2021 task 3 ([Dropbox distribution](https://www.dropbox.com/s/rfmjqkdjox7xstq/clickworker_collection_1.zip?dl=1)) | `test` (public half) | MIT (`/NOTICE`) |
+
+The last two are Swiss German dialect corpora and are **translation-shaped** —
+Swiss German spoken, Standard German written — so they declare
+`metric = "bleu+wer"`. Each is reported on its own: there is no aggregate
+spanning dialects, and no dialect number feeds any overall average. BLEU itself
+is not implemented here yet; until it lands these two carry a WER number only,
+which is a floor, not the figure to compare on.
+
+They are also the two datasets that are *not* acquired through a pinned Hugging
+Face revision. They are loose files behind a URL, so the pin is an explicit
+sha256 verified on every acquisition
+(`raven_asr/datasets/local_archive.py`). `fhnw-all-dialects` is distributed via a
+Dropbox share link: citable and checksummed, but with no version history and no
+institutional commitment, so it is ranked `durability = "vendor"` and carried as
+a tracked liability — a durable mirror (self-hosting, or a Zenodo deposit with a
+DOI) is **outstanding**. See `/NOTICE` for the full statement.
 
 Revisions are pinned in `raven_asr.config.WER_DATASETS`; the harness fetches the
 audio itself. Numbers appear here once a model run is **promoted**

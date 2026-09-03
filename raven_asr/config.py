@@ -85,6 +85,12 @@ class WerDatasetSpec:
     # than a content-addressed HF revision. None for every HF-backed entry.
     sha256: str | None = None
     notes: str = ""
+    # Which metric family scores this corpus. "wer" is the default and the only
+    # one raven_eval_core implements today. "bleu+wer" marks a translation-shaped
+    # corpus (dialect audio, Standard German reference) where WER alone punishes
+    # a correct translation for not being a transliteration — declared here so
+    # the corpus states its requirement rather than the scorer guessing.
+    metric: str = "wer"
 
 
 # The PUBLIC datasets the WER Tier-2 harness scores against. Audio is fetched by
@@ -146,7 +152,79 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         stream_by_default=True,
         notes="config=de, split=test; raw_text with normalized_text fallback.",
     ),
+    # ── Swiss German dialect corpora ────────────────────────────────────────
+    # Both are translation-shaped: Swiss German spoken, Standard German written.
+    # Neither is acquired through datasets.load_dataset — they are loose files
+    # behind a URL, so the pin is an explicit sha256 verified on every
+    # acquisition (raven_asr/datasets/local_archive.py), per ADR-app-0054:
+    # reproducibility is a property of the acquisition path, not of the licence.
+    "spc-test": WerDatasetSpec(
+        id="spc-test",
+        loader="spc_test",
+        # NOT a stated licence. The i4ds/SPC_test card carries no license tag at
+        # all (Hub API cardData has no `license` key, checked 2026-09-03); MIT is
+        # inherited from the upstream FHNW SPC publication. /NOTICE says so in
+        # those words — do not shorten this to "MIT".
+        license="MIT (inferred from upstream FHNW SPC; HF card carries no tag)",
+        source="i4ds/SPC_test",
+        # The Hub repo commit the shard digests were taken at. Changing this
+        # without re-pinning the digests in spc_test.SHARDS is rejected by the
+        # loader — a revision without matching digests verifies nothing.
+        revision="48c389fb6b88c8e80f03273a677a422729183e06",
+        subsets=("spc-test",),
+        durability="hf",
+        # Per-shard digests live next to the URLs they belong to, in
+        # spc_test.SHARDS; a single field cannot carry two.
+        sha256=None,
+        metric="bleu+wer",
+        notes=(
+            "Bernese cantonal parliament, 3,332 test utterances. Two parquet "
+            "shards fetched from the Hub resolve/<revision> endpoint and "
+            "sha256-verified. FLAC payload is 48 kHz despite the card declaring "
+            "a 16 kHz Audio() feature; the loader yields the true native rate."
+        ),
+    ),
+    "fhnw-all-dialects": WerDatasetSpec(
+        id="fhnw-all-dialects",
+        loader="fhnw_all_dialects",
+        license="MIT",  # verified verbatim against README.txt inside the archive
+        source=(
+            "https://www.dropbox.com/s/rfmjqkdjox7xstq/"
+            "clickworker_collection_1.zip?dl=1"
+        ),
+        # No upstream revision exists to pin — a Dropbox share link has no
+        # version history. That absence is the liability; the sha256 below is
+        # what stands in for it.
+        revision=None,
+        subsets=("fhnw-all-dialects",),
+        # "vendor" is the machine-readable form of an open action item: a
+        # durable mirror (self-hosted, or a Zenodo deposit with a DOI) is
+        # outstanding as of 2026-09-03. ADR-app-0054 decides that we keep
+        # publishing the corpus meanwhile, verify the digest on every fetch, and
+        # mark the number as no-longer-externally-reproducible only if the link
+        # dies before the mirror exists.
+        durability="vendor",
+        sha256="7ca2492143b6d418ca42d6407f939ce8d2c53f66999e05906931ccefe6ff3148",
+        metric="bleu+wer",
+        notes=(
+            "SwissText 2021 task 3, 5,750 utterances / 12.72 h across all Swiss "
+            "dialect regions. public.tsv + clips.tar out of a checksum-verified "
+            "zip; dialect region travels in the sample_id."
+        ),
+    ),
 }
+
+# The dialect corpora, kept as an explicit set so the "never aggregate across
+# dialects" rule is checkable rather than a convention. Two things must stay
+# true and are asserted in tests/test_swiss_dialect_datasets.py:
+#   * no dialect id is a `german-mixed` subset, so the "All" aggregation that
+#     spans Tuda-De / MLS / Common Voice can never absorb one;
+#   * each dialect id owns exactly one subset — its own — so a run against it
+#     produces a per-corpus number and nothing wider. There is deliberately no
+#     Swiss+Bavarian "Mundart" figure, and no dialect contribution to any
+#     overall average: the varieties are different languages-in-practice and a
+#     mean over them would describe no corpus that exists.
+DIALECT_DATASET_IDS: Final[frozenset[str]] = frozenset({"spc-test", "fhnw-all-dialects"})
 
 
 def resolve_wer_dataset(selector: str) -> tuple[str, str]:
