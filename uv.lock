@@ -3995,6 +3995,13 @@ diar = [
     { name = "torch" },
     { name = "torchaudio" },
 ]
+diar-hosted = [
+    { name = "datasets" },
+    { name = "httpx" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "soundfile" },
+]
 modal = [
     { name = "modal" },
 ]
@@ -4011,7 +4018,9 @@ sortformer = [
 requires-dist = [
     { name = "datasets", marker = "extra == 'asr'" },
     { name = "datasets", marker = "extra == 'diar'" },
+    { name = "datasets", marker = "extra == 'diar-hosted'" },
     { name = "httpx", marker = "extra == 'asr'" },
+    { name = "httpx", marker = "extra == 'diar-hosted'" },
     { name = "huggingface-hub", marker = "extra == 'diar'" },
     { name = "huggingface-hub", marker = "extra == 'sortformer'" },
     { name = "jiwer" },
@@ -4021,6 +4030,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "numpy", marker = "extra == 'asr'" },
     { name = "numpy", marker = "extra == 'diar'" },
+    { name = "numpy", marker = "extra == 'diar-hosted'" },
     { name = "numpy", marker = "extra == 'sortformer'" },
     { name = "pyannote-audio", marker = "extra == 'diar'", specifier = ">=4.0" },
     { name = "pyannote-metrics", specifier = ">=3.2" },
@@ -4028,6 +4038,7 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'asr'" },
     { name = "soundfile", marker = "extra == 'asr'" },
     { name = "soundfile", marker = "extra == 'diar'" },
+    { name = "soundfile", marker = "extra == 'diar-hosted'" },
     { name = "soundfile", marker = "extra == 'sortformer'" },
     { name = "text2num" },
     { name = "torch", marker = "extra == 'diar'" },
@@ -4036,7 +4047,7 @@ requires-dist = [
     { name = "tqdm", marker = "extra == 'asr'" },
     { name = "unidecode" },
 ]
-provides-extras = ["dev", "asr", "modal", "diar", "sortformer"]
+provides-extras = ["dev", "asr", "modal", "diar", "diar-hosted", "sortformer"]
 
 [[package]]
 name = "regex"

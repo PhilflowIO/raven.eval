@@ -136,6 +136,18 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         # HF `main` as of 2026-09-03 (repo has no tags; lastModified 2025-12-15).
         revision="9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08",
     ),
+    # Deepgram, the first HOSTED diarizer: no GPU, no weights — an API key
+    # (DEEPGRAM_API_KEY) and per-second billing. Deepgram has no diarization-only
+    # endpoint, so `model_id` is the pinned ASR model whose word timings the turns
+    # are folded from, and `revision` is the pinned `diarize_model` version (the
+    # analogue of an HF revision hash) — never "latest".
+    "deepgram-nova-3": DiarizerSpec(
+        model_id="nova-3-general",
+        adapter="deepgram",
+        label="deepgram-nova-3",
+        revision="v2",
+        hosted=True,
+    ),
     # Adding the next diarizer (diarizen, a hosted API, …) is a module under
     # raven_diar/adapters/ exposing an ``ADAPTER`` factory plus a spec entry
     # here. The runner resolves ``adapter`` through raven_diar.registry and is

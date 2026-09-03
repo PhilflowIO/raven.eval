@@ -45,6 +45,7 @@ def test_registry_lists_the_shipped_adapters_and_hides_plumbing():
     names = DIARIZER_ADAPTERS.available()
     assert "pyannote_community1" in names
     assert "sortformer" in names
+    assert "deepgram" in names
     # base.py (the protocol) and aggregate.py (shared folding) are not adapters.
     assert "base" not in names and "aggregate" not in names
 
@@ -274,3 +275,121 @@ def test_aggregated_turns_score_through_the_untouched_scorer():
     hyp = spans_to_turns([(0.0, 0.4, "A"), (0.5, 1.0, "A"), (2.0, 3.0, "B")])
     gold = [(0.0, 1.0, "A"), (2.0, 3.0, "B")]
     assert score_segment_pairs("demo", [(gold, hyp)]).der_full == 0.0
+
+
+# ── deepgram adapter (the first HOSTED diarizer; no key, no network here) ─────
+
+
+def test_deepgram_is_registered_with_both_halves_pinned():
+    """A hosted row pins TWO models: the ASR one and the diarizer version."""
+    spec = KNOWN_DIARIZERS["deepgram-nova-3"]
+    assert spec.adapter == "deepgram"
+    # Not the family alias "nova-3": the vendor may repoint an alias silently.
+    assert spec.model_id == "nova-3-general"
+    # `revision` carries the `diarize_model` version, never the floating "latest".
+    assert spec.revision == "v2"
+    assert spec.revision != "latest"
+
+
+def _deepgram_body(words, *, diarized=True):
+    metadata = {"request_id": "req-1", "model_info": {}}
+    if diarized:
+        metadata["diarize_info"] = {"model_uuid": "u-1", "arch": "v2"}
+    return {
+        "metadata": metadata,
+        "results": {"channels": [{"alternatives": [{"words": words}]}]},
+    }
+
+
+def test_deepgram_words_become_labelled_spans():
+    from raven_diar.adapters.deepgram import words_to_spans
+
+    body = _deepgram_body([
+        {"word": "hallo", "start": 0.1, "end": 0.4, "speaker": 0},
+        {"word": "ja", "start": 0.5, "end": 0.7, "speaker": 1},
+    ])
+    assert words_to_spans(body) == [
+        LabelledSpan(0.1, 0.4, "speaker_0"),
+        LabelledSpan(0.5, 0.7, "speaker_1"),
+    ]
+
+
+def test_deepgram_words_without_a_speaker_are_dropped_not_invented():
+    from raven_diar.adapters.deepgram import words_to_spans
+
+    body = _deepgram_body([
+        {"word": "hallo", "start": 0.1, "end": 0.4, "speaker": 0},
+        {"word": "hm", "start": 0.5, "end": 0.7},          # no speaker label
+        {"word": "ja", "start": 0.8, "end": 0.9, "speaker": 0},
+    ])
+    assert [s.speaker for s in words_to_spans(body)] == ["speaker_0", "speaker_0"]
+
+
+def test_deepgram_refuses_a_response_where_the_diarizer_did_not_run():
+    """An absent diarize_info means no diarizer ran — never score that as 1 speaker."""
+    from raven_diar.adapters.deepgram import words_to_spans
+
+    body = _deepgram_body([{"word": "hallo", "start": 0.0, "end": 0.4}], diarized=False)
+    with pytest.raises(ValueError, match="diarize_info"):
+        words_to_spans(body)
+
+
+def test_deepgram_requires_its_key_and_names_the_env_var(monkeypatch):
+    from raven_diar.adapters.deepgram import DeepgramDiarizer
+
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="DEEPGRAM_API_KEY"):
+        DeepgramDiarizer()
+
+
+def test_deepgram_folds_through_the_shared_aggregator_not_its_own(monkeypatch):
+    """The anti-fork guard: a second folding path would confound provider DERs.
+
+    Asserted by observation, not by reading: the module-level ``spans_to_turns``
+    is replaced with a sentinel, and the adapter's output must be the sentinel's.
+    """
+    import raven_diar.adapters.deepgram as dg
+
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "not-a-real-key")
+    calls: dict[str, object] = {}
+
+    def _sentinel(spans, *, gap_merge_s):
+        calls["spans"] = list(spans)
+        calls["gap_merge_s"] = gap_merge_s
+        return [(0.0, 9.0, "SENTINEL")]
+
+    monkeypatch.setattr(dg, "spans_to_turns", _sentinel)
+    diarizer = dg.DeepgramDiarizer(revision="v2")
+    monkeypatch.setattr(
+        diarizer,
+        "_alisten",
+        lambda audio_bytes: _async_value(  # noqa: ARG005 - signature parity
+            _deepgram_body([
+                {"word": "a", "start": 0.0, "end": 0.2, "speaker": 0},
+                {"word": "b", "start": 0.25, "end": 0.5, "speaker": 0},
+            ])
+        ),
+    )
+    result = diarizer.diarize(Path("/dev/null"))
+
+    assert result.segments == [(0.0, 9.0, "SENTINEL")]
+    assert calls["gap_merge_s"] == DEFAULT_GAP_MERGE_S
+    assert len(calls["spans"]) == 2
+    assert result.raw["revision"] == "v2"
+    assert result.raw["diarize_info"] == {"model_uuid": "u-1", "arch": "v2"}
+
+
+async def _async_value(value):
+    return value
+
+
+def test_deepgram_gap_threshold_is_overridable_only_explicitly(monkeypatch):
+    """The sweep knob exists, but the DEFAULT is the shared constant."""
+    import raven_diar.adapters.deepgram as dg
+
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "not-a-real-key")
+    monkeypatch.delenv(dg.GAP_MERGE_ENV, raising=False)
+    assert dg.DeepgramDiarizer()._gap_merge_s == DEFAULT_GAP_MERGE_S
+    monkeypatch.setenv(dg.GAP_MERGE_ENV, "1.0")
+    assert dg.DeepgramDiarizer()._gap_merge_s == 1.0
+    assert dg.DeepgramDiarizer(gap_merge_s=0.25)._gap_merge_s == 0.25

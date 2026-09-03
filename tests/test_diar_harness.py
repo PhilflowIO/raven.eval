@@ -98,8 +98,7 @@ def test_hosted_diarizers_pin_an_explicit_vendor_version():
     alias that the vendor is free to repoint under a published number.
     """
     hosted = [d for d in KNOWN_DIARIZERS.values() if d.hosted]
-    if not hosted:
-        pytest.skip("no hosted diarizer registered yet")
+    assert hosted, "no hosted diarizer registered — delete this test, not the pin rule"
     for spec in hosted:
         assert spec.revision.strip().lower() not in FLOATING_ALIASES, (
             f"{spec}: revision {spec.revision!r} is a floating vendor alias"

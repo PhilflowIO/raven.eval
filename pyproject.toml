@@ -45,6 +45,17 @@ diar = [
     "soundfile",
     "numpy",
 ]
+# Tier-2 DER, HOSTED-API lane (raven_diar/adapters/deepgram.py and the hosted
+# adapters that follow it). No torch, no GPU, no model weights: an HTTP client
+# plus the dataset loader is the whole runtime. Its own extra so running a hosted
+# diarizer never drags in a multi-GB local-inference stack — and so the Tier-1
+# re-score path stays untouched by any of it.
+diar-hosted = [
+    "httpx",
+    "datasets",
+    "soundfile",
+    "numpy",
+]
 # Tier-2 DER, NVIDIA Sortformer lane (raven_diar/adapters/sortformer.py). Its own
 # extra because nemo_toolkit is a large, opinionated dependency tree of its own:
 # nobody should have to install it to score DER, to run the pyannote lane, or to
