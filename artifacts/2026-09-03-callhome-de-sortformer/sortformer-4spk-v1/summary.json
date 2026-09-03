@@ -1,0 +1,21 @@
+{
+  "model_id": "nvidia/diar_sortformer_4spk-v1",
+  "label": "sortformer-4spk-v1",
+  "adapter": "sortformer",
+  "model_revision": "9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08",
+  "dataset": "callhome-de",
+  "dataset_revision": "17c8a153215aa7c50b805078fd6284ba81c2fc47",
+  "limit_per_dataset": null,
+  "n_skipped_no_audio": 0,
+  "results": {
+    "callhome-de": {
+      "dataset": "callhome-de",
+      "n_files": 120,
+      "der_full": 17.33764938212229,
+      "der_classic": 11.406957994548089,
+      "miss": 8.268231088931923,
+      "fa": 6.428426607824042,
+      "conf": 2.640991685366325
+    }
+  }
+}
