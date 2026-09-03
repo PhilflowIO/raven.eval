@@ -35,16 +35,41 @@ from raven_eval_core import bleu as bleu_mod  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = REPO_ROOT / "benchmark.config.yaml"
 
-# Top-level config keys that are not metric blocks.
-NON_METRIC_KEYS = frozenset({"datasets"})
-
-
 def _config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
 def _declared_metrics() -> set[str]:
-    return set(_config()) - set(NON_METRIC_KEYS)
+    """The metric blocks the contract declares, read from its own `metrics:` list.
+
+    This used to be "every top-level key except `datasets`". That inverted the
+    burden of proof: any new top-level block — publication rules, provenance
+    notes — silently became a metric that these tests then demanded an
+    implementation for, and the failure surfaced far from its cause. Naming the
+    metrics explicitly makes an unlisted block simply not a metric, and
+    :func:`test_every_declared_metric_has_a_config_block` keeps the list from
+    naming something that does not exist.
+    """
+    return set(_config()["metrics"])
+
+
+def test_every_declared_metric_has_a_config_block() -> None:
+    config = _config()
+    missing = sorted(name for name in config["metrics"] if name not in config)
+    assert not missing, (
+        f"benchmark.config.yaml lists metric(s) {missing} under `metrics:` that "
+        f"have no block of their own — the contract names rules it does not state."
+    )
+
+
+def test_non_metric_blocks_are_not_mistaken_for_metrics() -> None:
+    """A new top-level block must not become a metric by being written down."""
+    config = _config()
+    assert "dialect_publication_rules" in config, (
+        "expected a non-metric top-level block to exist, so this test actually "
+        "exercises the distinction it is guarding"
+    )
+    assert "dialect_publication_rules" not in _declared_metrics()
 
 
 def test_every_declared_metric_is_implemented() -> None:

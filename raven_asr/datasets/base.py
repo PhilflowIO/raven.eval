@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -19,6 +19,16 @@ class Sample:
         reference: Ground-truth transcript (raw, pre-normalize).
         sample_id: Stable identifier for traceability across runs.
         subset: Subset label (e.g. "Tuda-De", "common_voice_19_0").
+        metadata: Optional per-sample facts the four scoring fields cannot carry
+            — dialect region, a secondary (dialectal) reference transcription,
+            an intent label. Added for the dialect corpora, whose rows are only
+            interpretable with their provenance attached; empty for every
+            HF-backed loader. Trailing and defaulted, so existing positional
+            construction is unaffected. Stable keys:
+
+              * ``dialect_region``    — e.g. "oberbayern-laendlich"
+              * ``reference_dialect`` — secondary dialectal reference text
+              * ``split`` / ``clip``  — upstream split and clip path
     """
 
     audio: np.ndarray
@@ -26,6 +36,10 @@ class Sample:
     reference: str
     sample_id: str
     subset: str
+    # compare=False: provenance is not part of a sample's identity, and keeping
+    # a dict out of the generated __eq__/__hash__ avoids surprises on a frozen
+    # dataclass.
+    metadata: dict[str, Any] = field(default_factory=dict, compare=False)
 
 
 class DatasetLoader(Protocol):

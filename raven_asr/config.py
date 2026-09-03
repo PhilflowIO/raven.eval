@@ -82,8 +82,20 @@ class WerDatasetSpec:
     # download first, so the loader streams unless the caller says otherwise.
     stream_by_default: bool = False
     # sha256 of the fetched archive, where the source IS a loose archive rather
-    # than a content-addressed HF revision. None for every HF-backed entry.
+    # than a content-addressed HF revision. None for every HF-backed entry, and
+    # None where a corpus is several loose archives — then the per-artifact
+    # manifest lives in the loader module (see raven_asr.datasets.xsid_audio
+    # ARTIFACTS) because one field cannot hold six checksums.
     sha256: str | None = None
+    # Read speech / one speaker / narrow domain corpora are PROBES, not
+    # benchmarks. "low" is a publication constraint, not a footnote: such a row
+    # never carries a winner mark. Mirrors the loader class attribute.
+    representativeness: str = "medium"
+    # False for a dialect probe. A mean spanning two dialect areas describes no
+    # population, and a dialect row inside a general German average silently
+    # moves that average. Enforced by tests/test_xsid_audio.py; there is no
+    # cross-dataset aggregate in this repo today and this keeps it that way.
+    eligible_for_aggregate: bool = True
     notes: str = ""
     # Which metric family scores this corpus. "wer" is the default and the only
     # one raven_eval_core implements today. "bleu+wer" marks a translation-shaped
@@ -177,6 +189,10 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         # spc_test.SHARDS; a single field cannot carry two.
         sha256=None,
         metric="bleu+wer",
+        # A dialect corpus never contributes to a cross-dataset or `overall`
+        # average: a mean spanning dialect areas describes no population, and a
+        # dialect row inside a general German average silently moves it.
+        eligible_for_aggregate=False,
         notes=(
             "Bernese cantonal parliament, 3,332 test utterances. Two parquet "
             "shards fetched from the Hub resolve/<revision> endpoint and "
@@ -206,10 +222,54 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         durability="vendor",
         sha256="7ca2492143b6d418ca42d6407f939ce8d2c53f66999e05906931ccefe6ff3148",
         metric="bleu+wer",
+        # A dialect corpus never contributes to a cross-dataset or `overall`
+        # average: a mean spanning dialect areas describes no population, and a
+        # dialect row inside a general German average silently moves it.
+        eligible_for_aggregate=False,
         notes=(
             "SwissText 2021 task 3, 5,750 utterances / 12.72 h across all Swiss "
             "dialect regions. public.tsv + clips.tar out of a checksum-verified "
             "zip; dialect region travels in the sample_id."
+    # ── Dialect probe + control spur (flow.raven#5350) ────────────────────────
+    # These two ids are a matched pair. The same person recorded both varieties
+    # on the same sentences, so only the DELTA is a dialect statement; either id
+    # alone is a number about one voice. Ship both or neither.
+    "xsid-bar": WerDatasetSpec(
+        id="xsid-bar",
+        loader="xsid_audio",
+        license="CC-BY-SA-4.0 + an authors' no-speech-synthesis condition (see /NOTICE)",
+        source="https://zenodo.org/records/21605015",
+        # Zenodo record VERSION — the pin a published number claims. Zenodo
+        # versions are immutable, so this is as strong as an HF revision hash.
+        revision="0.2",
+        subsets=("xsid-bar",),
+        durability="doi",
+        sha256=None,  # six artifacts; manifest in raven_asr.datasets.xsid_audio.ARTIFACTS
+        representativeness="low",
+        eligible_for_aggregate=False,
+        metric="bleu+wer",
+        notes=(
+            "Bavarian (rural Upper Bavaria) read speech, 500 test + 300 valid, "
+            "scored against the parallel Standard German sentence — a "
+            "translation-style task, so it is scored like the Swiss corpora "
+            "rather than as dictation. DOI 10.5281/zenodo.21605015."
+        ),
+    ),
+    "xsid-de-control": WerDatasetSpec(
+        id="xsid-de-control",
+        loader="xsid_audio",
+        license="CC-BY-SA-4.0 + an authors' no-speech-synthesis condition (see /NOTICE)",
+        source="https://zenodo.org/records/21605015",
+        revision="0.2",
+        subsets=("xsid-de-control",),
+        durability="doi",
+        sha256=None,
+        representativeness="low",
+        eligible_for_aggregate=False,
+        notes=(
+            "Standard German control: SAME speaker, SAME sentences, no dialect. "
+            "Exists so xsid-bar has a factor rather than a voice. Plain "
+            "dictation (metric_hint 'wer')."
         ),
     ),
 }
@@ -224,7 +284,21 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
 #     Swiss+Bavarian "Mundart" figure, and no dialect contribution to any
 #     overall average: the varieties are different languages-in-practice and a
 #     mean over them would describe no corpus that exists.
-DIALECT_DATASET_IDS: Final[frozenset[str]] = frozenset({"spc-test", "fhnw-all-dialects"})
+# Derived, never hand-maintained: two independently written lists of "which
+# corpora are dialect corpora" is how one of them silently falls behind, and the
+# failure is invisible — a forgotten id does not crash, it just quietly enters an
+# average it does not belong in.
+#
+# In this repo the two concepts coincide: the only reason a dataset is barred
+# from aggregates is that it is a dialect corpus. ``test_aggregate_exclusion_is_
+# exactly_the_dialect_corpora`` pins that equivalence, so if a future dataset is
+# ever excluded for a different reason, the split has to be made deliberately
+# instead of happening by accident here.
+DIALECT_DATASET_IDS: Final[frozenset[str]] = frozenset(
+    dataset_id
+    for dataset_id, spec in WER_DATASETS.items()
+    if not spec.eligible_for_aggregate
+)
 
 
 def resolve_wer_dataset(selector: str) -> tuple[str, str]:

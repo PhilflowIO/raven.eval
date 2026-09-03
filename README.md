@@ -44,10 +44,26 @@ portably reproducible).
 Raven is a German meeting-transcription product that publishes measured WER and DER
 numbers. This repository is how you check them without asking us for anything:
 public datasets (DER: VoxConverse, CALLHOME-de, AMI — WER: Tuda-De, Common Voice,
-MLS, FLEURS, VoxPopuli-de), pinned model and dataset commits, and the scoring code
-Raven runs internally, lifted out and stripped of anything private.
+MLS, FLEURS, VoxPopuli-de, xSID-audio), pinned model and dataset commits, and the
+scoring code Raven runs internally, lifted out and stripped of anything private.
 
 It is packaged so a stranger can check our work. That includes you.
+
+### The dialect rows come with rules
+
+`xsid-bar` (Bavarian) and `xsid-de-control` (Standard German) are a matched pair
+from Zenodo record [21605015](https://zenodo.org/records/21605015), DOI
+`10.5281/zenodo.21605015` v0.2. **One** person recorded both varieties, reading
+the same sentences aloud. That makes the pair a probe — does a model collapse on
+Bavarian at all — and not a Bavarian benchmark: only the *delta* between the two
+ids is a statement about dialect; either number alone describes one voice.
+
+So: no winner mark on a dialect row, no aggregate spanning two dialect areas, and
+dialect ids stay out of any cross-dataset average. The rules are written out in
+`benchmark.config.yaml` under `dialect_publication_rules` and carried in code by
+`WerDatasetSpec.eligible_for_aggregate`. The corpus also carries an authors'
+condition that is **not** part of its CC BY-SA licence and therefore does not
+travel on its own — it is reproduced verbatim in [`NOTICE`](./NOTICE).
 
 ## How do you know the scorer itself is correct?
 
@@ -187,5 +203,6 @@ the number substantially — never compare DER across different rules.
 
 Code is **MIT**. Dataset licenses are separate and belong to their owners — see
 [`NOTICE`](./NOTICE) for per-dataset attribution (Tuda-De / MLS / FLEURS = CC-BY,
-Common Voice / VoxPopuli = CC0, VoxConverse labels = CC-BY, …). **We never redistribute restricted audio** —
+Common Voice / VoxPopuli = CC0, VoxConverse labels = CC-BY, xSID-audio = CC-BY-SA
+**plus a no-speech-synthesis condition the licence does not carry**, …). **We never redistribute restricted audio** —
 only the tooling and, where the license permits, the reference/hypothesis label files.

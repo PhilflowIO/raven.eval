@@ -3,6 +3,13 @@
 # field here changes the numbers; the config is committed so third parties see
 # the precise rules our DER/WER values were computed under.
 
+# Which of the top-level blocks below are metric contracts. Named explicitly,
+# because deriving it as "everything that is not `datasets`" turns any new
+# top-level key — publication rules, provenance notes — into a metric that the
+# contract test then demands an implementation for. The list is checked in both
+# directions against raven_eval_core.SCORED_METRICS.
+metrics: [der, wer, bleu]
+
 der:
   scorer_primary: pyannote.metrics      # dscore cross-check WIRED (optional): make dscore-check / raven_diar.dscore_check — gated on a local DSCORE_DIR checkout (dscore is not pip-installable), skips cleanly, not in CI
   # DER is reported TWICE — the two conventions are NOT comparable, so we publish both:
@@ -95,3 +102,32 @@ datasets:
       license: MIT
       metric: bleu+wer
       acquisition: Dropbox zip by URL, sha256-verified; durability vendor — a durable mirror is outstanding
+    # ── Dialect probe + its control spur — read the publication rules below ──
+    - id: xsid-bar           # xSID-audio v0.2, Bavarian (rural Upper Bavaria) read speech
+      zenodo: "21605015"
+      doi: 10.5281/zenodo.21605015
+      version: "0.2"
+      license: CC-BY-SA-4.0 (+ authors' no-speech-synthesis condition — see /NOTICE)
+      representativeness: low
+      eligible_for_aggregate: false
+    - id: xsid-de-control    # SAME speaker, SAME sentences, Standard German
+      zenodo: "21605015"
+      doi: 10.5281/zenodo.21605015
+      version: "0.2"
+      license: CC-BY-SA-4.0 (+ authors' no-speech-synthesis condition — see /NOTICE)
+      representativeness: low
+      eligible_for_aggregate: false
+
+# How the dialect rows above may and may not be published. These are not style
+# preferences; each one names a way the number would otherwise mislead.
+dialect_publication_rules:
+  # One speaker, read speech. The number answers "does the model collapse on
+  # Bavarian at all", not "how good is it on Bavarian".
+  - no dialect row ever carries a winner mark, however many rows exist.
+  # xsid-bar alone measures one voice. xsid-bar minus xsid-de-control measures
+  # the dialect. Ship the pair or ship neither.
+  - a dialect row is published only alongside its same-speaker control row.
+  # A mean over Swiss German and Bavarian describes no population.
+  - never form an aggregate that spans two dialect areas.
+  # eligible_for_aggregate=false in raven_asr.config carries this in code.
+  - dialect datasets stay out of any cross-dataset or `overall` average.
