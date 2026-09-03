@@ -113,6 +113,17 @@ class DiarizerSpec:
     # ``diarize_model=v2``). The requirement is unchanged — the pin must be
     # explicit and immutable, never an alias like "latest" — only its shape is.
     hosted: bool = False
+    # SPDX-ish slug for the WEIGHTS (for a hosted API: the terms the vendor
+    # grants). ``DiarDatasetSpec`` has carried a licence from the start; the
+    # diarizer side did not, which left the one fact that decides how a row may
+    # be published living only in a code comment.
+    license: str = "unknown"
+    # Whether a row from this diarizer may compete for a winner mark. Stated
+    # rather than derived from ``license``, because "may we ship this" is a
+    # decision about our product, not a string match: getting it wrong by
+    # regex-ing a licence slug is exactly the failure worth avoiding. Under
+    # ADR-app-0036 a non-commercial model is measured and shown, never awarded.
+    shippable: bool = True
 
 
 KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
@@ -125,6 +136,8 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         # Pinned to the HF model commit every published DER row was measured on
         # (artifacts/*/pyannote-community-1/summary.json: model_revision).
         revision="3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+        license="MIT (gated: accept the model conditions on HF)",
+        shippable=True,
     ),
     # NVIDIA Sortformer 4spk-v1. NOT gated, NO API key: public CC-BY-NC-4.0
     # weights run locally through NeMo (`--extra sortformer`). Hard 4-speaker
@@ -135,6 +148,12 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         label="sortformer-4spk-v1",
         # HF `main` as of 2026-09-03 (repo has no tags; lastModified 2025-12-15).
         revision="9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08",
+        license="CC-BY-NC-4.0",
+        # Non-commercial weights. Under ADR-app-0036 this is a reference row:
+        # it may be measured and displayed — and it currently beats the shipped
+        # default on German telephone speech — but it must never carry a winner
+        # mark, because we could not ship the thing that won.
+        shippable=False,
     ),
     # Deepgram, the first HOSTED diarizer: no GPU, no weights — an API key
     # (DEEPGRAM_API_KEY) and per-second billing. Deepgram has no diarization-only
@@ -147,6 +166,10 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         label="deepgram-nova-3",
         revision="v2",
         hosted=True,
+        # A hosted API grants terms of service, not a weights licence. Commercial
+        # use is what the paid tier is for, so a Deepgram row may compete.
+        license="Deepgram commercial terms of service (paid API)",
+        shippable=True,
     ),
     # Adding the next diarizer (diarizen, a hosted API, …) is a module under
     # raven_diar/adapters/ exposing an ``ADAPTER`` factory plus a spec entry

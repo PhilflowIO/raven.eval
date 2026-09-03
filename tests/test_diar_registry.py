@@ -406,3 +406,41 @@ def test_deepgram_gap_threshold_is_overridable_only_explicitly(monkeypatch):
     monkeypatch.setenv(dg.GAP_MERGE_ENV, "1.0")
     assert dg.DeepgramDiarizer()._gap_merge_s == 1.0
     assert dg.DeepgramDiarizer(gap_merge_s=0.25)._gap_merge_s == 0.25
+
+
+# ── publication eligibility is data, not a comment ───────────────────────────
+
+
+def test_every_diarizer_states_its_licence() -> None:
+    """"unknown" is the default, and it must never survive into a spec.
+
+    Whether a measured row may carry a winner mark hangs entirely on this one
+    fact. Leaving it at the default would publish a ranking whose rules nobody
+    recorded.
+    """
+    from raven_diar.config import KNOWN_DIARIZERS
+
+    unstated = sorted(
+        key for key, spec in KNOWN_DIARIZERS.items() if spec.license == "unknown"
+    )
+    assert not unstated, (
+        f"diarizer(s) {unstated} carry no licence — under ADR-app-0036 the "
+        f"licence decides whether a row may win, so it cannot be left implicit."
+    )
+
+
+def test_non_commercial_weights_are_never_shippable() -> None:
+    """A model we could not ship must not be able to win a comparison.
+
+    Sortformer is the live case: it currently beats the shipped default on
+    German telephone speech, which is exactly when the temptation to award it
+    is strongest and exactly when doing so would mislead.
+    """
+    from raven_diar.config import KNOWN_DIARIZERS
+
+    for key, spec in KNOWN_DIARIZERS.items():
+        if "-NC-" in spec.license or "NonCommercial" in spec.license:
+            assert not spec.shippable, (
+                f"{key}: non-commercial weights ({spec.license}) — a reference "
+                f"row, never an award. Measured and shown, never prized."
+            )
