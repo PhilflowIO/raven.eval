@@ -43,9 +43,9 @@ portably reproducible).
 
 Raven is a German meeting-transcription product that publishes measured WER and DER
 numbers. This repository is how you check them without asking us for anything:
-public datasets (VoxConverse, CALLHOME-de, Tuda-De, Common Voice, MLS), pinned
-model and dataset commits, and the scoring code Raven runs internally, lifted out
-and stripped of anything private.
+public datasets (DER: VoxConverse, CALLHOME-de, AMI — WER: Tuda-De, Common Voice,
+MLS, FLEURS, VoxPopuli-de), pinned model and dataset commits, and the scoring code
+Raven runs internally, lifted out and stripped of anything private.
 
 It is packaged so a stranger can check our work. That includes you.
 
@@ -75,7 +75,9 @@ and we make the reproducible ones *actually* reproducible:
 
 - **Tier 2 — full re-run on public data (your own keys / GPU).**
   `make reproduce` downloads a public dataset, runs the pinned model, and scores it.
-  WER on the `flozi00/asr-german-mixed-evals` subsets, and DER
+  WER on the `flozi00/asr-german-mixed-evals` subsets plus FLEURS (`de_de`), MLS
+  German and VoxPopuli German — every id in `benchmark.config.yaml` resolves to a
+  loader here, and a test fails the build if that ever stops being true. DER
   (`make reproduce METRIC=der`) with `pyannote/speaker-diarization-community-1` on
   VoxConverse / CALLHOME-de / AMI (needs an HF token, the gated model license, a GPU,
   and shared FFmpeg libs — see [`docs/TIER2-DER-KEYS.md`](./docs/TIER2-DER-KEYS.md)).
@@ -151,6 +153,6 @@ the number substantially — never compare DER across different rules.
 ## License and data attribution
 
 Code is **MIT**. Dataset licenses are separate and belong to their owners — see
-[`NOTICE`](./NOTICE) for per-dataset attribution (Tuda-De / MLS = CC-BY, Common Voice
-= CC0, VoxConverse labels = CC-BY, …). **We never redistribute restricted audio** —
+[`NOTICE`](./NOTICE) for per-dataset attribution (Tuda-De / MLS / FLEURS = CC-BY,
+Common Voice / VoxPopuli = CC0, VoxConverse labels = CC-BY, …). **We never redistribute restricted audio** —
 only the tooling and, where the license permits, the reference/hypothesis label files.

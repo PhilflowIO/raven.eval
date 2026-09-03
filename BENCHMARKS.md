@@ -42,9 +42,18 @@ self-consistent fixture, **not** a Raven product number.
 
 ## WER — German ASR (public datasets)
 
-**Harness wired (Etappe 4).** Datasets: `flozi00/asr-german-mixed-evals` subsets
-`Tuda-De` (CC-BY-4.0, attribution in `/NOTICE`), `common_voice_19_0` (CC0),
-`multilingual_librispeech` (CC-BY-4.0, attribution in `/NOTICE`). Numbers appear here once a model run is **promoted**
+**Harness wired (Etappe 4).** Datasets, all of them loadable from this repo
+(`raven_asr/datasets/`, registered in `raven_asr.config.WER_DATASETS`):
+
+| id | source | config / split | license |
+|----|--------|----------------|---------|
+| `german-mixed` | `flozi00/asr-german-mixed-evals` | subsets `Tuda-De`, `common_voice_19_0`, `multilingual_librispeech` | CC-BY-4.0 / CC0 per subset (attribution in `/NOTICE`) |
+| `fleurs` | `google/fleurs` | `de_de` / `test` | CC-BY-4.0 |
+| `mls-de` | `facebook/multilingual_librispeech` | `german` / `test` | CC-BY-4.0 |
+| `voxpopuli-de` | `facebook/voxpopuli` | `de` / `test` | CC0-1.0 |
+
+Revisions are pinned in `raven_asr.config.WER_DATASETS`; the harness fetches the
+audio itself. Numbers appear here once a model run is **promoted**
 into `artifacts/` and committed — at which point `make verify` and CI re-score it
 on every push. Full re-run from raw audio (your keys/GPU,
 [`docs/TIER2-KEYS.md`](./docs/TIER2-KEYS.md)):
