@@ -18,14 +18,15 @@ from raven_eval_core.flozi_wer import evaluate
 
 from .adapters.base import ASRAdapter
 from .config import (
-    FLOZI_DATASET_REVISION,
     FLOZI_REFERENCE_WER,
     KNOWN_MODELS,
     MODAL_APP_NAMES,
+    WER_DATASETS,
     ModelSpec,
+    resolve_wer_dataset,
 )
+from .datasets import load_loader_class
 from .datasets.base import DatasetLoader, Sample
-from .datasets.flozi_mixed_evals import FloziMixedEvalsLoader
 from .model_index import ResultEntry, build_model_index, write_yaml
 
 logger = logging.getLogger("raven_asr.runner")
@@ -93,10 +94,21 @@ def _iter_loader_for_subset(
     streaming: bool = False,
     revision: str | None = None,
 ) -> tuple[DatasetLoader, str]:
-    # Public repo: only the flozi public datasets ship here. Raven's private
-    # meeting corpus (Tier-3) is deliberately not portable and stays internal.
-    rev = revision if revision is not None else FLOZI_DATASET_REVISION
-    return FloziMixedEvalsLoader(streaming=streaming, revision=rev), subset
+    """Build the loader that owns ``subset`` and the subset name it expects.
+
+    ``subset`` is either a ``WER_DATASETS`` id or a ``german-mixed`` subset name;
+    ``resolve_wer_dataset`` maps both onto the owning dataset. Public repo: only
+    public datasets ship here — Raven's private meeting corpus (Tier-3) is
+    deliberately not portable and stays internal.
+    """
+    dataset_id, internal_subset = resolve_wer_dataset(subset)
+    spec = WER_DATASETS[dataset_id]
+    rev = revision if revision is not None else spec.revision
+    loader_cls = load_loader_class(dataset_id)
+    loader = loader_cls(
+        streaming=streaming or spec.stream_by_default, revision=rev
+    )
+    return loader, internal_subset
 
 
 def _safe(name: str) -> str:
@@ -212,7 +224,9 @@ def _write_outputs(
 
 
 def _dataset_id_for_subset(subset: str) -> str:
-    return "flozi00/asr-german-mixed-evals"
+    """HF slug recorded in model-index.yaml for the dataset owning ``subset``."""
+    dataset_id, _ = resolve_wer_dataset(subset)
+    return WER_DATASETS[dataset_id].source
 
 
 async def run_async(

@@ -60,6 +60,115 @@ DRIFT_TOLERANCE_PCT: Final[float] = 15.0
 
 
 @dataclass(frozen=True)
+class WerDatasetSpec:
+    """A public WER dataset + how its audio and references are obtained.
+
+    Mirrors ``raven_diar.config.DiarDatasetSpec``. ``id`` is the key published in
+    ``benchmark.config.yaml`` under ``datasets.wer[].id``; the contract test
+    asserts the two lists match in both directions.
+    """
+
+    id: str
+    loader: str              # loader module under raven_asr.datasets
+    license: str
+    source: str              # HF slug or upstream URL — the acquisition path
+    revision: str | None     # HF revision hash — pin, never floating
+    subsets: tuple[str, ...]  # subset selectors the harness accepts for this id
+    # Durability of the acquisition path, per ADR-app-0054: "doi" (DOI or
+    # institutional archive) > "hf" (versioned HF dataset at a pinned revision) >
+    # "vendor" (vendor-hosted link — flagged, never silently relied on).
+    durability: str
+    # These corpora are hundreds of GB; a --limit run must not pay for a full
+    # download first, so the loader streams unless the caller says otherwise.
+    stream_by_default: bool = False
+    # sha256 of the fetched archive, where the source IS a loose archive rather
+    # than a content-addressed HF revision. None for every HF-backed entry.
+    sha256: str | None = None
+    notes: str = ""
+
+
+# The PUBLIC datasets the WER Tier-2 harness scores against. Audio is fetched by
+# the harness from the source below; we never redistribute restricted audio, only
+# per-utterance predictions/references land under artifacts/. See /NOTICE.
+WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
+    # The flozi-aligned reference corpus — three subsets in one repo, selected by
+    # the `from` column. This is the dataset every published WER row in
+    # BENCHMARKS.md was measured on.
+    "german-mixed": WerDatasetSpec(
+        id="german-mixed",
+        loader="flozi_mixed_evals",
+        license="Tuda-De CC-BY-4.0; MLS CC-BY-4.0; Common Voice CC0-1.0",
+        source="flozi00/asr-german-mixed-evals",
+        # Deliberately unpinned: the committed 2026-07-30 numbers were measured
+        # against `main` HEAD, so naming a hash here would claim a pin the
+        # published artifacts do not actually carry. Pass DATASET_REV=<sha> for a
+        # fully pinned re-run. Tracked as the one floating pin in this table.
+        revision=FLOZI_DATASET_REVISION,
+        subsets=FLOZI_SUBSETS,
+        durability="hf",
+        notes="single train split; subsets selected by the `from` column.",
+    ),
+    # FLEURS — read parallel sentences, the speech side of FLoRes.
+    "fleurs": WerDatasetSpec(
+        id="fleurs",
+        loader="fleurs_de",
+        license="CC-BY-4.0",
+        source="google/fleurs",
+        revision="70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+        subsets=("fleurs",),
+        durability="hf",
+        stream_by_default=True,
+        notes="config=de_de, split=test (~350 sentences); raw_transcription.",
+    ),
+    # MLS German — read audiobook speech (LibriVox), the register whisper-class
+    # models are strongest on; the low-WER end of the German spread.
+    "mls-de": WerDatasetSpec(
+        id="mls-de",
+        loader="mls_german",
+        license="CC-BY-4.0",
+        source="facebook/multilingual_librispeech",
+        revision="2e83e61823b4c47dcbcb1980bb88601274127609",
+        subsets=("mls-de",),
+        durability="hf",
+        stream_by_default=True,
+        notes="config=german (spelled out, not 'de'), split=test; `transcript`.",
+    ),
+    # VoxPopuli German — European-Parliament plenary speech. Spontaneous and
+    # accented, so it anchors the hard end that read-speech corpora cannot.
+    "voxpopuli-de": WerDatasetSpec(
+        id="voxpopuli-de",
+        loader="voxpopuli_de",
+        license="CC0-1.0",
+        source="facebook/voxpopuli",
+        revision="42f01879c780b4a2e90ec0b4f616c2ece526e4f1",
+        subsets=("voxpopuli-de",),
+        durability="hf",
+        stream_by_default=True,
+        notes="config=de, split=test; raw_text with normalized_text fallback.",
+    ),
+}
+
+
+def resolve_wer_dataset(selector: str) -> tuple[str, str]:
+    """Map a ``--dataset`` argument onto ``(dataset_id, loader subset)``.
+
+    Accepts either a dataset id from :data:`WER_DATASETS` or one of the
+    ``german-mixed`` subset names (``Tuda-De``, …), which the CLI has taken since
+    Etappe 4 and which must keep working. A bare dataset id selects that
+    dataset's whole eval set (``"All"`` for the multi-subset corpus).
+    """
+    if selector in FLOZI_SUBSETS:
+        return "german-mixed", selector
+    spec = WER_DATASETS.get(selector)
+    if spec is None:
+        known = sorted({*WER_DATASETS, *FLOZI_SUBSETS})
+        raise KeyError(f"unknown WER dataset {selector!r}; known: {', '.join(known)}")
+    if len(spec.subsets) == 1:
+        return spec.id, spec.subsets[0]
+    return spec.id, "All"
+
+
+@dataclass(frozen=True)
 class ModelSpec:
     """Identifies a model + its adapter binding for the runner."""
 

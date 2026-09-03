@@ -19,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-from .config import FLOZI_SUBSETS, KNOWN_MODELS
+from .config import FLOZI_SUBSETS, KNOWN_MODELS, WER_DATASETS, resolve_wer_dataset
 from .runner import run
 
 _SUPPORTED_METRICS = ("wer",)
@@ -47,7 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--metric", required=True, help="metric to reproduce (wer)")
     parser.add_argument(
         "--dataset", required=True,
-        help=f"public flozi subset: {', '.join(FLOZI_SUBSETS)}",
+        help=(
+            "public WER dataset id: " + ", ".join(sorted(WER_DATASETS))
+            + " — or a german-mixed subset: " + ", ".join(FLOZI_SUBSETS)
+        ),
     )
     parser.add_argument(
         "--model", required=True,
@@ -75,11 +78,10 @@ def main(argv: list[str] | None = None) -> int:
             f"unsupported METRIC={args.metric!r}; supported: "
             f"{', '.join(_SUPPORTED_METRICS)} (DER lands in Etappe 5)"
         )
-    if args.dataset not in FLOZI_SUBSETS:
-        parser.error(
-            f"unknown DATASET={args.dataset!r}; public subsets are "
-            f"{', '.join(FLOZI_SUBSETS)}"
-        )
+    try:
+        resolve_wer_dataset(args.dataset)
+    except KeyError as exc:
+        parser.error(str(exc))
     spec = KNOWN_MODELS.get(args.model)
     if spec is None:
         parser.error(

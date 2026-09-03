@@ -12,7 +12,9 @@ where a run has been promoted to a Tier-1 artifact, the reference/hypothesis
 Multilingual LibriSpeech (MLS)
 --------------------------------------------------------------------------------
 Reference transcripts for the `multilingual_librispeech` subset (surfaced via
-`flozi00/asr-german-mixed-evals`) derive from Multilingual LibriSpeech.
+`flozi00/asr-german-mixed-evals`) and for the `mls-de` dataset (loaded directly
+from `facebook/multilingual_librispeech`, config `german`) derive from
+Multilingual LibriSpeech.
 
   Licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/).
   Citation:
@@ -57,6 +59,38 @@ or mirrored. We keep these committed references for zero-setup Tier-1 re-scoring
 if this ever becomes an issue we will switch to committing only a reference
 hash/id and regenerating the text from source at re-score time (the escape hatch
 below), rather than continuing to redistribute it.
+
+--------------------------------------------------------------------------------
+FLEURS (google/fleurs, config de_de — WER)
+--------------------------------------------------------------------------------
+Reference transcripts for the `fleurs` dataset derive from FLEURS, the speech
+version of the FLoRes machine-translation benchmark.
+
+  Licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/).
+  Citation:
+    Conneau et al., "FLEURS: Few-shot Learning Evaluation of Universal
+    Representations of Speech", SLT 2022.
+  Source:
+    https://huggingface.co/datasets/google/fleurs
+
+Any committed `predictions_*.jsonl` for the `fleurs` dataset contains CC-BY-4.0
+reference text and is redistributed under those terms with this attribution.
+The audio is fetched from Hugging Face by the reproducer; never redistributed here.
+
+--------------------------------------------------------------------------------
+VoxPopuli German (facebook/voxpopuli, config de — WER)
+--------------------------------------------------------------------------------
+Reference transcripts for the `voxpopuli-de` dataset derive from VoxPopuli,
+European-Parliament plenary speech with force-aligned transcripts.
+
+  The labelled portion is released under CC0-1.0 (public domain dedication) and
+  carries no attribution requirement; credited here anyway.
+  Citation:
+    Wang et al., "VoxPopuli: A Large-Scale Multilingual Speech Corpus for
+    Representation Learning, Semi-Supervised Learning and Interpretation",
+    ACL 2021.
+  Source:
+    https://huggingface.co/datasets/facebook/voxpopuli
 
 --------------------------------------------------------------------------------
 VoxConverse (diarization — DER)

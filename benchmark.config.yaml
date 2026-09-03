@@ -27,8 +27,11 @@ wer:
   normalization: flozi-strict
   also_reported: [permissive, verbatim, cer, ier]   # diagnostic lenses in raven_eval_core.wer, not the published number
 
-# Public datasets the Tier-2 full-rerun scores against. Audio is pulled by the
-# caller (HF / official mirror); we never redistribute restricted audio.
+# Public datasets the Tier-2 full-rerun scores against. Audio is fetched by the
+# harness itself (HF at a pinned revision / the official mirror); we never
+# redistribute restricted audio. Every id below resolves to a loader in this
+# repo, and every loader in this repo appears below — tests/test_dataset_contract.py
+# fails the build in both directions, so this list cannot drift from the code.
 datasets:
   der:
     - id: callhome-de        # talkbank/callhome, deu config — free, gold, German (2-spk telephone)
@@ -37,10 +40,23 @@ datasets:
       license: TalkBank (cite-to-use)
     - id: ami                # CC BY 4.0 — 4-speaker meetings
       license: CC-BY-4.0
-    - id: voxconverse        # labels CC BY 4.0; audio = YouTube owners
+    - id: voxconverse        # dev split; labels CC BY 4.0; audio = YouTube owners
+      license: CC-BY-4.0 (labels)
+    - id: voxconverse-test   # same corpus, TEST split — the split pyannote publishes its DER on
       license: CC-BY-4.0 (labels)
   wer:
-    - id: fleurs
-    - id: mls-de
-    - id: voxpopuli-de
+    - id: fleurs             # google/fleurs config de_de, split test — read parallel sentences
+      hf: google/fleurs
+      config: de_de
+      license: CC-BY-4.0
+    - id: mls-de             # facebook/multilingual_librispeech config german, split test — LibriVox audiobooks
+      hf: facebook/multilingual_librispeech
+      config: german
+      license: CC-BY-4.0
+    - id: voxpopuli-de       # facebook/voxpopuli config de, split test — EU-Parliament plenary speech
+      hf: facebook/voxpopuli
+      config: de
+      license: CC0-1.0
     - id: german-mixed       # avemio / flozi00 asr-german-mixed-evals (Tuda-De CC-BY-4.0, MLS CC-BY-4.0, CV CC0)
+      hf: flozi00/asr-german-mixed-evals
+      license: CC-BY-4.0 / CC0-1.0 (per subset)
