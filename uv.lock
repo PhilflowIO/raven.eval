@@ -3982,6 +3982,9 @@ asr = [
     { name = "soundfile" },
     { name = "tqdm" },
 ]
+assemblyai = [
+    { name = "httpx" },
+]
 dev = [
     { name = "pytest" },
 ]
@@ -4012,6 +4015,7 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'asr'" },
     { name = "datasets", marker = "extra == 'diar'" },
     { name = "httpx", marker = "extra == 'asr'" },
+    { name = "httpx", marker = "extra == 'assemblyai'" },
     { name = "huggingface-hub", marker = "extra == 'diar'" },
     { name = "huggingface-hub", marker = "extra == 'sortformer'" },
     { name = "jiwer" },
@@ -4036,7 +4040,7 @@ requires-dist = [
     { name = "tqdm", marker = "extra == 'asr'" },
     { name = "unidecode" },
 ]
-provides-extras = ["dev", "asr", "modal", "diar", "sortformer"]
+provides-extras = ["dev", "asr", "modal", "diar", "assemblyai", "sortformer"]
 
 [[package]]
 name = "regex"

@@ -75,11 +75,39 @@ def test_dataset_revisions_are_pinned_commits():
     """A published number must hang on an immutable revision, never a branch."""
     import re
 
-    specs = [*DER_DATASETS.values(), *KNOWN_DIARIZERS.values()]
-    for spec in specs:
+    for spec in DER_DATASETS.values():
         assert re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
             f"{spec}: revision {spec.revision!r} is not a full commit hash"
         )
+
+
+def test_diarizer_revisions_are_commits_unless_the_vendor_offers_none():
+    """Same invariant, one declared exception — hosted APIs publish no commit.
+
+    A hosted diarizer (AssemblyAI, …) exposes only a model *alias*, which the
+    vendor can re-train behind. That weakness must be declared per spec
+    (`revision_kind="vendor-alias"`), never smuggled in by loosening the regex
+    for everyone: a local-weights spec that silently stopped pinning a commit
+    would then pass unnoticed.
+    """
+    import re
+
+    for key, spec in KNOWN_DIARIZERS.items():
+        if spec.revision_kind == "commit":
+            assert re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
+                f"{key}: revision {spec.revision!r} is not a full commit hash"
+            )
+        elif spec.revision_kind == "vendor-alias":
+            assert spec.revision, f"{key}: a vendor alias must still be explicit"
+            assert not re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
+                f"{key}: revision looks like a commit — declare revision_kind"
+                f"='commit' so the strict rule applies"
+            )
+        else:
+            raise AssertionError(
+                f"{key}: unknown revision_kind {spec.revision_kind!r} — expected "
+                f"'commit' or 'vendor-alias'"
+            )
 
 
 # ── AMI loader (gold from the pinned setup clone, audio from the mirror) ──────

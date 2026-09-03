@@ -103,10 +103,19 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
 class DiarizerSpec:
     """Identifies a diarizer + its adapter binding for the runner."""
 
-    model_id: str        # HF slug (gated model — needs an accepted license + token)
+    model_id: str        # HF slug, or `<vendor>/<model>` for a hosted API
     adapter: str         # adapter module under raven_diar.adapters
     label: str           # short id used in result/artifact directory names
-    revision: str        # HF revision hash/tag — pin, never floating
+    revision: str        # the pin — never floating; see `revision_kind`
+    # How immutable the pin actually is. "commit" = a 40-hex HF/git commit: the
+    # bytes cannot change under a published number. "vendor-alias" = the most
+    # specific selector a hosted API offers, which is a MOVING target — the
+    # vendor can re-train behind it and nothing in the API says so. The field
+    # exists so that weakness is declared per diarizer and testable
+    # (tests/test_diar_harness.py), rather than hidden by loosening the rule for
+    # everyone. A hosted adapter must additionally assert at run time that the
+    # response names the alias it asked for.
+    revision_kind: str = "commit"
 
 
 KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
@@ -129,6 +138,21 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         label="sortformer-4spk-v1",
         # HF `main` as of 2026-09-03 (repo has no tags; lastModified 2025-12-15).
         revision="9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08",
+    ),
+    # AssemblyAI Universal-3.5 Pro. HOSTED: needs ASSEMBLYAI_API_KEY, no GPU.
+    # AssemblyAI has NO diarization-only endpoint — diarization is the
+    # `speaker_labels` flag on a transcription request, so a DER run also pays
+    # for a transcript (0.21 $/h model + 0.02 $/h diarization add-on, verified on
+    # assemblyai.com/pricing 2026-09-03). `revision` IS the model alias: the
+    # vendor publishes no immutable version, and its DEFAULT is a two-model
+    # fallback chain, so the adapter sends this alias alone and asserts the
+    # response's `speech_model_used` matches it.
+    "assemblyai-universal-3-5-pro": DiarizerSpec(
+        model_id="assemblyai/universal-3-5-pro",
+        adapter="assemblyai",
+        label="assemblyai-universal-3-5-pro",
+        revision="universal-3-5-pro",
+        revision_kind="vendor-alias",
     ),
     # Adding the next diarizer (diarizen, a hosted API, …) is a module under
     # raven_diar/adapters/ exposing an ``ADAPTER`` factory plus a spec entry

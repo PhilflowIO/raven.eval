@@ -11,8 +11,9 @@ page states it per diarizer rather than hiding it.
 |---|---|---|---|---|---|
 | `pyannote-community-1` | `diar` | **yes** | **yes** (accept on HF) | strongly recommended | needs system FFmpeg *shared* libs (see below) |
 | `sortformer-4spk-v1` | `sortformer` | no | no (weights are public) | strongly recommended | CC-BY-NC-4.0 → **non-commercial**; hard cap of **4 speakers** |
+| `assemblyai-universal-3-5-pro` | `assemblyai` | no | no | **none** (hosted) | needs `ASSEMBLYAI_API_KEY`; **costs money per hour of audio** — see below |
 
-Neither needs an API key: both run locally. Adding a third diarizer is a module
+The two local models need no API key; the hosted one needs no GPU. Adding a third diarizer is a module
 under `raven_diar/adapters/` exposing an `ADAPTER` factory plus a `DiarizerSpec`
 entry in `raven_diar/config.py` — the runner dispatches through
 `raven_diar/registry.py` and is not edited (see that module's docstring).
@@ -59,11 +60,48 @@ The revision is pinned via `hf_hub_download` rather than NeMo's
 `from_pretrained`, which accepts no `revision` and would silently track the HF
 branch — a published DER must not be able to drift under a re-upload.
 
+## The AssemblyAI requirements
+
+`assemblyai-universal-3-5-pro` is the first **hosted** diarizer here: no GPU, no
+weights, no licence to accept — and the first one that costs money per hour of
+audio. Three things about it are benchmark-relevant, not trivia:
+
+1. **There is no diarization-only endpoint.** Diarization is the
+   `speaker_labels` flag on a normal transcription request, so every DER file
+   also buys a German transcript you do not score. That is why the rate below
+   includes the transcription base price.
+2. **Price (verified on assemblyai.com/pricing, 2026-09-03).** Universal-3.5 Pro
+   is **0.21 $/h**, the Speaker Diarization add-on is **0.02 $/h** → **0.23 $/h**
+   all-in. German sits on the same tier as English. Billing is per second, so a
+   corpus of many short files carries no rounding premium. CALLHOME-de is 120
+   files / ~18.4 h ≈ **4.2 $** for one full sweep. Budget before you run.
+3. **The pin is an alias, and that is the vendor's limit, not ours.** AssemblyAI
+   publishes no immutable model version. The only selector is
+   `speech_models`, and its *default* is a fallback chain
+   `["universal-3-5-pro", "universal-2"]` — two different models, so an unpinned
+   published DER could silently come from either. The adapter therefore sends a
+   **single-element** list and asserts the response's `speech_model_used` is that
+   same alias, failing the file otherwise. If AssemblyAI re-trains behind the
+   alias, the number moves and nothing in the API says so. Stated plainly here
+   rather than dressed up as a version pin.
+
+```bash
+export ASSEMBLYAI_API_KEY=...          # your key; this repo ships names, never values
+make reproduce METRIC=der DATASET=callhome-de MODEL=assemblyai-universal-3-5-pro \
+  EXTRA=assemblyai LIMIT=3             # smoke first: 3 files ≈ 0.10 $
+```
+
+Word-level speaker labels are folded into turns by the **shared**
+`raven_diar/adapters/aggregate.py` at the shared threshold — never by
+AssemblyAI's own `utterances` grouping, which would make a DER difference
+against another provider partly a difference of two vendors' folding rules.
+
 ## Install
 
 ```bash
 uv sync --extra dev --extra diar        # pyannote lane: torch + pyannote.audio
 uv sync --extra dev --extra sortformer  # sortformer lane: nemo_toolkit[asr] + torch
+uv sync --extra dev --extra assemblyai  # hosted lane: httpx only (no torch, no GPU)
 ```
 
 Both extras are heavy (torch) and deliberately isolated: Tier-1 verify never

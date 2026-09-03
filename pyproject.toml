@@ -45,6 +45,12 @@ diar = [
     "soundfile",
     "numpy",
 ]
+# Tier-2 DER, hosted-API lane (raven_diar/adapters/assemblyai.py). The lightest
+# extra in the repo on purpose: a hosted diarizer needs no GPU, no torch and no
+# model weights — only an HTTP client. Keeping it separate means running the
+# AssemblyAI lane never installs a deep-learning stack, and the adapter imports
+# httpx lazily so listing the registry works without this extra at all.
+assemblyai = ["httpx"]
 # Tier-2 DER, NVIDIA Sortformer lane (raven_diar/adapters/sortformer.py). Its own
 # extra because nemo_toolkit is a large, opinionated dependency tree of its own:
 # nobody should have to install it to score DER, to run the pyannote lane, or to
