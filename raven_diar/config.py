@@ -107,6 +107,12 @@ class DiarizerSpec:
     adapter: str         # adapter module under raven_diar.adapters
     label: str           # short id used in result/artifact directory names
     revision: str        # HF revision hash/tag — pin, never floating
+    # True for a diarizer that runs behind a vendor API instead of from weights
+    # we fetch. It changes what a *pin* can be: there is no commit hash to pin,
+    # so ``revision`` carries the vendor's own explicit model version (Deepgram's
+    # ``diarize_model=v2``). The requirement is unchanged — the pin must be
+    # explicit and immutable, never an alias like "latest" — only its shape is.
+    hosted: bool = False
 
 
 KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
@@ -129,6 +135,18 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         label="sortformer-4spk-v1",
         # HF `main` as of 2026-09-03 (repo has no tags; lastModified 2025-12-15).
         revision="9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08",
+    ),
+    # Deepgram, the first HOSTED diarizer: no GPU, no weights — an API key
+    # (DEEPGRAM_API_KEY) and per-second billing. Deepgram has no diarization-only
+    # endpoint, so `model_id` is the pinned ASR model whose word timings the turns
+    # are folded from, and `revision` is the pinned `diarize_model` version (the
+    # analogue of an HF revision hash) — never "latest".
+    "deepgram-nova-3": DiarizerSpec(
+        model_id="nova-3-general",
+        adapter="deepgram",
+        label="deepgram-nova-3",
+        revision="v2",
+        hosted=True,
     ),
     # Adding the next diarizer (diarizen, a hosted API, …) is a module under
     # raven_diar/adapters/ exposing an ``ADAPTER`` factory plus a spec entry

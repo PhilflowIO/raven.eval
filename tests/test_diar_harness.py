@@ -71,14 +71,37 @@ def test_datasets_and_diarizers_registered():
     )
 
 
+#: Vendor aliases that mean "whatever is newest" — the exact thing a published
+#: number may not hang on, because it moves without us doing anything.
+FLOATING_ALIASES = frozenset({"", "latest", "main", "master", "head", "stable", "default"})
+
+
 def test_dataset_revisions_are_pinned_commits():
     """A published number must hang on an immutable revision, never a branch."""
     import re
 
-    specs = [*DER_DATASETS.values(), *KNOWN_DIARIZERS.values()]
+    specs = [
+        *DER_DATASETS.values(),
+        *(d for d in KNOWN_DIARIZERS.values() if not d.hosted),
+    ]
     for spec in specs:
         assert re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
             f"{spec}: revision {spec.revision!r} is not a full commit hash"
+        )
+
+
+def test_hosted_diarizers_pin_an_explicit_vendor_version():
+    """Same requirement, different shape: a hosted model has no commit hash.
+
+    A vendor API exposes a versioned model name instead, so the rule that
+    survives is the one that matters — the pin must name a version, never an
+    alias that the vendor is free to repoint under a published number.
+    """
+    hosted = [d for d in KNOWN_DIARIZERS.values() if d.hosted]
+    assert hosted, "no hosted diarizer registered — delete this test, not the pin rule"
+    for spec in hosted:
+        assert spec.revision.strip().lower() not in FLOATING_ALIASES, (
+            f"{spec}: revision {spec.revision!r} is a floating vendor alias"
         )
 
 

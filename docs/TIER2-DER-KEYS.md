@@ -11,8 +11,10 @@ page states it per diarizer rather than hiding it.
 |---|---|---|---|---|---|
 | `pyannote-community-1` | `diar` | **yes** | **yes** (accept on HF) | strongly recommended | needs system FFmpeg *shared* libs (see below) |
 | `sortformer-4spk-v1` | `sortformer` | no | no (weights are public) | strongly recommended | CC-BY-NC-4.0 → **non-commercial**; hard cap of **4 speakers** |
+| `deepgram-nova-3` | `diar-hosted` | no | no | **none** | hosted API — needs `DEEPGRAM_API_KEY` and **costs money per hour of audio** |
 
-Neither needs an API key: both run locally. Adding a third diarizer is a module
+The first two run locally and need no API key; the Deepgram lane is the inverse —
+no GPU at all, but a metered vendor bill. Adding a fourth diarizer is a module
 under `raven_diar/adapters/` exposing an `ADAPTER` factory plus a `DiarizerSpec`
 entry in `raven_diar/config.py` — the runner dispatches through
 `raven_diar/registry.py` and is not edited (see that module's docstring).
@@ -59,11 +61,58 @@ The revision is pinned via `hf_hub_download` rather than NeMo's
 `from_pretrained`, which accepts no `revision` and would silently track the HF
 branch — a published DER must not be able to drift under a re-upload.
 
+## The Deepgram requirements
+
+`deepgram-nova-3` is the first **hosted** diarizer in the harness. It needs no
+GPU, no weights and no licence acceptance — it needs an account and a budget.
+
+1. **`DEEPGRAM_API_KEY`** in your environment. This repo ships env-var *names*
+   only, never values or URLs.
+2. **The `diar-hosted` extra** (`httpx` + the dataset loader). Deliberately not
+   `diar`: a hosted diarizer must not drag in torch.
+3. **Money.** There is no free lane here. See the cost note below.
+
+### It costs per hour of audio, and there is no diarization-only endpoint
+
+Deepgram does not expose diarization on its own. Diarization is a parameter on
+the **pre-recorded transcription** request (`POST /v1/listen`), so every scored
+file also pays for a transcription — and consequently there is no separate
+diarization price line. Diarization is included in the pre-recorded base rate;
+only the *streaming* tab adds a per-minute diarization surcharge, which is why
+this adapter uses the pre-recorded endpoint exclusively. At the rate this
+benchmark was budgeted against (0.258 $/h, German on the same tier as English),
+the 120-file / ~18.4 h CALLHOME-de set is roughly **4.75 $** per full sweep.
+Billing is per second, so a corpus of many short files pays no rounding premium.
+Check <https://deepgram.com/pricing> before you rely on that figure — a vendor
+price is not a reproducible constant.
+
+### Two models run, so two things are pinned
+
+`model` is the ASR model whose word timings the turns are folded from;
+`diarize_model` is the diarizer itself. Deepgram versions its diarizers
+explicitly (`v1` / `v2`, with `latest` resolving to the newest GA batch model),
+so `DiarizerSpec.revision` carries the `diarize_model` **version** — that is this
+lane's analogue of an HF revision hash. Neither is set to a floating alias:
+`nova-3-general` rather than `nova-3`, `v2` rather than `latest`. The vendor
+echoes `metadata.diarize_info` (`model_uuid` + `arch`) on every request where a
+diarizer actually ran; the adapter keeps it in `DiarizeResult.raw`, so the pin is
+evidenced rather than asserted, and a response *without* that block is raised on
+rather than scored as a one-speaker file.
+
+### It is also the first caller of the shared word→turn aggregator
+
+Deepgram returns speaker-labelled **words**, not turns. The folding into turns
+lives once, in `raven_diar/adapters/aggregate.py`, and every hosted adapter calls
+it with the shared `DEFAULT_GAP_MERGE_S`. That is not tidiness: if each provider
+folded its own way, a DER *difference* between two providers would partly measure
+our two folding rules instead of the two models.
+
 ## Install
 
 ```bash
 uv sync --extra dev --extra diar        # pyannote lane: torch + pyannote.audio
 uv sync --extra dev --extra sortformer  # sortformer lane: nemo_toolkit[asr] + torch
+uv sync --extra dev --extra diar-hosted # hosted lane: httpx + loader, no torch
 ```
 
 Both extras are heavy (torch) and deliberately isolated: Tier-1 verify never
@@ -119,6 +168,14 @@ whose audio is missing is **skipped loudly** (never silently scored).
    make reproduce METRIC=der DATASET=callhome-de MODEL=pyannote-community-1
    ```
 3. **AMI** for the 4-speaker meeting regime.
+
+The hosted lane runs the same way, with its own extra and no GPU — but smoke it
+on a handful of files first, because every file is billed:
+
+```bash
+make reproduce METRIC=der DATASET=callhome-de MODEL=deepgram-nova-3 \
+  EXTRA=diar-hosted LIMIT=3
+```
 
 ## From run to committed proof
 
