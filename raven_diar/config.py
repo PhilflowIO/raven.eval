@@ -163,6 +163,24 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         # mark, because we could not ship the thing that won.
         shippable=False,
     ),
+    # NVIDIA Streaming Sortformer 4spk-v2 — the SHIPPABLE Sortformer. Same
+    # adapter module as v1 (same NeMo model class, same output shape); what
+    # differs is data: a streaming config and a different checkpoint file.
+    "sortformer-streaming-4spk-v2": DiarizerSpec(
+        model_id="nvidia/diar_streaming_sortformer_4spk-v2",
+        adapter="sortformer",
+        label="sortformer-streaming-4spk-v2",
+        # HF `main` as of 2026-09-03 (repo has no tags; lastModified
+        # 2026-08-12). Pinned via hf_hub_download in the adapter — NeMo's
+        # from_pretrained takes no revision and would track the branch.
+        revision="5240a64075176943f677d30fa2171c780229f341",
+        # Verbatim from the model card, section "Licence" (2026-09-03):
+        # "License to use this model is covered by the CC-BY-4.0." This is the
+        # whole difference from v1: CC-BY-4.0 permits commercial use, so a row
+        # from this checkpoint may compete for a winner mark.
+        license="CC-BY-4.0",
+        shippable=True,
+    ),
     # Deepgram, the first HOSTED diarizer: no GPU, no weights — an API key
     # (DEEPGRAM_API_KEY) and per-second billing. Deepgram has no diarization-only
     # endpoint, so `model_id` is the pinned ASR model whose word timings the turns
