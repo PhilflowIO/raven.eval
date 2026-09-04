@@ -390,3 +390,74 @@ def test_the_published_gap_threshold_matches_the_contract():
         "shared aggregator does not use — every hosted DER row would be "
         "measured under rules the committed contract misstates."
     )
+
+
+# ── reproduce.run: the summary records what was measured, not just the pins ──
+
+
+def _fake_run(tmp_path: Path, monkeypatch, diarizer) -> dict:
+    """Drive ``raven_diar.reproduce.run`` with a one-file loader and ``diarizer``."""
+    from raven_diar import reproduce
+    from raven_diar.datasets.base import DiarFile
+
+    gold = tmp_path / "f1.rttm"
+    gold.write_text(to_rttm([(0, 10, "A"), (10, 20, "B")], file_id="f1"))
+    audio = tmp_path / "f1.wav"
+    audio.write_bytes(b"")
+
+    class _Loader:
+        def prepare(self, root, revision=None):  # pragma: no cover - not called
+            raise AssertionError("skip_prepare=True must skip the download")
+
+        def iter_files(self, root, limit=None):
+            yield DiarFile("f1", audio, gold, "voxconverse")
+
+    monkeypatch.setattr(reproduce, "_make_loader", lambda *a, **k: _Loader())
+    monkeypatch.setattr(reproduce, "_make_diarizer", lambda *a, **k: diarizer)
+    out = tmp_path / "out"
+    summary_path = reproduce.run(
+        dataset="voxconverse",
+        model_key="sortformer-streaming-4spk-v2",
+        root=tmp_path,
+        out_dir=out,
+        limit=None,
+        dataset_revision=None,
+        model_revision=None,
+        skip_prepare=True,
+    )
+    return json.loads(summary_path.read_text())
+
+
+class _StubDiarizer:
+    """Returns one fixed hypothesis; optionally declares a ``run_config``."""
+
+    def __init__(self, run_config=None):
+        if run_config is not None:
+            self.run_config = run_config
+
+    def diarize(self, audio_path):
+        from raven_diar.adapters.base import DiarizeResult
+
+        return DiarizeResult(segments=[(0.0, 20.0, "Z")], latency_s=0.1)
+
+
+def test_summary_records_the_latency_preset_a_run_was_measured_under(
+    tmp_path: Path, monkeypatch
+):
+    """A run at a non-default streaming preset is a different number.
+
+    ``promote`` copies this summary into the artifact, so recording the preset is
+    what stops a diagnostic run from being published as if it were the shipped
+    configuration.
+    """
+    config = {"latency_preset": "low-latency", "streaming_config": {"chunk_len": 6}}
+    summary = _fake_run(tmp_path, monkeypatch, _StubDiarizer(run_config=config))
+    assert summary["diarizer_config"] == config
+
+
+def test_an_adapter_without_a_run_config_leaves_the_summary_shape_alone(
+    tmp_path: Path, monkeypatch
+):
+    """Committed summaries have no such key; hosted adapters must not grow a null."""
+    summary = _fake_run(tmp_path, monkeypatch, _StubDiarizer())
+    assert "diarizer_config" not in summary
