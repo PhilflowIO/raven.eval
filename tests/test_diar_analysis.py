@@ -13,11 +13,13 @@ from pathlib import Path
 
 import pytest
 
+from raven_diar.adapters.aggregate import spans_to_turns
 from raven_diar.analysis import (
     aggregate_der,
     bootstrap_der_ci,
     boundary_report,
     der_by_speaker_count,
+    folding_sensitivity,
     paired_bootstrap_delta,
     reference_overlap,
     speaker_bucket,
@@ -332,3 +334,33 @@ def test_backfill_is_idempotent(tmp_path: Path):
     added, conflicts = backfill(model)
     assert not added and not conflicts
     assert (model / "expected.json").read_text() == first
+
+
+# ── folding sensitivity (#5449) ──────────────────────────────────────────────
+
+
+def test_already_folded_turns_are_a_fixed_point(tmp_path: Path):
+    """The evidence that the shared folding is reconstruction, not tuning.
+
+    A hypothesis that has been through ``spans_to_turns`` does not move when it
+    goes through again, so a hosted row's 0.000 pp residue is not a coincidence
+    of that corpus — it is the property that lets the step be applied to one side
+    of a hosted-vs-local comparison without it being an opinion about the model.
+    """
+    gold = _write_rttm(tmp_path / "gold" / "f1.rttm",
+                       [(0.0, 5.0, "A"), (6.0, 11.0, "B")])
+    words = [(0.0, 0.4, "A"), (0.6, 1.0, "A"), (3.0, 5.0, "A"), (6.0, 11.0, "B")]
+    hyp = _write_rttm(tmp_path / "hyp" / "f1.rttm",
+                      spans_to_turns(words, gap_merge_s=0.5))
+    result = folding_sensitivity([(gold, hyp)], "t")
+    assert result["delta_classic"] == pytest.approx(0.0, abs=1e-9)
+    assert result["delta_full"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_unfolded_turns_do_move(tmp_path: Path):
+    """A local-shaped hypothesis with sub-gap silences is not a fixed point."""
+    gold = _write_rttm(tmp_path / "gold" / "f1.rttm", [(0.0, 10.0, "A")])
+    shredded = [(0.0, 1.0, "A"), (1.2, 2.0, "A"), (2.3, 10.0, "A")]
+    hyp = _write_rttm(tmp_path / "hyp" / "f1.rttm", shredded)
+    result = folding_sensitivity([(gold, hyp)], "t")
+    assert result["delta_full"] != pytest.approx(0.0, abs=1e-9)

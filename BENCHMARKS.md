@@ -306,11 +306,36 @@ against 68 % of boundaries inside 250 ms. Deepgram sits between them (755 ms,
 34 %). That is the structural property of diarization-derived-from-a-transcript
 worth stating, and it is measured rather than inferred.
 
-Two things make this row comparable rather than merely adjacent. Both providers'
-turns come from the **same shared aggregator**
-(`raven_diar/adapters/aggregate.py`, 0.5 s gap merge), so the difference measures
-the models and not two vendors' folding rules. And the model is **pinned by
-alias**: AssemblyAI publishes no immutable version, its default is a two-model
+Two things make this row comparable rather than merely adjacent, and one thing
+qualifies it.
+
+Both *hosted* providers' turns come from the **same shared aggregator**
+(`raven_diar/adapters/aggregate.py`, 0.5 s gap merge), so a Deepgram-vs-AssemblyAI
+difference measures the models and not two vendors' folding rules. That is what
+the aggregator exists for.
+
+It does not extend to hosted-vs-local, and this page used to imply that it did.
+A hosted API returns labelled *words*; turns must be reconstructed before
+anything can be scored, and the aggregator is that reconstruction. A local
+diarizer already emits turns, so folding them again would be a second opinion we
+impose rather than one we cannot avoid — the local adapters are deliberately
+exempt. So the AssemblyAI-vs-community-1 comparison is not "identical protocol";
+it is identical gold, identical scorer, identical collars, and one step that
+applies to one side because only one side needs it.
+
+`make analyse` now measures that residue rather than leaving it to the reader:
+each row reports how far it would move if the shared folding were applied to it
+too. The hosted rows are fixed points and read **+0.000 pp** — folding is
+idempotent on already-folded turns, which is the direct evidence that the step is
+reconstruction and not tuning. Local rows move by between −0.19 and −1.77 pp, in
+both directions and differently per corpus, which is also why uniform folding is
+not simply applied to everything: it would move six published numbers, and it
+would break the two reproductions this page rests on (community-1 on VoxConverse
+test goes 11.15 → 10.95 against pyannote's published 11.2). Comparability with
+the field's own published numbers is worth more than a sentence that is literally
+true.
+
+The model is **pinned by alias**: AssemblyAI publishes no immutable version, its default is a two-model
 fallback chain, so the adapter sends `speech_models: ["universal-3-5-pro"]` alone
 and fails the file if the response's `speech_model_used` names anything else. An
 alias can still move under a re-train — that limitation is the vendor's, and it

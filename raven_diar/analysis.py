@@ -56,7 +56,8 @@ from .config import (
     BOOTSTRAP_SEED,
     COLLARS,
 )
-from .score import FileScore, score_rttm_pairs
+from .adapters.aggregate import DEFAULT_GAP_MERGE_S, spans_to_turns
+from .score import FileScore, score_rttm_pairs, score_segment_pairs
 
 #: Resamples / seed / level for every published interval, from the scoring
 #: contract (``benchmark.config.yaml`` → ``der.uncertainty``, mirrored in
@@ -479,6 +480,47 @@ def artifact_datasets(model_dir: Path) -> list[str]:
     return sorted(p.name for p in gold_root.iterdir() if p.is_dir())
 
 
+def folding_sensitivity(
+    rttm_pairs: Sequence[tuple[Path, Path]],
+    dataset: str,
+    *,
+    gap_merge_s: float = DEFAULT_GAP_MERGE_S,
+) -> dict[str, float]:
+    """How much this row moves if the shared turn folding is applied to it too.
+
+    Hosted adapters must fold: their APIs return labelled *words*, and turns have
+    to be reconstructed before anything can be scored. Local diarizers already
+    emit turns, so folding them again would be a second opinion we impose rather
+    than a reconstruction we cannot avoid — which is why
+    ``raven_diar/adapters/aggregate.py`` exempts them.
+
+    The consequence is that "both providers' turns come from the same shared
+    aggregator" is true of two hosted rows compared with each other and *not* of
+    a hosted row compared with a local one. This function measures the residue
+    instead of leaving the reader to wonder about it: it re-scores the committed
+    hypothesis after passing it through the same folding, and reports the shift.
+
+    A hosted row is a fixed point (the folding is idempotent on already-folded
+    turns) and reads exactly 0.000. A local row moves by however much its own
+    turn granularity differs from the folded one — which is corpus- and
+    model-specific and signed in both directions, so this is not a correction
+    that could simply be applied to everything.
+    """
+    raw = [(load_rttm(g), load_rttm(h)) for g, h in rttm_pairs]
+    folded = [(g, spans_to_turns(h, gap_merge_s=gap_merge_s)) for g, h in raw]
+    before = score_segment_pairs(dataset, raw)
+    after = score_segment_pairs(dataset, folded)
+    return {
+        "gap_merge_s": gap_merge_s,
+        "der_full": before.der_full,
+        "der_full_folded": after.der_full,
+        "delta_full": after.der_full - before.der_full,
+        "der_classic": before.der_classic,
+        "der_classic_folded": after.der_classic,
+        "delta_classic": after.der_classic - before.der_classic,
+    }
+
+
 def analyse(
     model_dir: Path,
     dataset: str,
@@ -520,6 +562,7 @@ def analyse(
             "overlap_s": overlap.overlap_s,
             "speech_s": overlap.speech_s,
         },
+        "folding_sensitivity": folding_sensitivity(pairs, dataset),
         "boundary": {
             "n_boundaries": boundary.n_boundaries,
             "unmatched": boundary.unmatched_boundaries,
@@ -560,6 +603,12 @@ def _print_human(report: dict[str, object]) -> None:
     print(f"  uncovered ref speech: short(<{SHORT_SEGMENT_S} s) "
           f"{bd['missed_short_s']:.0f} s ({bd['missed_short_share']:.1f} %)   "
           f"long {bd['missed_long_s']:.0f} s")
+    fs = report["folding_sensitivity"]           # type: ignore[index]
+    print(f"  folding residue if the shared {fs['gap_merge_s']} s turn folding "
+          f"were applied here too: "
+          f"{fs['delta_classic']:+.3f} pp @0.25   {fs['delta_full']:+.3f} pp @0.0"
+          + ("   (fixed point — already folded)"
+             if abs(fs["delta_classic"]) < 1e-9 else ""))
 
 
 def main(argv: list[str] | None = None) -> int:
