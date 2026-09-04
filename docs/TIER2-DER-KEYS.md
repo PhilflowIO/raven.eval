@@ -11,14 +11,13 @@ page states it per diarizer rather than hiding it.
 |---|---|---|---|---|---|
 | `pyannote-community-1` | `diar` | **yes** | **yes** (accept on HF) | strongly recommended | needs system FFmpeg *shared* libs (see below) |
 | `sortformer-4spk-v1` | `sortformer` | no | no (weights are public) | strongly recommended | CC-BY-NC-4.0 → **non-commercial**; hard cap of **4 speakers** |
+| `sortformer-streaming-4spk-v2` | `sortformer` | no | no (weights are public) | strongly recommended | CC-BY-4.0 → **commercial use permitted**; hard cap of **4 speakers**; streaming latency preset via `SORTFORMER_LATENCY_PRESET` |
 | `diarizen-wavlm-large-s80-md-v2` | `diarizen` | no | no (weights are public) | required | CC-BY-NC-4.0 → **non-commercial**; no speaker cap (clusters to 20); **conflicts with the other local lanes** |
 | `deepgram-nova-3` | `diar-hosted` | no | no | **none** | hosted API — needs `DEEPGRAM_API_KEY` and **costs money per hour of audio** |
+| `assemblyai-universal-3-5-pro` | `diar-hosted` | no | no | **none** (hosted) | needs `ASSEMBLYAI_API_KEY`; **costs money per hour of audio** — see below |
 
 The local models run without an API key; the hosted lanes are the inverse —
 no GPU at all, but a metered vendor bill. Adding another diarizer is a module
-| `assemblyai-universal-3-5-pro` | `diar-hosted` | no | no | **none** (hosted) | needs `ASSEMBLYAI_API_KEY`; **costs money per hour of audio** — see below |
-
-The local models need no API key; the hosted ones need no GPU. Adding another diarizer is a module
 under `raven_diar/adapters/` exposing an `ADAPTER` factory plus a `DiarizerSpec`
 entry in `raven_diar/config.py` — the runner dispatches through
 `raven_diar/registry.py` and is not edited (see that module's docstring).
@@ -221,7 +220,6 @@ uv sync --extra dev --extra diar        # pyannote lane: torch + pyannote.audio
 uv sync --extra dev --extra sortformer  # sortformer lane: nemo_toolkit[asr] + torch
 uv sync --extra dev --extra diarizen    # diarizen lane: DiariZen + its pyannote fork
 uv sync --extra dev --extra diar-hosted # hosted lane: httpx + loader, no torch
-uv sync --extra dev --extra diar-hosted  # hosted lane: httpx only (no torch, no GPU)
 ```
 
 The local lanes are heavy (torch) and deliberately isolated: Tier-1 verify never
