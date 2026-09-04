@@ -501,7 +501,11 @@ test it goes 5.64 / 6.94 / 5.95 / 4.92 / **7.09** for 1 / 2 / 3 / 4 / 5+ — fla
 with the many-speaker bucket no worse than the two-speaker one. Community-1 on
 the same 232 files reads 4.56 / 8.11 / 9.29 / 6.41 / **8.76**; paired over those
 files DiariZen is **1.58 pp ahead, CI [-1.96, -1.19]**, an interval that excludes
-zero. The Sortformer column is empty here and stays empty on purpose: the
+zero. It is also the lowest of the four rows this set now carries — 6.83 against
+community-1's 8.41, AssemblyAI's 18.13 and Deepgram's 37.81 — and the two hosted
+rows are the sharper reminder of what this corpus asks: both are within a few
+points of their German numbers on telephone speech and neither survives
+in-the-wild audio with many speakers. The Sortformer column is empty here and stays empty on purpose: the
 checkpoints are hard-capped at four speakers, so a 5+ number for them would be a
 statement about folding, not about diarization.
 
