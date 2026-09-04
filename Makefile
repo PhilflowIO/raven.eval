@@ -1,7 +1,7 @@
 # raven.eval — one entrypoint per verification level.
 # See README.md for the three-tier verifiability model.
 
-.PHONY: install test verify rescore reproduce promote dscore-check clean
+.PHONY: install test verify analyse rescore reproduce promote dscore-check clean
 
 install:            ## Install the pinned environment (uv, fails on lockfile drift).
 	uv sync --locked --extra dev --extra asr
@@ -16,6 +16,14 @@ test:               ## Run the scorer + harness tests (the regression guard).
 # mismatch or on an artifacts dir with no WER *and* no DER artifacts.
 verify:             ## Tier-1: re-score committed WER + DER artifacts → reproduce published numbers.
 	uv run python scripts/verify.py
+
+# Read a committed DER artifact past its corpus scalar: bootstrap confidence
+# interval, DER by reference speaker count, reference overlap fraction, and
+# speaker-aware boundary offsets. Same RTTMs, same scorer, no GPU — every number
+# quoted in the "how precise is it" paragraphs of BENCHMARKS.md comes from here.
+#   make analyse ARTIFACT=artifacts/2026-07-31-callhome-de/pyannote-community-1
+analyse:            ## Tier-1: intervals, speaker buckets, overlap, boundaries for one artifact.
+	uv run python -m raven_diar.analysis $(ARTIFACT) $(if $(COLLAR),--collar $(COLLAR),)
 
 # Backfill scalars the scorer only started reporting later into already-committed
 # expected.json files, recomputed from those artifacts' own RTTMs. Refuses to
