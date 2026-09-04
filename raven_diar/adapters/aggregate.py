@@ -14,6 +14,17 @@ and must say so in its published row; it does not get to do it quietly.
 
 The local-GPU adapters (pyannote, sortformer) do NOT use this: their backends
 already emit turns, and re-folding them would be a second, invisible opinion.
+
+That asymmetry is real and is measured rather than hand-waved. A hosted row is a
+FIXED POINT of this function — folding already-folded turns changes nothing, so
+it reads 0.000 pp — which is the direct evidence that the step is reconstruction
+and not tuning. A local row does move (between -0.19 and -1.77 pp across the
+committed artifacts, signed both ways and different per corpus), so a hosted-
+vs-local comparison shares gold, scorer and collars but not this one step.
+``raven_diar.analysis.folding_sensitivity`` reports the residue for any row, and
+``BENCHMARKS.md`` states it rather than claiming an identical protocol. Applying
+the folding uniformly instead was considered and rejected: it would move six
+published numbers and break the two vendor reproductions this benchmark rests on.
 """
 
 from __future__ import annotations

@@ -11,7 +11,18 @@
 metrics: [der, wer, bleu]
 
 der:
-  scorer_primary: pyannote.metrics      # dscore cross-check WIRED (optional): make dscore-check / raven_diar.dscore_check — gated on a local DSCORE_DIR checkout (dscore is not pip-installable), skips cleanly, not in CI
+  scorer_primary: pyannote.metrics
+  # Independent cross-check against nryant/dscore (the md-eval reference wrapper),
+  # `make dscore-check` / raven_diar.dscore_check. Optional and NOT in CI: dscore
+  # is a script repo, not a pip package, so it is gated on a local DSCORE_DIR
+  # checkout and skips cleanly without one.
+  #   status: RUN on 2026-09-04 against dscore @ e02f949 — 15 (gold, hyp) pairs
+  #   across 4 diarizers and 3 datasets, both collars, 30 comparisons,
+  #   worst |Δ| = 0.030 pp. This line said "WIRED" for weeks while the check had
+  #   never executed once and carried a collar bug that would have failed it.
+  #   note: dscore's --collar is applied per side, pyannote's is the total window
+  #   width, so `dscore --collar X` == `pyannote collar 2X`. The conversion lives
+  #   in DSCORE_COLLAR_FACTOR and is asserted by tests/test_dscore_check.py.
   # DER is reported TWICE — the two conventions are NOT comparable, so we publish both:
   variants:
     - name: full            # pyannote / DIHARD convention

@@ -1,9 +1,10 @@
 # Benchmarks
 
 > Version-stamped results. Each table states the exact commit + scoring contract
-> that produced it, and links the command to reproduce it. Empty until the dataset
-> runners (Etappe 4/5) land — the structure is fixed now so numbers only ever get
-> *added* under a known contract, never asserted without one.
+> that produced it, and links the command to reproduce it. Numbers only ever get
+> *added* under a known contract, never asserted without one — and every row on
+> this page resolves to a committed artifact that `make verify` re-scores on
+> every push, in both directions (`tests/test_published_table.py`).
 
 ## Scoring contract
 
@@ -19,12 +20,30 @@ bootstrap over files. Automatic VAD, Hungarian speaker mapping. Primary scorer
 `pyannote.metrics`. The collars, the folding threshold, the aggregation and the
 bootstrap settings are all read from the contract file by
 `tests/test_diar_harness.py` — a test that restated them as literals would pass
-just as happily against a contract that had changed underneath it. A cross-check against `dscore` (nryant/dscore) is wired as an
-**optional** `make dscore-check` (see `raven_diar/dscore_check.py`): it asserts
-dscore's DER agrees with `pyannote.metrics` on the same RTTMs within 0.5 pp. It is
-gated on a local dscore checkout (dscore is a script repo, not a pip package, so
-it can't be pinned as a normal dependency) and therefore is **not** in CI — it
-skips cleanly when `DSCORE_DIR` is unset.
+just as happily against a contract that had changed underneath it.
+
+**Cross-checked against a second implementation.** `dscore` (nryant/dscore) wraps
+NIST's `md-eval`, the reference DER. On **2026-09-04 that cross-check was
+executed** for the first time: 15 (gold, hypothesis) pairs drawn from four
+diarizers and three datasets, both collars, 30 comparisons, worst disagreement
+**0.030 pp** — inside even the ±0.05 pp tolerance this repo reproduces its own
+numbers to. Two implementations, one answer.
+
+Worth naming what that run cost, because the check had been advertised as wired
+for weeks without ever having been executed, and each of these alone would have
+failed the first attempt: it passed no collar flag at all (comparing our
+collar-0.25 DER against dscore's collar-0.0 default), it named a flag
+(`--score_overlaps`) dscore does not have, it pinned a commit (`f2d33d3`) that
+does not exist in that repository, and it handed relative paths to a subprocess
+run from another directory. A cross-check that has not been run is not a
+cross-check. The collar conversion the run established — `dscore --collar X`
+equals `pyannote collar 2X`, because md-eval applies the collar per side while
+pyannote centres a window of that total width — is now a named constant with a
+test that needs no checkout.
+
+`make dscore-check` stays **optional** and outside CI: dscore is a script
+repository, not a pip package, so it cannot be pinned as a normal dependency. It
+is gated on a local checkout and skips cleanly when `DSCORE_DIR` is unset.
 
 ## BLEU — translation-shaped corpora
 
@@ -163,8 +182,7 @@ tabled here.
 
 > Raven's internal private-meeting WER/DER numbers are measured on a corpus that
 > cannot be published (consent) and are reported separately (Tier 3) — the rows
-> here are the public-dataset numbers anyone can re-score. The Tier-1 DER
-> artifacts (committed RTTMs) land with Etappe 5.
+> here are the public-dataset numbers anyone can re-score.
 
 ## Tier-1 DER re-score (how a DER row becomes reproducible)
 
@@ -203,12 +221,13 @@ carries the file-mean beside it.
 **Past the corpus scalar.** `expected.json` is an aggregate; the per-file scores
 underneath it are what make a claim *about* that aggregate checkable.
 `make analyse ARTIFACT=artifacts/<run>/<model>` recomputes, from the same
-committed RTTMs and on a laptop, four things a single DER cannot say: a
+committed RTTMs and on a laptop, five things a single DER cannot say: a
 seeded bootstrap **confidence interval** over files, DER **by reference speaker
-count**, the reference **overlap fraction**, and speaker-aware **boundary
-offsets** with the segment-length regime the missed speech sits in. Every
-paragraph below that makes a claim of precision, difficulty or error *kind*
-quotes that command's output.
+count**, the reference **overlap fraction**, speaker-aware **boundary offsets**
+with the segment-length regime the missed speech sits in, and the **turn-folding
+residue** — how far this row would move if the shared hosted-adapter folding were
+applied to it too. Every paragraph below that makes a claim of precision,
+difficulty, error *kind* or protocol equality quotes that command's output.
 
 ## DER — speaker diarization (public datasets)
 
@@ -250,17 +269,21 @@ reads 20.58 % at collar 0.0 vs 16.08 % at 0.25 — 4.5 pp on convention alone, s
 CALLHOME DER without a stated collar + overlap rule is noise.
 
 **What the corpus itself looks like.** The reference overlap of these 120 files
-is **12.01 % of speech** (overlapped seconds / seconds where anyone speaks),
-11.90 % ± 5.44 as a per-file mean, on 18.4344 h of recording — against the ETH
-paper's ≈ 12.6 % for the same corpus, which corroborates that we are scoring the
-set they scored. Two things about that figure. First, it depends entirely on the
+is **12.01 % of speech** (overlapped seconds / seconds where anyone speaks) and
+**11.90 % ± 5.44** as a per-file mean, over 18.4344 h of recording. The ETH paper
+reports 12.58 % ± 7.31 for CALLHOME — as a per-file mean, and across all five of
+its languages rather than German alone, so 11.90 ± 5.44 is the figure that
+compares. It also states 18.4 h for its German split, which is our 18.4344 h:
+same scope, same corpus, independently arrived at.
+
+Two things about the number itself. First, it depends entirely on the
 denominator: the same overlap is 10.72 % of Σ per-speaker time and 11.09 % of
 wall clock, and "the overlap fraction" names none of the three. All three are
 printed by `make analyse` and none of them is an assertion. Second, this page
 previously published **10.8 %**, which no denominator reproduces — the closest,
 overlap-over-speaker-time, is 0.1 pp away and the earlier figure's derivation is
 not recorded anywhere in the repository. It is withdrawn and replaced by the
-number above, which any reader can recompute.
+numbers above, which any reader can recompute.
 
 **The first hosted diarizer (AssemblyAI).** On the same German telephone set,
 AssemblyAI's Universal-3.5 Pro with `speaker_labels` scores **21.74 % DER** at
@@ -284,11 +307,36 @@ against 68 % of boundaries inside 250 ms. Deepgram sits between them (755 ms,
 34 %). That is the structural property of diarization-derived-from-a-transcript
 worth stating, and it is measured rather than inferred.
 
-Two things make this row comparable rather than merely adjacent. Both providers'
-turns come from the **same shared aggregator**
-(`raven_diar/adapters/aggregate.py`, 0.5 s gap merge), so the difference measures
-the models and not two vendors' folding rules. And the model is **pinned by
-alias**: AssemblyAI publishes no immutable version, its default is a two-model
+Two things make this row comparable rather than merely adjacent, and one thing
+qualifies it.
+
+Both *hosted* providers' turns come from the **same shared aggregator**
+(`raven_diar/adapters/aggregate.py`, 0.5 s gap merge), so a Deepgram-vs-AssemblyAI
+difference measures the models and not two vendors' folding rules. That is what
+the aggregator exists for.
+
+It does not extend to hosted-vs-local, and this page used to imply that it did.
+A hosted API returns labelled *words*; turns must be reconstructed before
+anything can be scored, and the aggregator is that reconstruction. A local
+diarizer already emits turns, so folding them again would be a second opinion we
+impose rather than one we cannot avoid — the local adapters are deliberately
+exempt. So the AssemblyAI-vs-community-1 comparison is not "identical protocol";
+it is identical gold, identical scorer, identical collars, and one step that
+applies to one side because only one side needs it.
+
+`make analyse` now measures that residue rather than leaving it to the reader:
+each row reports how far it would move if the shared folding were applied to it
+too. The hosted rows are fixed points and read **+0.000 pp** — folding is
+idempotent on already-folded turns, which is the direct evidence that the step is
+reconstruction and not tuning. Local rows move by between −0.19 and −1.77 pp, in
+both directions and differently per corpus, which is also why uniform folding is
+not simply applied to everything: it would move six published numbers, and it
+would break the two reproductions this page rests on (community-1 on VoxConverse
+test goes 11.15 → 10.95 against pyannote's published 11.2). Comparability with
+the field's own published numbers is worth more than a sentence that is literally
+true.
+
+The model is **pinned by alias**: AssemblyAI publishes no immutable version, its default is a two-model
 fallback chain, so the adapter sends `speech_models: ["universal-3-5-pro"]` alone
 and fails the file if the response's `speech_model_used` names anything else. An
 alias can still move under a re-train — that limitation is the vendor's, and it
@@ -319,25 +367,45 @@ whatever the number says.
 
 **This row is also the external check on our whole measurement chain.** The ETH
 benchmark measures the same checkpoint on the same corpus under the same collar
-and reports **11.1 %**. We report 11.41 %. Under *their* aggregation — the
-unweighted file-mean their Table 3 caption describes — our own committed RTTMs
-read **11.07 %**, which rounds to their 11.1 %. It is the same measurement; the
-0.3 pp is the aggregation convention and nothing else. Ruled out as causes, with
-numbers: UEM (0.000 pp on this corpus, see below), sample scope (n=120, 18.4344 h
-against their stated 18.4 h), and chunking (their 12-minute threshold is above
-our 9.2-minute mean file length). This is the reconciliation that made the
-convention worth pinning in the contract file rather than leaving implicit.
+and reports **11.1 %**. We report 11.41 %. Under the unweighted file-mean, our
+own committed RTTMs read **11.07 %**, which rounds to their 11.1 %. It is the
+same measurement; the 0.3 pp is the aggregation convention and nothing else.
+
+That their language table uses the file-mean is not only read off the Table 3
+caption ("averaging all samples … and averaging over them") — this row is
+evidence for it. Corpus aggregation would have to produce 11.41 to match us, and
+their column reads 11.1. Two aggregations, one of which lands on their number.
+
+Ruled out as causes, with numbers: UEM (0.000 pp on this corpus, see below),
+sample scope (n=120, 18.4344 h against their stated 18.4 h for the same German
+split), and chunking (their 12-minute threshold is above our 9.2-minute mean file
+length, so no CALLHOME file is chunked on either side). This is the
+reconciliation that made the convention worth pinning in the contract file rather
+than leaving implicit.
 
 **The same reconciliation fails for the streaming v2 checkpoint, in our favour.**
 ETH report 9.6 % for `diar_streaming_sortformer_4spk-v2` on German CALLHOME; we
 read **8.98 %** corpus and **9.07 %** file-mean, 0.5–0.6 pp *better* under either
-convention. We do not know why, and the direction of the gap is not a reason to
-be relaxed about it. The open candidates, in the order worth testing, are the
-streaming latency preset (we run NVIDIA's "very high latency" configuration; the
-paper does not state theirs), the checkpoint revision (ours is `5240a640`, theirs
-unstated) and gold preparation. Until one of them explains it, our v2 German
-number is an unexplained disagreement with the only independent measurement of
-the same thing, and it is flagged here rather than quietly enjoyed.
+convention. The direction of the gap is not a reason to be relaxed about it.
+
+Three candidate causes are eliminated. *Gold preparation*: the gold RTTMs under
+all five committed CALLHOME-de artifacts are byte-identical, and the same gold
+reconciles the v1 row to their number exactly — a gold defect cannot be selective
+about which checkpoint it breaks. *Chunking*: their paper scores two v2 variants,
+one on 12-minute chunks and one on full audio, and both read 9.6 on German,
+because no CALLHOME file is long enough to be chunked. *Which column we compare
+to*: for the same reason, the streaming variant and the chunked one are the same
+run here.
+
+What remains is the streaming configuration and the checkpoint revision. We run
+NVIDIA's "very high latency" preset — the highest-quality point on their latency
+curve — and the paper describes its model only as "low-latency streaming" without
+naming a configuration. A lower-latency preset scoring worse is the expected
+direction, and it is the direction of this gap, so that is the first thing to
+test: re-run German CALLHOME at a lower-latency preset and see whether it lands
+on 9.6. That needs a GPU and is not done here. Until it is, our v2 German number
+is an unexplained disagreement with the only independent measurement of the same
+thing, and it is flagged rather than quietly enjoyed.
 
 **What the German column shows.** Five diarizers on the same 120 CALLHOME-de
 files, same gold, same scorer, same two collars. At the classic collar:

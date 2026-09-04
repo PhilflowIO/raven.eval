@@ -255,9 +255,21 @@ should come from there rather than from the single number.
 
 To independently confirm our DER against `nryant/dscore`:
 
+dscore wraps NIST's `md-eval`, so this is a genuinely independent second
+implementation rather than a second call into the same library. It runs both
+published collars and converts between the two collar conventions on the way
+(`dscore --collar X` == `pyannote collar 2X` — md-eval applies the collar per
+side, pyannote centres a window of that total width). Last executed 2026-09-04
+against `e02f949`: 30 comparisons, worst disagreement 0.030 pp.
+
+You need dscore's own runtime deps (`numpy`, `scipy`, `intervaltree`, `tabulate`)
+importable by the *same* interpreter that runs the check, and `perl` for its
+bundled `md-eval-22.pl`. The Makefile target supplies the two that Raven does not
+already pull in.
+
 ```bash
 git clone https://github.com/nryant/dscore ~/dscore
-git -C ~/dscore checkout <pinned commit; see raven_diar/dscore_check.py>
+git -C ~/dscore checkout e02f949ac6592279300a2c33d03daf9e0c12fd27
 export DSCORE_DIR=~/dscore
 make dscore-check GOLD=data/diar/voxconverse/labels/dev/<id>.rttm \
                   HYP=results/reproduce-der/pyannote-community-1/hyp/voxconverse/<id>.rttm
