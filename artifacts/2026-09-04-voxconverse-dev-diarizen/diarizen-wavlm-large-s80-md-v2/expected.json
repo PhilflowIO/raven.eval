@@ -1,0 +1,14 @@
+{
+  "voxconverse": {
+    "der_full": 4.5201,
+    "der_classic": 2.7539,
+    "miss": 1.5146,
+    "fa": 1.667,
+    "conf": 1.3384,
+    "miss_classic": 0.8599,
+    "fa_classic": 0.7195,
+    "conf_classic": 1.1745,
+    "der_full_filemean": 5.1256,
+    "der_classic_filemean": 3.3081
+  }
+}
