@@ -116,6 +116,12 @@ class SortformerDiarizer:
         provider_id: str = "sortformer-4spk-v1",
         model_id: str = MODEL_ID,
         revision: str | None = None,
+        # Accepted and ignored: this model is language-agnostic (it scores
+        # speaker turns, not words). It is in the signature because the runner
+        # builds EVERY adapter with the same kwargs — branching on
+        # ``spec.hosted`` in the dispatcher is precisely what the registry
+        # exists to prevent.
+        language: str | None = None,
         device: str | None = None,
         batch_size: int = 1,
     ) -> None:

@@ -40,12 +40,19 @@ def _make_loader(loader_name: str, split: str | None = None) -> DiarDatasetLoade
     return loader_cls(**({"split": split} if split else {}))
 
 
-def _make_diarizer(model_key: str, revision: str | None):
+def _make_diarizer(model_key: str, revision: str | None, language: str):
     """Build the adapter named by ``DiarizerSpec.adapter`` (registry dispatch).
 
-    Every adapter takes the same three kwargs, which is what makes adding a
+    Every adapter takes the same four kwargs, which is what makes adding a
     diarizer a module + a spec entry and nothing else. The import happens inside
     ``resolve`` — torch/nemo are pulled only for the adapter actually selected.
+
+    ``language`` comes from the DATASET, not from the model. A hosted diarizer
+    has no diarization-only endpoint: it folds turns out of ASR word timings, so
+    a request sent in the wrong language returns no words and the run reports
+    ~100 % miss instead of failing. The local models ignore the argument. It is
+    passed unconditionally rather than only to ``spec.hosted`` adapters, because
+    a conditional in the dispatcher is the thing the registry exists to avoid.
     """
     spec = KNOWN_DIARIZERS[model_key]
     adapter_cls = DIARIZER_ADAPTERS.resolve(spec.adapter)
@@ -53,6 +60,7 @@ def _make_diarizer(model_key: str, revision: str | None):
         provider_id=spec.label,
         model_id=spec.model_id,
         revision=revision or spec.revision,
+        language=language,
     )
 
 
@@ -97,7 +105,7 @@ def run(
     if not skip_prepare:
         loader.prepare(root, revision=dataset_revision or ds_spec.revision)
 
-    diarizer = _make_diarizer(model_key, model_revision)
+    diarizer = _make_diarizer(model_key, model_revision, ds_spec.language)
     gold_dir = out_dir / "gold" / dataset
     hyp_dir = out_dir / "hyp" / dataset
     gold_dir.mkdir(parents=True, exist_ok=True)
@@ -139,6 +147,10 @@ def run(
         "model_revision": model_revision or spec.revision,
         "dataset": dataset,
         "dataset_revision": dataset_revision or ds_spec.revision,
+        # Part of the run's identity, not decoration: for a hosted diarizer the
+        # language selects the ASR path the turns are folded from, so two runs
+        # that differ only here are not the same measurement.
+        "dataset_language": ds_spec.language,
         "limit_per_dataset": limit,
         "n_skipped_no_audio": n_skipped,
         "results": {dataset: score.as_dict()},

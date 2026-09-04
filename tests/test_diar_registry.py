@@ -82,10 +82,17 @@ def test_override_must_be_an_import_path():
 class _FakeDiarizer:
     """A diarizer added the way a real one is: a factory + a spec entry."""
 
-    def __init__(self, provider_id: str, model_id: str, revision: str | None) -> None:
+    def __init__(
+        self,
+        provider_id: str,
+        model_id: str,
+        revision: str | None,
+        language: str | None = None,
+    ) -> None:
         self.provider_id = provider_id
         self.model_id = model_id
         self.revision = revision
+        self.language = language
 
     def diarize(self, audio_path: Path) -> DiarizeResult:
         return DiarizeResult(segments=[(0.0, 1.0, "spk_0")], latency_s=0.0)
@@ -108,7 +115,7 @@ def test_a_new_adapter_is_dispatched_without_touching_reproduce(monkeypatch):
     )
     DIARIZER_ADAPTERS.register("fake_adapter", "raven_diar.adapters.base:ADAPTER")
     try:
-        diarizer = _make_diarizer("fake-diarizer", revision=None)
+        diarizer = _make_diarizer("fake-diarizer", revision=None, language="en")
     finally:
         DIARIZER_ADAPTERS._overrides.pop("fake_adapter", None)
 
@@ -117,6 +124,7 @@ def test_a_new_adapter_is_dispatched_without_touching_reproduce(monkeypatch):
     assert diarizer.provider_id == "fake-diarizer"
     assert diarizer.model_id == "fake/model"
     assert diarizer.revision == "f" * 40
+    assert diarizer.language == "en"
     assert diarizer.diarize(Path("/dev/null")).segments == [(0.0, 1.0, "spk_0")]
 
 
@@ -445,7 +453,7 @@ def test_deepgram_requires_its_key_and_names_the_env_var(monkeypatch):
 
     monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="DEEPGRAM_API_KEY"):
-        DeepgramDiarizer()
+        DeepgramDiarizer(language="de")
 
 
 def test_deepgram_folds_through_the_shared_aggregator_not_its_own(monkeypatch):
@@ -465,7 +473,7 @@ def test_deepgram_folds_through_the_shared_aggregator_not_its_own(monkeypatch):
         return [(0.0, 9.0, "SENTINEL")]
 
     monkeypatch.setattr(dg, "spans_to_turns", _sentinel)
-    diarizer = dg.DeepgramDiarizer(revision="v2")
+    diarizer = dg.DeepgramDiarizer(revision="v2", language="de")
     monkeypatch.setattr(
         diarizer,
         "_alisten",
@@ -495,10 +503,10 @@ def test_deepgram_gap_threshold_is_overridable_only_explicitly(monkeypatch):
 
     monkeypatch.setenv("DEEPGRAM_API_KEY", "not-a-real-key")
     monkeypatch.delenv(dg.GAP_MERGE_ENV, raising=False)
-    assert dg.DeepgramDiarizer()._gap_merge_s == DEFAULT_GAP_MERGE_S
+    assert dg.DeepgramDiarizer(language="de")._gap_merge_s == DEFAULT_GAP_MERGE_S
     monkeypatch.setenv(dg.GAP_MERGE_ENV, "1.0")
-    assert dg.DeepgramDiarizer()._gap_merge_s == 1.0
-    assert dg.DeepgramDiarizer(gap_merge_s=0.25)._gap_merge_s == 0.25
+    assert dg.DeepgramDiarizer(language="de")._gap_merge_s == 1.0
+    assert dg.DeepgramDiarizer(gap_merge_s=0.25, language="de")._gap_merge_s == 0.25
 
 
 # ── publication eligibility is data, not a comment ───────────────────────────
@@ -537,3 +545,62 @@ def test_non_commercial_weights_are_never_shippable() -> None:
                 f"{key}: non-commercial weights ({spec.license}) — a reference "
                 f"row, never an award. Measured and shown, never prized."
             )
+
+
+# ── the corpus decides the language (the AMI 99.99 % lesson) ─────────────────
+
+
+def test_every_dataset_declares_a_language():
+    """A corpus without a language is a hosted run that silently scores ~100 %.
+
+    The Deepgram adapter defaulted to German. On the English AMI smoke it came
+    back with zero turns for every file and the harness dutifully reported
+    99.99 % DER — a number that looks like a terrible diarizer and is in fact a
+    wrong ASR request. The language belongs to the corpus, so the corpus must
+    state it.
+    """
+    from raven_diar.config import DER_DATASETS
+
+    for key, ds in DER_DATASETS.items():
+        assert ds.language, f"{key} declares no language"
+        assert ds.language in {"de", "en"}, f"{key}: unknown language {ds.language!r}"
+
+
+def test_the_dataset_language_reaches_the_adapter(monkeypatch):
+    """The runner passes the CORPUS language, never the adapter's idea of one."""
+    import raven_diar.adapters.base as base_mod
+    from raven_diar.config import DiarizerSpec
+
+    monkeypatch.setattr(base_mod, "ADAPTER", _FakeDiarizer, raising=False)
+    monkeypatch.setitem(
+        KNOWN_DIARIZERS,
+        "fake-hosted",
+        DiarizerSpec(
+            model_id="fake/hosted",
+            adapter="fake_adapter",
+            label="fake-hosted",
+            revision="vendor-alias",
+            hosted=True,
+            revision_kind="vendor-alias",
+        ),
+    )
+    DIARIZER_ADAPTERS.register("fake_adapter", "raven_diar.adapters.base:ADAPTER")
+    try:
+        assert _make_diarizer("fake-hosted", revision=None, language="de").language == "de"
+        assert _make_diarizer("fake-hosted", revision=None, language="en").language == "en"
+    finally:
+        DIARIZER_ADAPTERS._overrides.pop("fake_adapter", None)
+
+
+def test_hosted_adapters_refuse_to_be_built_without_a_language():
+    """No default: leaving it out must be a TypeError, not a wrong number."""
+    import inspect
+
+    from raven_diar.adapters import assemblyai, deepgram
+
+    for module in (deepgram, assemblyai):
+        param = inspect.signature(module.ADAPTER.__init__).parameters["language"]
+        assert param.default is inspect.Parameter.empty, (
+            f"{module.__name__}: language has a default again — that is the bug"
+        )
+        assert param.kind is inspect.Parameter.KEYWORD_ONLY
