@@ -67,7 +67,12 @@ DEFAULT_MODEL = "nova-3-general"
 #: Default ``diarize_model``: the newest GA *batch* diarizer, pinned by version
 #: rather than ``latest`` so a published DER cannot move when Deepgram ships v3.
 DEFAULT_DIARIZE_MODEL = "v2"
-DEFAULT_LANGUAGE = "de"
+#: No language DEFAULT exists on purpose. A hosted diarizer folds turns out
+#: of ASR word timings, so the wrong language returns no words and the run
+#: reports ~100 % miss instead of failing — a German default did exactly
+#: that to an English AMI smoke. The corpus knows its language
+#: (``DiarDatasetSpec.language``); the runner passes it, and leaving the
+#: argument out is now a TypeError rather than a silent wrong number.
 DEFAULT_TIMEOUT_S = 600.0
 
 #: Env override for the shared gap threshold. Exists ONLY so the calibration
@@ -137,9 +142,13 @@ class DeepgramDiarizer:
         provider_id: str = "deepgram-nova-3",
         model_id: str = DEFAULT_MODEL,
         revision: str | None = None,
+        # Keyword-only AND required: the corpus decides the language, and a
+        # missing one must be a TypeError at construction, not a 100 %-miss
+        # run that looks like a bad model.
+        *,
+        language: str,
         api_key_env: str = "DEEPGRAM_API_KEY",
         base_url: str = DEFAULT_BASE_URL,
-        language: str = DEFAULT_LANGUAGE,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         gap_merge_s: float | None = None,
     ) -> None:

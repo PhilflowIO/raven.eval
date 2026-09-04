@@ -32,7 +32,10 @@ def diarizer(monkeypatch) -> aai.AssemblyAIDiarizer:
     monkeypatch.setenv(API_KEY_ENV, "test-key-not-a-real-secret")
     spec = KNOWN_DIARIZERS["assemblyai-universal-3-5-pro"]
     return aai.AssemblyAIDiarizer(
-        provider_id=spec.label, model_id=spec.model_id, revision=spec.revision
+        provider_id=spec.label,
+        model_id=spec.model_id,
+        revision=spec.revision,
+        language="de",
     )
 
 
@@ -87,7 +90,7 @@ def test_the_spec_pins_a_single_model_alias():
 def test_a_missing_api_key_fails_with_the_env_var_name(monkeypatch):
     monkeypatch.delenv(API_KEY_ENV, raising=False)
     with pytest.raises(RuntimeError, match=API_KEY_ENV):
-        aai.AssemblyAIDiarizer()
+        aai.AssemblyAIDiarizer(language="de")
 
 
 # ── span extraction (ms → s, the documented shapes) ──────────────────────────

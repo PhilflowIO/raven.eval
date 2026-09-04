@@ -22,6 +22,22 @@ under `raven_diar/adapters/` exposing an `ADAPTER` factory plus a `DiarizerSpec`
 entry in `raven_diar/config.py` — the runner dispatches through
 `raven_diar/registry.py` and is not edited (see that module's docstring).
 
+## The corpus decides the language, not the adapter
+
+A hosted diarizer has no diarization-only endpoint: it folds speaker turns out
+of ASR word timings. So the language on the request is not cosmetic — send an
+English meeting to a German ASR and it returns no words, the harness writes an
+empty hypothesis, and the run reports ~100 % miss. That reads exactly like a
+terrible diarizer and is in fact a wrong request. It happened: a German default
+in the Deepgram adapter produced 99.99 % DER on the first AMI smoke.
+
+Therefore `DiarDatasetSpec.language` is a **required** field, the runner passes
+it to every adapter, and the two hosted adapters take it **keyword-only with no
+default** — leaving it out is a `TypeError` at construction. The local models
+(pyannote, Sortformer) accept and ignore it; they score speaker turns, not
+words. `summary.json` records it as `dataset_language`, because for a hosted row
+two runs that differ only in language are not the same measurement.
+
 ## The pyannote community-1 requirements
 
 1. **A Hugging Face token.** Export one of `HF_TOKEN` / `HUGGINGFACE_TOKEN`

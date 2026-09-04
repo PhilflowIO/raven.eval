@@ -58,7 +58,10 @@ DEFAULT_BASE_URL = "https://api.assemblyai.com"
 DEFAULT_MODEL_ALIAS = "universal-3-5-pro"
 #: CALLHOME-de, AMI and VoxConverse-de are German/English speech, never "detect".
 #: A benchmark must not let a language detector vary the model path per file.
-DEFAULT_LANGUAGE_CODE = "de"
+#: No language DEFAULT here either — see the note in adapters/deepgram.py.
+#: The kwarg is named ``language`` like every other adapter's (the runner
+#: builds them all with the same kwargs); ``language_code`` stays the name
+#: of the field the vendor's request body uses.
 DEFAULT_TIMEOUT_S = 300.0
 DEFAULT_POLL_INTERVAL_S = 5.0
 #: Ceiling on the polling loop for ONE file. CALLHOME calls are ~10 min of audio;
@@ -163,10 +166,14 @@ class AssemblyAIDiarizer:
         provider_id: str = "assemblyai-universal-3-5-pro",
         model_id: str = f"assemblyai/{DEFAULT_MODEL_ALIAS}",
         revision: str | None = None,
+        # Keyword-only AND required: the corpus decides the language, and a
+        # missing one must be a TypeError at construction, not a 100 %-miss
+        # run that looks like a bad model.
+        *,
+        language: str,
         api_key: str | None = None,
         api_key_env: str = "ASSEMBLYAI_API_KEY",
         base_url: str = DEFAULT_BASE_URL,
-        language_code: str = DEFAULT_LANGUAGE_CODE,
         gap_merge_s: float = DEFAULT_GAP_MERGE_S,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         poll_interval_s: float = DEFAULT_POLL_INTERVAL_S,
@@ -181,7 +188,7 @@ class AssemblyAIDiarizer:
         self.revision = revision or model_id.rsplit("/", 1)[-1]
         self._api_key = _resolve_api_key(api_key, api_key_env)
         self._base_url = base_url.rstrip("/")
-        self._language_code = language_code
+        self._language_code = language
         self._gap_merge_s = gap_merge_s
         self._timeout_s = timeout_s
         self._poll_interval_s = poll_interval_s

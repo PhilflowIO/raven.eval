@@ -45,6 +45,16 @@ class DiarDatasetSpec:
     # HF slug or upstream repo; pinned by ``revision`` for reproducibility.
     source: str
     revision: str        # git tag/commit or HF revision hash — pin, never floating
+    # WHAT LANGUAGE IS SPOKEN in the corpus. Required, and required for a
+    # reason: a hosted diarizer has no diarization-only endpoint — it folds
+    # turns out of ASR word timings — so an ASR request sent in the wrong
+    # language returns no words, and a DER run silently reports ~100 % miss
+    # instead of failing. That is what a German-only default did to AMI. The
+    # local models (pyannote, Sortformer) are language-agnostic and ignore it;
+    # they still receive it, because the runner builds every adapter with the
+    # same kwargs and a conditional in the dispatcher is exactly what the
+    # registry exists to avoid.
+    language: str
     notes: str = ""
     # Optional split selector for loaders that ship more than one gold split
     # (VoxConverse ships dev/ + test/). None → the loader default.
@@ -67,6 +77,7 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
         # all (only branches master + ver0.2), so the previous "v0.3" pin made
         # prepare() fail with "Remote branch v0.3 not found".
         revision="24bf60be297701cd7e4ef18550c6d390c1b87365",
+        language="en",
         notes="dev split; dev/ + test/ gold RTTMs shipped verbatim in the repo.",
         split="dev",
     ),
@@ -78,6 +89,7 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
         license="CC-BY-4.0 (labels); audio = YouTube owners",
         source="https://github.com/joonson/voxconverse",
         revision="24bf60be297701cd7e4ef18550c6d390c1b87365",
+        language="en",
         notes="test split (232 files); gold RTTMs shipped verbatim in the repo.",
         split="test",
     ),
@@ -92,6 +104,7 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
         # on (artifacts/2026-07-31-callhome-de/…/summary.json: dataset_revision).
         # "main" would let a published number drift with the upstream branch.
         revision="17c8a153215aa7c50b805078fd6284ba81c2fc47",
+        language="de",
         notes="config=deu; 2-speaker German telephone; gold from speaker segments.",
     ),
     # AMI — 4-speaker meetings. Prepared gold RTTMs via the canonical
@@ -107,6 +120,7 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
         # at this commit. The earlier placeholder "0c1b4b6" was not a commit of
         # that repository at all.
         revision="67c2d539286e89f68952d5dcf83912bd9f01dfae",
+        language="en",
         notes=(
             "test split (16 meetings, Mix-Headset); gold RTTMs from the only_words "
             "annotations. Audio is fetched by prepare() from the Edinburgh AMI mirror."
