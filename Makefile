@@ -1,7 +1,7 @@
 # raven.eval — one entrypoint per verification level.
 # See README.md for the three-tier verifiability model.
 
-.PHONY: install test verify reproduce promote dscore-check clean
+.PHONY: install test verify rescore reproduce promote dscore-check clean
 
 install:            ## Install the pinned environment (uv, fails on lockfile drift).
 	uv sync --locked --extra dev --extra asr
@@ -16,6 +16,12 @@ test:               ## Run the scorer + harness tests (the regression guard).
 # mismatch or on an artifacts dir with no WER *and* no DER artifacts.
 verify:             ## Tier-1: re-score committed WER + DER artifacts → reproduce published numbers.
 	uv run python scripts/verify.py
+
+# Backfill scalars the scorer only started reporting later into already-committed
+# expected.json files, recomputed from those artifacts' own RTTMs. Refuses to
+# change any value that is already there — see raven_diar/rescore.py.
+rescore:            ## Maintenance: add newly published fields to committed expected.json.
+	uv run python -m raven_diar.rescore $(if $(DRY),--dry-run,)
 
 # --- Tier 2: full re-run on public datasets (your own keys / GPU) ------------
 # Downloads the public dataset, runs inference with the pinned model, scores.

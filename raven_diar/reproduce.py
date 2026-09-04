@@ -58,15 +58,25 @@ def _make_diarizer(model_key: str, revision: str | None):
 
 def _print_benchmarks_row(dataset: str, model: str, score) -> None:
     print()
-    print("| model | dataset | DER (collar 0.0) | DER (collar 0.25) | "
-          "miss | FA | conf | n | reproduce |")
-    print("|-------|---------|-----------------:|------------------:|"
-          "-----:|---:|-----:|--:|-----------|")
+    # Both collars carry THEIR OWN decomposition. A miss/FA/conf triple printed
+    # beside a DER computed under a different collar does not add up to it and is
+    # not a breakdown of it — see BENCHMARKS.md, "never print a DER without its
+    # collar", which applies to the error columns too.
+    print("| model | dataset | DER@0.0 | miss@0.0 | FA@0.0 | conf@0.0 | "
+          "DER@0.25 | miss@0.25 | FA@0.25 | conf@0.25 | n | reproduce |")
+    print("|-------|---------|--------:|---------:|-------:|---------:|"
+          "---------:|----------:|--------:|---------:|--:|-----------|")
     cmd = f"`make reproduce METRIC=der DATASET={dataset} MODEL={model}`"
     print(
-        f"| {model} | {dataset} | {score.der_full:.2f} | {score.der_classic:.2f} | "
-        f"{score.miss:.2f} | {score.fa:.2f} | {score.conf:.2f} | "
-        f"{score.n_files} | {cmd} |"
+        f"| {model} | {dataset} | {score.der_full:.2f} | {score.miss:.2f} | "
+        f"{score.fa:.2f} | {score.conf:.2f} | {score.der_classic:.2f} | "
+        f"{score.miss_classic:.2f} | {score.fa_classic:.2f} | "
+        f"{score.conf_classic:.2f} | {score.n_files} | {cmd} |"
+    )
+    print(
+        f"file-mean aggregation (NOT comparable to the corpus figures above): "
+        f"{score.der_full_filemean:.2f} @0.0 / "
+        f"{score.der_classic_filemean:.2f} @0.25"
     )
 
 

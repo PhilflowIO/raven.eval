@@ -22,6 +22,43 @@ der:
       skip_overlap: false
   speaker_mapping: hungarian   # optimal, via scipy.linear_sum_assignment
   vad: automatic               # no oracle VAD, no oracle #speakers, no per-dataset tuning
+
+  # HOW the per-file scores become one dataset number. Pinned here because it is
+  # not a formatting choice: on our own German CALLHOME row the two conventions
+  # read 11.41 and 11.07 — 0.334 pp apart, nearly seven times the ±0.05 pp
+  # tolerance every number on this page is reproduced to. A published DER that
+  # does not name its aggregation is as under-specified as one without a collar.
+  #   corpus     Σ(miss+fa+conf) / Σ(scored reference speech) over all files.
+  #              Weights a file by how much speech it contributes, so a 50-minute
+  #              meeting outweighs a 30-second clip. The CALLHOME / DIHARD
+  #              convention and the one the pyannote model cards report.
+  #   file_mean  unweighted mean of per-file DERs. Weights every file alike. The
+  #              convention the ETH diarization benchmark uses (arXiv 2509.26177,
+  #              Table 3 caption: "averaging all samples … and averaging over
+  #              them") — and the reason our 11.41 and their 11.1 are the same
+  #              measurement rather than a discrepancy.
+  # Both are computed and both are committed to every expected.json
+  # (der_full / der_classic vs der_full_filemean / der_classic_filemean).
+  # `primary` is the one the headline table prints.
+  aggregation:
+    primary: corpus
+    also_reported: [file_mean]
+
+  # The per-file scores the aggregations are built from are themselves committed
+  # (raven_diar/score.py -> FileScore), which is what makes the four claims below
+  # checkable instead of asserted:
+  #   * a bootstrap confidence interval over files      (raven_diar.analysis)
+  #   * DER split by REFERENCE speaker count
+  #   * the reference corpus overlap fraction
+  #   * speaker-aware boundary offsets + the length regime the misses sit in
+  # `make analyse ARTIFACT=artifacts/<run>/<model>` recomputes all of them from
+  # the committed RTTMs, seeded, on a laptop.
+  uncertainty:
+    method: percentile bootstrap over files   # the sampling unit the corpora were drawn in
+    resamples: 10000
+    seed: 20260903                            # a CI that moves between runs is not a number
+    confidence: 0.95
+    comparisons: paired                       # two models resampled on the SAME files
   # Hosted diarizers return speaker-labelled WORDS, not turns. Folding words
   # into turns bridges silences up to this many seconds; every hosted adapter
   # uses the one shared implementation (raven_diar/adapters/aggregate.py) so a
