@@ -1,0 +1,14 @@
+{
+  "ami": {
+    "der_full": 39.9359,
+    "der_classic": 36.0384,
+    "miss": 36.4604,
+    "fa": 1.9795,
+    "conf": 1.496,
+    "miss_classic": 33.0786,
+    "fa_classic": 1.8273,
+    "conf_classic": 1.1324,
+    "der_full_filemean": 39.6922,
+    "der_classic_filemean": 35.8472
+  }
+}
