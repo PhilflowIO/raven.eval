@@ -1,9 +1,10 @@
 # Benchmarks
 
 > Version-stamped results. Each table states the exact commit + scoring contract
-> that produced it, and links the command to reproduce it. Empty until the dataset
-> runners (Etappe 4/5) land — the structure is fixed now so numbers only ever get
-> *added* under a known contract, never asserted without one.
+> that produced it, and links the command to reproduce it. Numbers only ever get
+> *added* under a known contract, never asserted without one — and every row on
+> this page resolves to a committed artifact that `make verify` re-scores on
+> every push, in both directions (`tests/test_published_table.py`).
 
 ## Scoring contract
 
@@ -181,8 +182,7 @@ tabled here.
 
 > Raven's internal private-meeting WER/DER numbers are measured on a corpus that
 > cannot be published (consent) and are reported separately (Tier 3) — the rows
-> here are the public-dataset numbers anyone can re-score. The Tier-1 DER
-> artifacts (committed RTTMs) land with Etappe 5.
+> here are the public-dataset numbers anyone can re-score.
 
 ## Tier-1 DER re-score (how a DER row becomes reproducible)
 
@@ -221,12 +221,13 @@ carries the file-mean beside it.
 **Past the corpus scalar.** `expected.json` is an aggregate; the per-file scores
 underneath it are what make a claim *about* that aggregate checkable.
 `make analyse ARTIFACT=artifacts/<run>/<model>` recomputes, from the same
-committed RTTMs and on a laptop, four things a single DER cannot say: a
+committed RTTMs and on a laptop, five things a single DER cannot say: a
 seeded bootstrap **confidence interval** over files, DER **by reference speaker
-count**, the reference **overlap fraction**, and speaker-aware **boundary
-offsets** with the segment-length regime the missed speech sits in. Every
-paragraph below that makes a claim of precision, difficulty or error *kind*
-quotes that command's output.
+count**, the reference **overlap fraction**, speaker-aware **boundary offsets**
+with the segment-length regime the missed speech sits in, and the **turn-folding
+residue** — how far this row would move if the shared hosted-adapter folding were
+applied to it too. Every paragraph below that makes a claim of precision,
+difficulty, error *kind* or protocol equality quotes that command's output.
 
 ## DER — speaker diarization (public datasets)
 
