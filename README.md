@@ -85,9 +85,13 @@ and we make the reproducible ones *actually* reproducible:
 - **Tier 1 — verify in seconds, no GPU, no API keys.**
   We commit the model outputs (per-utterance transcripts for WER; gold + hypothesis
   RTTMs for DER) next to the gold references. `make verify` re-scores them and
-  reproduces the published tables — WER **and** DER (both collars + miss/FA/conf) —
-  using only `pyannote.metrics` and `jiwer`, no torch, no GPU. CI runs it on every
-  push, so a number can't silently drift from its committed data.
+  reproduces the published tables — WER **and** DER (both collars, each with its
+  own miss/FA/conf, plus both aggregation conventions) — using only
+  `pyannote.metrics` and `jiwer`, no torch, no GPU. CI runs it on every push, so a
+  number can't silently drift from its committed data. `make analyse
+  ARTIFACT=artifacts/<run>/<model>` goes past the aggregate on the same data:
+  bootstrap confidence intervals over files, DER by reference speaker count, the
+  reference overlap fraction, and speaker-aware boundary offsets.
 
 - **Tier 2 — full re-run on public data (your own keys / GPU).**
   `make reproduce` downloads a public dataset, runs the pinned model, and scores it.

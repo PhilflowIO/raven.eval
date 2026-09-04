@@ -46,15 +46,39 @@ produced, plus the DER it published for them:
 artifacts/<run>/<model>/
   gold/<dataset>/<file>.rttm   # reference diarization
   hyp/<dataset>/<file>.rttm    # diarizer hypothesis for the same file
-  expected.json                # {"<dataset>": {"der_full","der_classic","miss","fa","conf"}}  (percent)
+  expected.json                # {"<dataset>": {ten scalars, percent}} — see below
 ```
 
-`make verify` re-loads gold+hyp, recomputes corpus DER at both collars (0.0 full /
-0.25 classic) with `raven_eval_core.der` (pyannote.metrics — no torch/GPU), and
-asserts each field matches within ±0.05 pp. `miss + fa + conf == der_full` by
-construction (collar-0 decomposition). A committed real DER row is **pending the
-Etappe-5 model run** (needs a GPU + the gated pyannote model); `_demo_der/` proves
-the mechanism today.
+`expected.json` carries, per dataset:
+
+| field | meaning |
+|---|---|
+| `der_full`, `miss`, `fa`, `conf` | corpus DER at collar 0.0 and **its** decomposition (`miss + fa + conf == der_full`) |
+| `der_classic`, `miss_classic`, `fa_classic`, `conf_classic` | corpus DER at collar 0.25 and **its** decomposition (`… == der_classic`) |
+| `der_full_filemean`, `der_classic_filemean` | the same files under the unweighted file-mean aggregation |
+
+Two decompositions rather than one because a `miss`/`fa`/`conf` triple printed
+beside a DER computed under a *different* collar does not sum to it and is not a
+breakdown of it. Two aggregations because a DER is not comparable until its
+aggregation is named — corpus (`Σerr/Σtotal`) and file-mean differ by 0.334 pp on
+the German CALLHOME row, seven times the reproduction tolerance.
+
+`make verify` re-loads gold+hyp, recomputes all ten with `raven_diar.score` (the
+same module the Tier-2 runner uses → `raven_eval_core.der` → pyannote.metrics, no
+torch/GPU), and asserts each matches within ±0.05 pp.
+
+Artifacts committed before a scalar existed are brought up to the current field
+set by `make rescore` (`raven_diar.rescore`), which recomputes from the
+artifact's own RTTMs and writes **only keys that are absent** — it refuses to
+touch a file whose committed value disagrees with the recomputation, because that
+disagreement is precisely what `make verify` exists to surface.
+
+`make analyse ARTIFACT=artifacts/<run>/<model>` reads the same RTTMs past the
+aggregate: a seeded bootstrap confidence interval over files, DER by reference
+speaker count, the reference overlap fraction, and speaker-aware boundary
+offsets. Those are the numbers behind every precision, difficulty and
+error-kind claim in `BENCHMARKS.md`; none of them is stored, all of them are
+recomputed on demand from what is committed here.
 
 The scorer is `raven_eval_core.flozi_wer` — the flozi-strict pipeline (unidecode +
 `alpha2digit` + `wer_standardize_contiguous`, corpus aggregation, raw-text CER).

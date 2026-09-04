@@ -286,6 +286,31 @@ commit them: commit only the hypothesis + a reference hash/id, and let
 `scripts/verify.py` pull the references from Hugging Face at re-score time.
 
 --------------------------------------------------------------------------------
+Comparison provenance (ETH Zurich diarization benchmark)
+--------------------------------------------------------------------------------
+BENCHMARKS.md compares several of its DER rows against, and takes its
+file-mean aggregation convention from:
+
+    Lanzendörfer, Grötschla, Blaser, Wattenhofer,
+    "Benchmarking Diarization Models", ETH Zurich, 2025.
+    arXiv:2509.26177 — https://arxiv.org/abs/2509.26177
+    Licensed CC-BY-4.0.
+
+No code, data or text from that work is redistributed here. What is used is
+factual: their reported DER values for `nvidia/diar_sortformer_4spk-v1` (11.1 %)
+and `diar_streaming_sortformer_4spk-v2` (9.6 %) on German CALLHOME, their
+reference overlap fraction for that corpus (~12.6 %), their per-language protocol
+(`pyannote.metrics`, collar 0.25, overlap scored), and the aggregation convention
+stated in their Table 3 caption. Those numbers are the only independent
+measurements of models we also measure, and they are used in both directions: one
+of them reconciles our German CALLHOME row to the digit, and one of them does not
+reconcile at all and is flagged as unexplained rather than omitted.
+
+Attribution is here rather than only in prose because the work is used as
+evidence, and a benchmark that cites datasets scrupulously and comparison sources
+not at all is attributing selectively.
+
+--------------------------------------------------------------------------------
 Normalization provenance (flozi normalize_text)
 --------------------------------------------------------------------------------
 The flozi-canonical text normalization in `raven_eval_core/flozi_wer.py`
