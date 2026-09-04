@@ -174,6 +174,99 @@ def test_sortformer_is_registered_with_a_pinned_public_model():
     assert spec.adapter == "sortformer"
 
 
+def test_streaming_sortformer_v2_is_registered_shippable_and_pinned():
+    """The shippable Sortformer: CC-BY-4.0 weights, so its row may compete."""
+    spec = KNOWN_DIARIZERS["sortformer-streaming-4spk-v2"]
+    assert spec.model_id == "nvidia/diar_streaming_sortformer_4spk-v2"
+    assert spec.adapter == "sortformer"  # one adapter, two checkpoints
+    assert spec.license == "CC-BY-4.0"
+    assert spec.shippable is True
+    assert spec.hosted is False
+    assert spec.revision_kind == "commit"
+
+
+def test_sortformer_checkpoint_filename_follows_the_repo_name():
+    from raven_diar.adapters.sortformer import _checkpoint_filename
+
+    assert (
+        _checkpoint_filename("nvidia/diar_sortformer_4spk-v1")
+        == "diar_sortformer_4spk-v1.nemo"
+    )
+    assert (
+        _checkpoint_filename("nvidia/diar_streaming_sortformer_4spk-v2")
+        == "diar_streaming_sortformer_4spk-v2.nemo"
+    )
+
+
+def test_only_the_streaming_checkpoint_gets_a_streaming_config():
+    """v1's published rows must not shift because v2 was added.
+
+    The streaming knobs are keyed by model id, so building the offline adapter
+    resolves to no config at all and `_apply_streaming_config` is a no-op.
+    """
+    from raven_diar.adapters.sortformer import SortformerDiarizer
+
+    offline = SortformerDiarizer(
+        model_id="nvidia/diar_sortformer_4spk-v1", revision="a" * 40
+    )
+    assert offline._streaming_config == {}
+
+    streaming = SortformerDiarizer(
+        model_id="nvidia/diar_streaming_sortformer_4spk-v2", revision="b" * 40
+    )
+    # The model card's "very high latency" row, verbatim, in 80 ms frames.
+    assert streaming._streaming_config == {
+        "chunk_len": 340,
+        "chunk_right_context": 40,
+        "fifo_len": 40,
+        "spkcache_update_period": 300,
+        "spkcache_len": 188,
+    }
+
+
+def test_streaming_config_is_pushed_into_nemo_and_validated_by_nemo():
+    """Prove the knobs land on the model and that NeMo's own check is called."""
+    from raven_diar.adapters.sortformer import SortformerDiarizer
+
+    class _Modules:
+        chunk_len = 0
+        chunk_right_context = 0
+        fifo_len = 0
+        spkcache_update_period = 0
+        spkcache_len = 0
+
+        def __init__(self) -> None:
+            self.checked = False
+
+        def _check_streaming_parameters(self) -> None:
+            self.checked = True
+
+    class _Model:
+        def __init__(self) -> None:
+            self.sortformer_modules = _Modules()
+
+    model = _Model()
+    SortformerDiarizer(
+        model_id="nvidia/diar_streaming_sortformer_4spk-v2", revision="b" * 40
+    )._apply_streaming_config(model)
+    assert model.sortformer_modules.chunk_len == 340
+    assert model.sortformer_modules.spkcache_len == 188
+    assert model.sortformer_modules.checked, (
+        "NeMo's own parameter check must run — it is what turns a typo'd "
+        "streaming config into a loud failure instead of a different number"
+    )
+
+    # An unknown knob is a NeMo-version mismatch, and must not pass silently.
+    class _OldModel:
+        class sortformer_modules:  # mirrors NeMo's attribute name
+            chunk_len = 0
+
+    with pytest.raises(ValueError, match="streaming config"):
+        SortformerDiarizer(
+            model_id="nvidia/diar_streaming_sortformer_4spk-v2", revision="b" * 40
+        )._apply_streaming_config(_OldModel())
+
+
 def test_sortformer_parses_both_nemo_output_shapes():
     from raven_diar.adapters.sortformer import _parse_segment
 
