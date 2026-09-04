@@ -383,29 +383,56 @@ length, so no CALLHOME file is chunked on either side). This is the
 reconciliation that made the convention worth pinning in the contract file rather
 than leaving implicit.
 
-**The same reconciliation fails for the streaming v2 checkpoint, in our favour.**
-ETH report 9.6 % for `diar_streaming_sortformer_4spk-v2` on German CALLHOME; we
-read **8.98 %** corpus and **9.07 %** file-mean, 0.5–0.6 pp *better* under either
-convention. The direction of the gap is not a reason to be relaxed about it.
+**The same reconciliation fails for the streaming v2 checkpoint, in our favour —
+and the reason is the latency setting.** ETH report 9.6 % for
+`diar_streaming_sortformer_4spk-v2` on German CALLHOME; we read **8.98 %** corpus
+and **9.07 %** file-mean, 0.5–0.6 pp *better* under either convention. A gap in
+our favour is not a reason to be relaxed about it, so it was measured rather than
+argued.
 
-Three candidate causes are eliminated. *Gold preparation*: the gold RTTMs under
-all five committed CALLHOME-de artifacts are byte-identical, and the same gold
-reconciles the v1 row to their number exactly — a gold defect cannot be selective
-about which checkpoint it breaks. *Chunking*: their paper scores two v2 variants,
-one on 12-minute chunks and one on full audio, and both read 9.6 on German,
-because no CALLHOME file is long enough to be chunked. *Which column we compare
-to*: for the same reason, the streaming variant and the chunked one are the same
-run here.
+Three candidate causes were eliminated first. *Gold preparation*: the gold RTTMs
+under all five committed CALLHOME-de artifacts are byte-identical, and the same
+gold reconciles the v1 row to their number exactly — a gold defect cannot be
+selective about which checkpoint it breaks. *Chunking*: their paper scores two v2
+variants, one on 12-minute chunks and one on full audio, and both read 9.6 on
+German, because no CALLHOME file is long enough to be chunked. *Which column we
+compare to*: for the same reason, the streaming variant and the chunked one are
+the same run here.
 
-What remains is the streaming configuration and the checkpoint revision. We run
-NVIDIA's "very high latency" preset — the highest-quality point on their latency
-curve — and the paper describes its model only as "low-latency streaming" without
-naming a configuration. A lower-latency preset scoring worse is the expected
-direction, and it is the direction of this gap, so that is the first thing to
-test: re-run German CALLHOME at a lower-latency preset and see whether it lands
-on 9.6. That needs a GPU and is not done here. Until it is, our v2 German number
-is an unexplained disagreement with the only independent measurement of the same
-thing, and it is flagged rather than quietly enjoyed.
+That left the streaming configuration. A streaming diarizer has no single DER —
+it has one per latency setting, and NVIDIA publish four recommended
+configurations spanning 30.4 s down to 0.32 s of input-buffer latency. We run the
+"very high latency" preset, the highest-quality point on that curve; the paper
+describes its model only as "low-latency streaming" and names no configuration.
+So the same 120 files were re-run at the lower presets, same checkpoint, same
+gold, same scorer:
+
+| streaming preset | input-buffer latency | DER@0.25 corpus | DER@0.25 file-mean |
+|---|---:|---:|---:|
+| very high latency *(published above)* | 30.4 s | **8.98** | 9.07 |
+| high latency | 10.0 s | 9.26 | 9.30 |
+| low latency | 1.04 s | 9.82 | 9.97 |
+
+The curve is monotone in the expected direction and **it brackets 9.6**: the ETH
+number falls between the 10-second and the 1-second preset, which is exactly
+where a configuration described as "low-latency streaming" belongs. The
+disagreement was never about gold, chunking or the checkpoint — it is that two
+measurements of "the same model" were taken at two points on a latency/quality
+trade-off, and only one of them said which.
+
+The practical reading: our 8.98 % is not a better measurement of their number,
+it is a different operating point, and it is only available to a product willing
+to buffer 30 seconds of audio. Raven's is, because meeting diarization is not
+live captioning — but the comparison to any other row on this page holds only
+because every row here is measured at one stated configuration.
+
+> These three rows are **Tier-3 diagnostics, not published numbers**: only the
+> "very high latency" row has a committed artifact, and it is the one in the
+> table. The other two exist to explain a discrepancy and are reproducible with
+> `SORTFORMER_LATENCY_PRESET=<name> make reproduce METRIC=der
+> DATASET=callhome-de MODEL=sortformer-streaming-4spk-v2 EXTRA=sortformer`. The
+> preset a run used is recorded in its `summary.json`, so a run measured at a
+> non-default setting cannot be promoted as if it were the shipped one.
 
 **What the German column shows.** Five diarizers on the same 120 CALLHOME-de
 files, same gold, same scorer, same two collars. At the classic collar:
@@ -579,9 +606,12 @@ boundary distribution with `make analyse ARTIFACT=<the run link>`.
 > shippable — the whole reason to measure this checkpoint rather than only v1.
 > Both were produced with one streaming configuration (NVIDIA's "very high
 > latency" row: chunk 340, right context 40, FIFO 40, update period 300, speaker
-> cache 188, all in 80 ms frames), automatic VAD, no oracle speaker count and no
+> cache 188, all in 80 ms frames — `very-high-latency` in the adapter, and named
+> in each run's `summary.json`), automatic VAD, no oracle speaker count and no
 > per-dataset post-processing, so the two numbers are comparable to each other
-> and to every other row on this page. NVIDIA's own CALLHOME and DIHARD
+> and to every other row on this page. Which preset a streaming row was measured
+> at is not a detail: see the latency curve above, where it moves German
+> CALLHOME by 0.84 pp. NVIDIA's own CALLHOME and DIHARD
 > post-processing YAMLs are per-corpus tuning and are deliberately not applied.
 > The checkpoint is capped at **4 speakers**; both sets are inside that cap, and
 > nothing here says anything about a five-person meeting.
