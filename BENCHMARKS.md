@@ -553,6 +553,10 @@ to the collar-0.25 DER and is not a breakdown of it.
 | deepgram-nova-3 | callhome-de (German, telephone) | 26.12 | 17.27 | 4.16 | 4.69 | **19.31** | 14.05 | 1.81 | 3.45 | 19.16 | [18.17, 20.53] | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-deepgram/deepgram-nova-3/) |
 | sortformer-streaming-4spk-v2 | callhome-de (German, telephone) | 14.82 | 5.94 | 7.20 | 1.68 | **8.98** | 4.77 | 2.93 | 1.28 | 9.07 | [8.11, 9.96] | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer-v2/sortformer-streaming-4spk-v2/) |
 | sortformer-streaming-4spk-v2 | ami (test, 4-speaker meetings, IHM) | **25.97** | 20.52 | 2.82 | 2.63 | 23.03 | 18.99 | 1.72 | 2.33 | 23.07 | [19.84, 25.80] | 16 | [2026-09-03](./artifacts/2026-09-03-ami-sortformer-v2/sortformer-streaming-4spk-v2/) |
+| assemblyai-universal-3-5-pro | voxconverse (**test**) | 20.64 | 12.86 | 2.64 | 5.14 | 18.13 | 11.24 | 2.01 | 4.88 | 18.25 | [16.82, 19.49] | 232 | [2026-09-04](./artifacts/2026-09-04-voxconverse-test-assemblyai-universal-3-5-pro/assemblyai-universal-3-5-pro/) |
+| deepgram-nova-3 | voxconverse (**test**) | 40.33 | 28.46 | 2.51 | 9.36 | 37.81 | 26.99 | 1.49 | 9.33 | 32.18 | [32.22, 43.48] | 232 | [2026-09-04](./artifacts/2026-09-04-voxconverse-test-deepgram-nova-3/deepgram-nova-3/) |
+| deepgram-nova-3 | ami (test, 4-speaker meetings, IHM) | 34.07 | 25.19 | 2.88 | 5.99 | 29.37 | 22.56 | 1.70 | 5.11 | 28.93 | [25.11, 33.50] | 16 | [2026-09-04](./artifacts/2026-09-04-ami-deepgram-nova-3/deepgram-nova-3/) |
+| assemblyai-universal-3-5-pro | ami (test, 4-speaker meetings, IHM) | 39.94 | 36.46 | 1.98 | 1.50 | 36.04 | 33.08 | 1.83 | 1.13 | 35.85 | [32.46, 39.32] | 16 | [2026-09-04](./artifacts/2026-09-04-ami-assemblyai-universal-3-5-pro/assemblyai-universal-3-5-pro/) |
 
 Every interval is a 10 000-resample percentile bootstrap over **files**, seed
 `20260903`, pinned in [`benchmark.config.yaml`](./benchmark.config.yaml) →
