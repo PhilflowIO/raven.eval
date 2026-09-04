@@ -1,0 +1,14 @@
+{
+  "callhome-de": {
+    "der_full": 15.6987,
+    "der_classic": 12.0678,
+    "miss": 11.9516,
+    "fa": 2.9459,
+    "conf": 0.8012,
+    "miss_classic": 10.4358,
+    "fa_classic": 1.0794,
+    "conf_classic": 0.5527,
+    "der_full_filemean": 15.5682,
+    "der_classic_filemean": 11.8395
+  }
+}

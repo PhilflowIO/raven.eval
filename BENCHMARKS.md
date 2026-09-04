@@ -391,7 +391,7 @@ our favour is not a reason to be relaxed about it, so it was measured rather tha
 argued.
 
 Three candidate causes were eliminated first. *Gold preparation*: the gold RTTMs
-under all five committed CALLHOME-de artifacts are byte-identical, and the same
+under all six committed CALLHOME-de artifacts are byte-identical, and the same
 gold reconciles the v1 row to their number exactly — a gold defect cannot be
 selective about which checkpoint it breaks. *Chunking*: their paper scores two v2
 variants, one on 12-minute chunks and one on full audio, and both read 9.6 on
@@ -437,10 +437,11 @@ because every row here is measured at one stated configuration.
 > preset a run used is recorded in its `summary.json`, so a run measured at a
 > non-default setting cannot be promoted as if it were the shipped one.
 
-**What the German column shows.** Five diarizers on the same 120 CALLHOME-de
+**What the German column shows.** Six diarizers on the same 120 CALLHOME-de
 files, same gold, same scorer, same two collars. At the classic collar:
 pyannote-community-1 **16.08**, deepgram-nova-3 19.31, assemblyai-universal-3-5-pro
-21.74, sortformer-4spk-v1 11.41 — and sortformer-streaming-4spk-v2 at **8.98**,
+21.74, diarizen-wavlm-large-s80-md-v2 12.07, sortformer-4spk-v1 11.41 — and
+sortformer-streaming-4spk-v2 at **8.98**,
 the lowest DER any row on this page reaches on *this dataset* and, unlike v1, one
 we could ship: its weights are CC-BY-4.0, not CC-BY-NC-4.0. Paired over the same
 files, the streaming checkpoint is **7.10 pp ahead of community-1, CI [+5.95,
@@ -448,6 +449,26 @@ files, the streaming checkpoint is **7.10 pp ahead of community-1, CI [+5.95,
 zero. (Numbers on different datasets are not comparable, which is why "best on
 the page" is the wrong phrase: VoxConverse dev reads 5.00 % for community-1 and
 means nothing next to a telephone number.)
+
+**The open-source favourite, measured.** The ETH benchmark names DiariZen the
+strongest open-source system on its German column and reads **11.6 %** there.
+Until now this page cited that claim without testing it. On the same 120 files,
+same gold, same scorer, DiariZen reads **12.07 %** corpus and **11.84 %**
+file-mean — and the file-mean is the convention that column uses, so 11.84
+against 11.6 is a 0.24 pp agreement. That is the second independent checkpoint
+reconciled to their number on this corpus, and it is the strongest evidence yet
+that our German harness measures what theirs does.
+
+It also settles a ranking the framing had left open. Paired over the same files,
+DiariZen is **3.09 pp behind sortformer-streaming-4spk-v2, CI [+2.16, +3.91]** —
+an interval that excludes zero, so the shippable checkpoint really is ahead of
+the open-source favourite here. Against the offline v1 the same comparison reads
+**+0.66 pp, CI [-0.56, +1.84]**: that interval spans zero, so on this corpus the
+two are indistinguishable and neither is "better" however the decimals fall.
+Against community-1 the sign flips and the interval again excludes zero:
+**-4.01 pp, CI [-4.92, -3.28]**, DiariZen ahead. Its weights are CC-BY-NC-4.0,
+so under ADR-app-0036 it is a reference row like v1 — measured and shown, never
+awarded.
 
 **Where each model breaks down.** The corpus number hides the axis the field
 actually degrades on. Split by *reference* speaker count, at collar 0.25
@@ -457,14 +478,21 @@ actually degrades on. Split by *reference* speaker count, at collar 0.25
 |---|---:|---:|---:|
 | sortformer-streaming-4spk-v2 | 8.87 | 9.83 | **9.26** |
 | sortformer-4spk-v1 | 10.95 | 13.75 | 15.91 |
+| diarizen-wavlm-large-s80-md-v2 | 12.01 | 12.27 | 12.89 |
 | pyannote-community-1 | 15.59 | 17.78 | 23.38 |
 | deepgram-nova-3 | 18.81 | 20.47 | **28.42** |
 | assemblyai-universal-3-5-pro | 21.80 | 20.98 | 22.36 |
 
 The four-speaker column rests on four files and carries no interval worth
-printing; read it as a direction, not a measurement. The direction is consistent:
-every model except the streaming checkpoint gets worse as speakers are added, and
-Deepgram worst — +9.6 pp from two speakers to four. On VoxConverse **test**,
+printing; read it as a direction, not a measurement. The direction separates the
+table into two groups. Three models degrade steeply from two speakers to four —
+community-1 +7.8 pp, sortformer-4spk-v1 +5.0 pp, and Deepgram worst at +9.6 pp —
+while three stay within a point of flat: the streaming checkpoint +0.4 pp,
+DiariZen +0.9 pp, AssemblyAI +0.6 pp. Flat here is not yet evidence of holding up
+under many speakers, because **this corpus never has many**: CALLHOME-de tops out
+at four, which is exactly where the Sortformer checkpoints are capped, so the one
+regime that would separate a capped model from an uncapped one is the one regime
+these 120 files cannot test. On VoxConverse **test**,
 where community-1 has 146 files with five or more speakers, the same split reads
 4.56 / 8.11 / 9.29 / 6.41 / **8.76** for 1 / 2 / 3 / 4 / 5+ speakers: the model
 Raven runs does **not** fall off a cliff in the many-speaker regime, which is the
@@ -607,6 +635,7 @@ to the collar-0.25 DER and is not a breakdown of it.
 | deepgram-nova-3 | voxconverse (**test**) | 40.33 | 28.46 | 2.51 | 9.36 | 37.81 | 26.99 | 1.49 | 9.33 | 32.18 | [32.22, 43.48] | 232 | [2026-09-04](./artifacts/2026-09-04-voxconverse-test-deepgram-nova-3/deepgram-nova-3/) |
 | deepgram-nova-3 | ami (test, 4-speaker meetings, IHM) | 34.07 | 25.19 | 2.88 | 5.99 | 29.37 | 22.56 | 1.70 | 5.11 | 28.93 | [25.11, 33.50] | 16 | [2026-09-04](./artifacts/2026-09-04-ami-deepgram-nova-3/deepgram-nova-3/) |
 | assemblyai-universal-3-5-pro | ami (test, 4-speaker meetings, IHM) | 39.94 | 36.46 | 1.98 | 1.50 | 36.04 | 33.08 | 1.83 | 1.13 | 35.85 | [32.46, 39.32] | 16 | [2026-09-04](./artifacts/2026-09-04-ami-assemblyai-universal-3-5-pro/assemblyai-universal-3-5-pro/) |
+| diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 15.70 | 11.95 | 2.95 | 0.80 | **12.07** | 10.44 | 1.08 | 0.55 | 11.84 | [11.19, 13.01] | 120 | [2026-09-04](./artifacts/2026-09-04-callhome-de-diarizen/diarizen-wavlm-large-s80-md-v2/) |
 
 Every interval is a 10 000-resample percentile bootstrap over **files**, seed
 `20260903`, pinned in [`benchmark.config.yaml`](./benchmark.config.yaml) →
