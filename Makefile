@@ -64,13 +64,18 @@ promote:            ## Bridge: Tier-2 run → committable Tier-1 artifact.
 		python -m $(if $(filter der,$(METRIC)),raven_diar,raven_asr).promote \
 		--results-dir $(RESULTS) $(if $(RUN),--run-name $(RUN),)
 
-# Optional DER cross-check: assert nryant/dscore agrees with pyannote.metrics on
-# the same RTTMs. Needs a pinned dscore checkout (dscore is not pip-installable):
-#   git clone https://github.com/nryant/dscore ~/dscore && export DSCORE_DIR=~/dscore
+# Optional DER cross-check: assert nryant/dscore (the md-eval reference wrapper)
+# agrees with pyannote.metrics on the same RTTMs, at BOTH published collars.
+# Needs a pinned dscore checkout (dscore is not pip-installable) plus dscore's own
+# runtime deps and perl for its bundled md-eval-22.pl:
+#   git clone https://github.com/nryant/dscore ~/dscore
+#   git -C ~/dscore checkout e02f949ac6592279300a2c33d03daf9e0c12fd27
+#   export DSCORE_DIR=~/dscore
 # Skips cleanly (exit 0) when DSCORE_DIR is unset — see raven_diar/dscore_check.py.
 #   make dscore-check GOLD=path/to/gold.rttm HYP=path/to/hyp.rttm
 dscore-check:       ## Optional: cross-check DER vs nryant/dscore (needs DSCORE_DIR).
-	uv run python -m raven_diar.dscore_check --gold $(GOLD) --hyp $(HYP)
+	uv run --with tabulate --with intervaltree \
+		python -m raven_diar.dscore_check --gold $(GOLD) --hyp $(HYP)
 
 clean:
 	rm -rf .venv .pytest_cache **/__pycache__
