@@ -268,17 +268,21 @@ reads 20.58 % at collar 0.0 vs 16.08 % at 0.25 — 4.5 pp on convention alone, s
 CALLHOME DER without a stated collar + overlap rule is noise.
 
 **What the corpus itself looks like.** The reference overlap of these 120 files
-is **12.01 % of speech** (overlapped seconds / seconds where anyone speaks),
-11.90 % ± 5.44 as a per-file mean, on 18.4344 h of recording — against the ETH
-paper's ≈ 12.6 % for the same corpus, which corroborates that we are scoring the
-set they scored. Two things about that figure. First, it depends entirely on the
+is **12.01 % of speech** (overlapped seconds / seconds where anyone speaks) and
+**11.90 % ± 5.44** as a per-file mean, over 18.4344 h of recording. The ETH paper
+reports 12.58 % ± 7.31 for CALLHOME — as a per-file mean, and across all five of
+its languages rather than German alone, so 11.90 ± 5.44 is the figure that
+compares. It also states 18.4 h for its German split, which is our 18.4344 h:
+same scope, same corpus, independently arrived at.
+
+Two things about the number itself. First, it depends entirely on the
 denominator: the same overlap is 10.72 % of Σ per-speaker time and 11.09 % of
 wall clock, and "the overlap fraction" names none of the three. All three are
 printed by `make analyse` and none of them is an assertion. Second, this page
 previously published **10.8 %**, which no denominator reproduces — the closest,
 overlap-over-speaker-time, is 0.1 pp away and the earlier figure's derivation is
 not recorded anywhere in the repository. It is withdrawn and replaced by the
-number above, which any reader can recompute.
+numbers above, which any reader can recompute.
 
 **The first hosted diarizer (AssemblyAI).** On the same German telephone set,
 AssemblyAI's Universal-3.5 Pro with `speaker_labels` scores **21.74 % DER** at
@@ -337,25 +341,45 @@ whatever the number says.
 
 **This row is also the external check on our whole measurement chain.** The ETH
 benchmark measures the same checkpoint on the same corpus under the same collar
-and reports **11.1 %**. We report 11.41 %. Under *their* aggregation — the
-unweighted file-mean their Table 3 caption describes — our own committed RTTMs
-read **11.07 %**, which rounds to their 11.1 %. It is the same measurement; the
-0.3 pp is the aggregation convention and nothing else. Ruled out as causes, with
-numbers: UEM (0.000 pp on this corpus, see below), sample scope (n=120, 18.4344 h
-against their stated 18.4 h), and chunking (their 12-minute threshold is above
-our 9.2-minute mean file length). This is the reconciliation that made the
-convention worth pinning in the contract file rather than leaving implicit.
+and reports **11.1 %**. We report 11.41 %. Under the unweighted file-mean, our
+own committed RTTMs read **11.07 %**, which rounds to their 11.1 %. It is the
+same measurement; the 0.3 pp is the aggregation convention and nothing else.
+
+That their language table uses the file-mean is not only read off the Table 3
+caption ("averaging all samples … and averaging over them") — this row is
+evidence for it. Corpus aggregation would have to produce 11.41 to match us, and
+their column reads 11.1. Two aggregations, one of which lands on their number.
+
+Ruled out as causes, with numbers: UEM (0.000 pp on this corpus, see below),
+sample scope (n=120, 18.4344 h against their stated 18.4 h for the same German
+split), and chunking (their 12-minute threshold is above our 9.2-minute mean file
+length, so no CALLHOME file is chunked on either side). This is the
+reconciliation that made the convention worth pinning in the contract file rather
+than leaving implicit.
 
 **The same reconciliation fails for the streaming v2 checkpoint, in our favour.**
 ETH report 9.6 % for `diar_streaming_sortformer_4spk-v2` on German CALLHOME; we
 read **8.98 %** corpus and **9.07 %** file-mean, 0.5–0.6 pp *better* under either
-convention. We do not know why, and the direction of the gap is not a reason to
-be relaxed about it. The open candidates, in the order worth testing, are the
-streaming latency preset (we run NVIDIA's "very high latency" configuration; the
-paper does not state theirs), the checkpoint revision (ours is `5240a640`, theirs
-unstated) and gold preparation. Until one of them explains it, our v2 German
-number is an unexplained disagreement with the only independent measurement of
-the same thing, and it is flagged here rather than quietly enjoyed.
+convention. The direction of the gap is not a reason to be relaxed about it.
+
+Three candidate causes are eliminated. *Gold preparation*: the gold RTTMs under
+all five committed CALLHOME-de artifacts are byte-identical, and the same gold
+reconciles the v1 row to their number exactly — a gold defect cannot be selective
+about which checkpoint it breaks. *Chunking*: their paper scores two v2 variants,
+one on 12-minute chunks and one on full audio, and both read 9.6 on German,
+because no CALLHOME file is long enough to be chunked. *Which column we compare
+to*: for the same reason, the streaming variant and the chunked one are the same
+run here.
+
+What remains is the streaming configuration and the checkpoint revision. We run
+NVIDIA's "very high latency" preset — the highest-quality point on their latency
+curve — and the paper describes its model only as "low-latency streaming" without
+naming a configuration. A lower-latency preset scoring worse is the expected
+direction, and it is the direction of this gap, so that is the first thing to
+test: re-run German CALLHOME at a lower-latency preset and see whether it lands
+on 9.6. That needs a GPU and is not done here. Until it is, our v2 German number
+is an unexplained disagreement with the only independent measurement of the same
+thing, and it is flagged rather than quietly enjoyed.
 
 **What the German column shows.** Five diarizers on the same 120 CALLHOME-de
 files, same gold, same scorer, same two collars. At the classic collar:
