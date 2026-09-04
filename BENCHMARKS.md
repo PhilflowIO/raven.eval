@@ -410,8 +410,8 @@ gold, same scorer:
 | streaming preset | input-buffer latency | DER@0.25 corpus | DER@0.25 file-mean |
 |---|---:|---:|---:|
 | very high latency *(published above)* | 30.4 s | **8.98** | 9.07 |
-| high latency | 10.0 s | 9.26 | 9.30 |
-| low latency | 1.04 s | 9.82 | 9.97 |
+| [high latency](./diagnostics/sortformer-v2-latency/high-latency.json) | 10.0 s | 9.26 | 9.30 |
+| [low latency](./diagnostics/sortformer-v2-latency/low-latency.json) | 1.04 s | 9.82 | 9.97 |
 
 The curve is monotone in the expected direction and **it brackets 9.6**: the ETH
 number falls between the 10-second and the 1-second preset, which is exactly
@@ -427,8 +427,11 @@ live captioning — but the comparison to any other row on this page holds only
 because every row here is measured at one stated configuration.
 
 > These three rows are **Tier-3 diagnostics, not published numbers**: only the
-> "very high latency" row has a committed artifact, and it is the one in the
-> table. The other two exist to explain a discrepancy and are reproducible with
+> "very high latency" row has a committed *artifact* (gold + hyp RTTMs that
+> `make verify` re-scores), and it is the one in the table. The other two are
+> linked to their run summaries above — same 120 files, same checkpoint
+> revision, same scorer, but no committed RTTMs, so they explain a discrepancy
+> and may not be cited. They are reproducible with
 > `SORTFORMER_LATENCY_PRESET=<name> make reproduce METRIC=der
 > DATASET=callhome-de MODEL=sortformer-streaming-4spk-v2 EXTRA=sortformer`. The
 > preset a run used is recorded in its `summary.json`, so a run measured at a
