@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from raven_diar.score import DerScore
 from raven_eval_core.der import to_rttm
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -61,7 +62,7 @@ def test_demo_der_expected_is_truthful():
     recomputed = verify.score_der_dir(DEMO_DER_DIR)
     for dataset, exp in expected.items():
         got = recomputed[dataset]
-        for field in ("der_full", "der_classic", "miss", "fa", "conf"):
+        for field in DerScore.EXPECTED_FIELDS:
             assert abs(got[field] - exp[field]) <= verify.DER_TOLERANCE_PCT
 
 
@@ -86,8 +87,7 @@ def test_wrong_der_expected_fails(tmp_path: Path):
     model = tmp_path / "run" / "diarizer"
     _write_pair(model, "d", "f1", [(0, 10, "A")], [(0, 8, "A")])  # miss 2/10=20%
     (model / "expected.json").write_text(
-        json.dumps({"d": {"der_full": 1.0, "der_classic": 1.0,
-                          "miss": 1.0, "fa": 1.0, "conf": 1.0}})
+        json.dumps({"d": {f: 1.0 for f in DerScore.EXPECTED_FIELDS}})
     )
     all_ok, rows = verify.verify_der(tmp_path)
     assert rows
@@ -104,7 +104,7 @@ def test_correct_der_expected_passes(tmp_path: Path):
     got = verify.score_der_dir(model)["d"]
     (model / "expected.json").write_text(
         json.dumps({"d": {k: round(got[k], 4)
-                          for k in ("der_full", "der_classic", "miss", "fa", "conf")}})
+                          for k in DerScore.EXPECTED_FIELDS}})
     )
     all_ok, rows = verify.verify_der(tmp_path)
     assert all_ok and rows

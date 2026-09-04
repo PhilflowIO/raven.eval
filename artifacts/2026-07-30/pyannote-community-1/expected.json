@@ -4,6 +4,11 @@
     "der_classic": 5.0012,
     "miss": 2.3311,
     "fa": 2.2639,
-    "conf": 2.576
+    "conf": 2.576,
+    "miss_classic": 1.6435,
+    "fa_classic": 1.1423,
+    "conf_classic": 2.2155,
+    "der_full_filemean": 9.172,
+    "der_classic_filemean": 7.3942
   }
 }

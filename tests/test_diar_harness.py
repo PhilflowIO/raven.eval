@@ -11,11 +11,20 @@ from pathlib import Path
 
 import pytest
 
-from raven_diar.config import COLLARS, DER_DATASETS, KNOWN_DIARIZERS
+from raven_diar.config import (
+    AGGREGATION_ALSO_REPORTED,
+    AGGREGATION_PRIMARY,
+    BOOTSTRAP_CONFIDENCE,
+    BOOTSTRAP_RESAMPLES,
+    BOOTSTRAP_SEED,
+    COLLARS,
+    DER_DATASETS,
+    KNOWN_DIARIZERS,
+)
 from raven_diar.datasets.ami import AMILoader, audio_url
 from raven_diar.datasets.callhome_de import segments_from_row
 from raven_diar.promote import _safe_run_name, promote
-from raven_diar.score import score_segment_pairs
+from raven_diar.score import DerScore, score_segment_pairs
 from raven_eval_core.der import to_rttm
 
 # ── score.py ─────────────────────────────────────────────────────────────────
@@ -44,17 +53,68 @@ def test_score_two_collars_differ():
 
 
 def test_expected_entry_shape():
+    """expected.json carries EVERY published scalar, both collars included.
+
+    The field list is read from the scorer, not repeated here: a quantity that
+    reaches BENCHMARKS.md must reach expected.json too, or it is published
+    without a Tier-1 re-score behind it. Pinned literally is only the invariant
+    that matters — both collars carry their own decomposition, and both
+    aggregation conventions are present.
+    """
     s = score_segment_pairs("demo", [([(0, 10, "A")], [(0, 20, "B")])])
     entry = s.expected_entry()
-    assert set(entry) == {"der_full", "der_classic", "miss", "fa", "conf"}
+    assert set(entry) == set(DerScore.EXPECTED_FIELDS)
+    assert {"der_full", "miss", "fa", "conf"} <= set(entry)
+    assert {"der_classic", "miss_classic", "fa_classic", "conf_classic"} <= set(entry)
+    assert {"der_full_filemean", "der_classic_filemean"} <= set(entry)
 
 
 # ── config contract ──────────────────────────────────────────────────────────
 
 
+def _public_contract() -> dict:
+    """The committed public scoring contract, read from disk."""
+    import yaml
+
+    return yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "benchmark.config.yaml").read_text()
+    )
+
+
 def test_collars_match_public_contract():
-    assert COLLARS["full"] == {"collar": 0.0, "skip_overlap": False}
-    assert COLLARS["classic"] == {"collar": 0.25, "skip_overlap": False}
+    """The collars in code must equal the ones the contract FILE publishes.
+
+    Read, not restated. A test that asserts 0.25 against a literal 0.25 written
+    beside it passes just as happily when benchmark.config.yaml says 0.3 — and
+    then every published DER is produced under a rule the committed contract
+    misstates, which is the one failure this repo exists to make impossible. The
+    turn-folding threshold below has always been checked this way; the collars,
+    the more score-moving of the two, were not.
+    """
+    variants = _public_contract()["der"]["variants"]
+    published = {
+        v["name"]: {"collar": float(v["collar"]),
+                    "skip_overlap": bool(v["skip_overlap"])}
+        for v in variants
+    }
+    assert published == COLLARS, (
+        "benchmark.config.yaml and raven_diar.config.COLLARS disagree about the "
+        "collars every published DER is computed under."
+    )
+
+
+def test_aggregation_and_uncertainty_match_public_contract():
+    """The aggregation convention and the bootstrap settings are contract too.
+
+    Both move a published number: the two aggregations are 0.334 pp apart on the
+    German CALLHOME row, and an unseeded interval is not reproducible at all.
+    """
+    der = _public_contract()["der"]
+    assert der["aggregation"]["primary"] == AGGREGATION_PRIMARY
+    assert tuple(der["aggregation"]["also_reported"]) == AGGREGATION_ALSO_REPORTED
+    assert der["uncertainty"]["resamples"] == BOOTSTRAP_RESAMPLES
+    assert der["uncertainty"]["seed"] == BOOTSTRAP_SEED
+    assert der["uncertainty"]["confidence"] == BOOTSTRAP_CONFIDENCE
 
 
 def test_datasets_and_diarizers_registered():
@@ -284,7 +344,7 @@ def test_promote_builds_tier1_artifact(tmp_path: Path):
 
     dest = promote(run, tmp_path / "artifacts", "2026-07-30")
     expected = json.loads((dest / "expected.json").read_text())
-    assert set(expected["voxconverse"]) == {"der_full", "der_classic", "miss", "fa", "conf"}
+    assert set(expected["voxconverse"]) == set(DerScore.EXPECTED_FIELDS)
     assert (dest / "gold" / "voxconverse" / "f1.rttm").exists()
     assert (dest / "hyp" / "voxconverse" / "f1.rttm").exists()
     assert not (dest / "gold" / "stale-set").exists()

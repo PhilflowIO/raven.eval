@@ -173,6 +173,61 @@ def compute_der_components(
     return _components_from_detail(detail)
 
 
+def compute_der_corpus_detailed(
+    pairs: list[tuple[list[DiarSegment], list[DiarSegment]]],
+    collar: float = 0.25,
+    skip_overlap: bool = False,
+) -> tuple[DerComponents, list[DerComponents]]:
+    """Corpus DER **and** the per-file components it was accumulated from.
+
+    One scoring pass produces both: the NIST-correct corpus aggregate
+    (``Σ(miss+fa+conf) / Σ(total)``) and the list of per-file
+    :class:`DerComponents`, aligned index-for-index with ``pairs``.
+
+    The per-file list is what makes the corpus number *auditable* rather than
+    merely stated — a reader can see which files carry the error, re-aggregate
+    under a different convention (a file-mean, the convention the ETH
+    diarization benchmark uses), resample it for a confidence interval, or split
+    it by reference speaker count. Every one of those questions is unanswerable
+    from a single corpus scalar, which is why this is the primary entry point and
+    :func:`compute_der_corpus` is the thin wrapper.
+
+    A pair with both sides empty is skipped by the corpus accumulator (nothing to
+    score) but still yields an all-zero row, so indices stay aligned.
+
+    An empty ``pairs`` yields an all-zero aggregate and an empty list.
+    """
+    metric = DiarizationErrorRate(collar=collar, skip_overlap=skip_overlap)
+    per_file: list[DerComponents] = []
+    scored = 0
+    for ref_segments, hyp_segments in pairs:
+        if not ref_segments and not hyp_segments:
+            per_file.append(DerComponents(der=0.0, miss=0.0, false_alarm=0.0,
+                                          confusion=0.0, total_ref=0.0))
+            continue
+        detail = metric(
+            _to_annotation(ref_segments), _to_annotation(hyp_segments),
+            detailed=True,
+        )
+        per_file.append(_components_from_detail(detail))
+        scored += 1
+    if scored == 0:
+        return (
+            DerComponents(der=0.0, miss=0.0, false_alarm=0.0, confusion=0.0,
+                          total_ref=0.0),
+            per_file,
+        )
+    acc = metric[:]  # accumulated components across all files
+    aggregate = _components_from_detail({
+        "diarization error rate": float(abs(metric)),
+        "missed detection": float(acc["missed detection"]),
+        "false alarm": float(acc["false alarm"]),
+        "confusion": float(acc["confusion"]),
+        "total": float(acc["total"]),
+    })
+    return aggregate, per_file
+
+
 def compute_der_corpus(
     pairs: list[tuple[list[DiarSegment], list[DiarSegment]]],
     collar: float = 0.25,
@@ -185,27 +240,33 @@ def compute_der_corpus(
     per-file DERs. This is how CALLHOME / DIHARD / the pyannote model cards report
     a dataset number, and how ``scripts/verify.py`` re-scores committed RTTMs.
 
-    An empty ``pairs`` yields an all-zero result (nothing scored).
+    An empty ``pairs`` yields an all-zero result (nothing scored). See
+    :func:`compute_der_corpus_detailed` when the per-file breakdown is wanted.
     """
-    metric = DiarizationErrorRate(collar=collar, skip_overlap=skip_overlap)
-    scored = 0
-    for ref_segments, hyp_segments in pairs:
-        if not ref_segments and not hyp_segments:
-            continue
-        metric(_to_annotation(ref_segments), _to_annotation(hyp_segments))
-        scored += 1
-    if scored == 0:
-        return DerComponents(der=0.0, miss=0.0, false_alarm=0.0, confusion=0.0,
-                             total_ref=0.0)
-    acc = metric[:]  # accumulated components across all files
-    detail = {
-        "diarization error rate": float(abs(metric)),
-        "missed detection": float(acc["missed detection"]),
-        "false alarm": float(acc["false alarm"]),
-        "confusion": float(acc["confusion"]),
-        "total": float(acc["total"]),
-    }
-    return _components_from_detail(detail)
+    aggregate, _ = compute_der_corpus_detailed(
+        pairs, collar=collar, skip_overlap=skip_overlap
+    )
+    return aggregate
+
+
+def file_mean_der(per_file: list[DerComponents]) -> float:
+    """Unweighted mean of per-file DERs — the OTHER aggregation convention.
+
+    Not comparable to :func:`compute_der_corpus`: this weights a 30 s clip like a
+    50 min meeting, where the corpus aggregate weights by scored reference speech.
+    Both are legitimate and both are published in the literature — the ETH
+    diarization benchmark (arXiv 2509.26177, Table 3 caption) averages over
+    samples, the pyannote model cards and CALLHOME/DIHARD report the corpus
+    figure. The convention moves the number by a third of a percentage point on
+    our own German CALLHOME row, so a DER is only comparable once it is stated.
+
+    Files that scored no reference speech (``total_ref == 0``) are excluded: they
+    have no defined rate and would otherwise pull the mean toward zero.
+    """
+    rates = [c.der for c in per_file if c.total_ref > 0.0]
+    if not rates:
+        return 0.0
+    return sum(rates) / len(rates)
 
 
 def assign_word_speakers(

@@ -63,8 +63,8 @@ import re
 import sys
 from pathlib import Path
 
+from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
-from raven_eval_core.der import compute_der_corpus, load_rttm
 from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
 from raven_eval_core.flozi_wer import normalize_flozi as normalize_text
 
@@ -253,10 +253,10 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
 #
 # Layout: artifacts/<run>/<model>/{gold,hyp}/<dataset>/<file>.rttm + expected.json
 #   expected.json = {"<dataset>": {der_full, der_classic, miss, fa, conf}}  (percent)
-# We re-load gold+hyp, recompute corpus DER at both collars with the SAME core
-# (raven_eval_core.der — pyannote.metrics, no torch), and assert a match. This is
-# the DER analogue of the WER re-score above; it needs no GPU and no gated model.
-_DER_COLLARS = {"full": 0.0, "classic": 0.25}
+# We re-load gold+hyp and re-score with the SAME module the runner used
+# (raven_diar.score → raven_eval_core.der → pyannote.metrics, no torch), then
+# assert a match on every published scalar. This is the DER analogue of the WER
+# re-score above; it needs no GPU and no gated model.
 
 
 def find_der_model_dirs(artifacts_dir: Path) -> list[Path]:
@@ -272,16 +272,23 @@ def find_der_model_dirs(artifacts_dir: Path) -> list[Path]:
 def score_der_dir(model_dir: Path) -> dict[str, dict[str, float]]:
     """Recompute per-dataset DER (percent) from the committed gold/hyp RTTMs.
 
-    Returns ``{dataset: {der_full, der_classic, miss, fa, conf, n_files}}``. Each
-    dataset aggregates every ``gold/<dataset>/<file>.rttm`` against its
-    ``hyp/<dataset>/<file>.rttm`` via NIST-correct corpus accumulation.
+    Returns ``{dataset: {<every published scalar>, n_files}}``. Each dataset
+    aggregates every ``gold/<dataset>/<file>.rttm`` against its
+    ``hyp/<dataset>/<file>.rttm`` via NIST-correct corpus accumulation, and
+    additionally reports the file-mean aggregation of the same files — the other
+    convention in the literature, published so a reader never has to guess which
+    one a number is under.
+
+    The scoring goes through ``raven_diar.score``, the same module the Tier-2
+    runner uses, so this re-score cannot answer a different question than the run
+    that produced the artifact.
     """
     gold_root = model_dir / "gold"
     hyp_root = model_dir / "hyp"
     out: dict[str, dict[str, float]] = {}
     for ds_dir in sorted(p for p in gold_root.iterdir() if p.is_dir()):
         dataset = ds_dir.name
-        pairs = []
+        rttm_pairs = []
         for gold_rttm in sorted(ds_dir.glob("*.rttm")):
             hyp_rttm = hyp_root / dataset / gold_rttm.name
             if not hyp_rttm.exists():
@@ -289,23 +296,15 @@ def score_der_dir(model_dir: Path) -> dict[str, dict[str, float]]:
                     f"missing hypothesis RTTM for {dataset}/{gold_rttm.name} "
                     f"(expected {hyp_rttm})"
                 )
-            pairs.append((load_rttm(gold_rttm), load_rttm(hyp_rttm)))
-        full = compute_der_corpus(pairs, collar=_DER_COLLARS["full"], skip_overlap=False)
-        classic = compute_der_corpus(
-            pairs, collar=_DER_COLLARS["classic"], skip_overlap=False
-        )
-        out[dataset] = {
-            "der_full": full.der * 100.0,
-            "der_classic": classic.der * 100.0,
-            "miss": full.miss * 100.0,
-            "fa": full.false_alarm * 100.0,
-            "conf": full.confusion * 100.0,
-            "n_files": float(len(pairs)),
-        }
+            rttm_pairs.append((gold_rttm, hyp_rttm))
+        score = score_rttm_pairs(dataset, rttm_pairs)
+        row = {f: float(getattr(score, f)) for f in DerScore.EXPECTED_FIELDS}
+        row["n_files"] = float(score.n_files)
+        out[dataset] = row
     return out
 
 
-_DER_FIELDS = ("der_full", "der_classic", "miss", "fa", "conf")
+_DER_FIELDS = DerScore.EXPECTED_FIELDS
 
 
 def verify_der(artifacts_dir: Path) -> tuple[bool, list[dict]]:
@@ -353,31 +352,42 @@ def verify_der(artifacts_dir: Path) -> tuple[bool, list[dict]]:
                 detail = f"missing expected fields: {missing}"
             elif not ok:
                 detail = (f"Δ{worst[0]}={worst[1]:+.3f} (tol {DER_TOLERANCE_PCT})")
-            rows.append({
+            row = {
                 "model": str(rel), "dataset": dataset, "n": int(got["n_files"]),
-                "der_full": got["der_full"], "exp_full": float(exp["der_full"]),
-                "der_classic": got["der_classic"],
-                "miss": got["miss"], "fa": got["fa"], "conf": got["conf"],
+                "exp_full": float(exp["der_full"]),
                 "status": "PASS" if ok else "FAIL", "detail": detail,
-            })
+            }
+            row.update({f: got[f] for f in _DER_FIELDS})
+            rows.append(row)
     return all_ok, rows
 
 
 def _print_der_table(rows: list[dict]) -> None:
+    # Each collar carries its own decomposition: miss+fa+conf sums to the DER in
+    # the SAME column group, never across groups. `fmean25` is the file-mean
+    # aggregation of the classic collar — the other convention, printed beside
+    # the corpus figure so the two are never mistaken for one another.
     hdr = (f"{'model':<28} {'dataset':<14} {'n':>4} {'der0%':>8} {'exp0%':>8} "
-           f"{'der25%':>8} {'miss%':>7} {'fa%':>6} {'conf%':>7} {'status':>6}")
+           f"{'miss0%':>7} {'fa0%':>6} {'conf0%':>7} "
+           f"{'der25%':>8} {'miss25%':>8} {'fa25%':>7} {'conf25%':>8} "
+           f"{'fmean25%':>9} {'status':>6}")
     print(hdr)
     print("-" * len(hdr))
     for r in rows:
+        nan = float("nan")
         print(
             f"{r.get('model',''):<28} {r.get('dataset',''):<14} "
             f"{r.get('n',''):>4} "
-            f"{r.get('der_full',float('nan')):>8.3f} "
-            f"{r.get('exp_full',float('nan')):>8.3f} "
-            f"{r.get('der_classic',float('nan')):>8.3f} "
-            f"{r.get('miss',float('nan')):>7.3f} "
-            f"{r.get('fa',float('nan')):>6.3f} "
-            f"{r.get('conf',float('nan')):>7.3f} "
+            f"{r.get('der_full', nan):>8.3f} "
+            f"{r.get('exp_full', nan):>8.3f} "
+            f"{r.get('miss', nan):>7.3f} "
+            f"{r.get('fa', nan):>6.3f} "
+            f"{r.get('conf', nan):>7.3f} "
+            f"{r.get('der_classic', nan):>8.3f} "
+            f"{r.get('miss_classic', nan):>8.3f} "
+            f"{r.get('fa_classic', nan):>7.3f} "
+            f"{r.get('conf_classic', nan):>8.3f} "
+            f"{r.get('der_classic_filemean', nan):>9.3f} "
             f"{r['status']:>6}"
             + (f"  {r['detail']}" if r.get("detail") else "")
         )
@@ -460,7 +470,17 @@ def main(argv: list[str] | None = None) -> int:
         print()
 
     if all_ok:
-        print(f"OK: {total} row(s) reproduced within ±{TOLERANCE_PCT} pp.")
+        # Name the tolerances that were actually applied. WER/BLEU rows and DER
+        # rows are checked against separate constants; printing one of them over
+        # a mixed count states a tolerance that half the rows were not held to.
+        tolerances = []
+        if wer_rows:
+            tolerances.append(f"WER/CER ±{TOLERANCE_PCT} pp")
+            if any("bleu" in r for r in wer_rows):
+                tolerances.append(f"BLEU ±{BLEU_TOLERANCE}")
+        if der_rows:
+            tolerances.append(f"DER ±{DER_TOLERANCE_PCT} pp")
+        print(f"OK: {total} row(s) reproduced ({', '.join(tolerances)}).")
         return 0
     print(f"FAIL: {n_fail}/{total} row(s) did not reproduce.", file=sys.stderr)
     return 1

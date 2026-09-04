@@ -17,6 +17,23 @@ COLLARS: Final[dict[str, dict[str, float | bool]]] = {
     "classic": {"collar": 0.25, "skip_overlap": False},  # NIST / CALLHOME
 }
 
+#: How per-file scores become one dataset number. ``corpus`` is Σerr/Σtotal over
+#: files (CALLHOME/DIHARD, the pyannote model cards); ``file_mean`` is the
+#: unweighted mean of per-file DERs (the ETH diarization benchmark). The two are
+#: 0.334 pp apart on our German CALLHOME row, so both are computed and both are
+#: committed — ``primary`` is only which one the headline table prints.
+AGGREGATION_PRIMARY: Final[str] = "corpus"
+AGGREGATION_ALSO_REPORTED: Final[tuple[str, ...]] = ("file_mean",)
+
+#: Every published interval is a percentile bootstrap over FILES — the unit the
+#: corpora were drawn in. Seeded, because an interval that moves between two runs
+#: of the same command is not a published number. Mirrored by
+#: ``benchmark.config.yaml`` → ``der.uncertainty`` and asserted equal by
+#: ``tests/test_diar_harness.py``.
+BOOTSTRAP_RESAMPLES: Final[int] = 10_000
+BOOTSTRAP_SEED: Final[int] = 20260903
+BOOTSTRAP_CONFIDENCE: Final[float] = 0.95
+
 
 @dataclass(frozen=True)
 class DiarDatasetSpec:

@@ -8,7 +8,7 @@ DER analogue of ``raven_asr.promote``. Takes a runner output dir
     artifacts/<run-name>/<label>/
         gold/<dataset>/<file>.rttm    (copied verbatim — the reference diarization)
         hyp/<dataset>/<file>.rttm     (copied verbatim — the diarizer's hypothesis)
-        expected.json                 ({dataset: {der_full, der_classic, miss, fa, conf}})
+        expected.json                 ({dataset: {every published scalar}})
         summary.json                  (provenance: model, revisions, limit)
 
 ``expected.json`` is derived from ``summary.json`` (never hand-typed), so a
@@ -27,6 +27,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from .score import DerScore
+
 
 def _safe_run_name(name: str) -> str:
     """Sanitize a run-name into a single path segment (mirrors raven_asr.promote)."""
@@ -37,15 +39,24 @@ def _safe_run_name(name: str) -> str:
 
 
 def _expected_from_summary(summary: dict) -> dict[str, dict[str, float]]:
-    """Build {dataset: {der_full, der_classic, miss, fa, conf}} from summary.json."""
+    """Build ``{dataset: {<every published scalar>}}`` from summary.json.
+
+    The field list is :data:`DerScore.EXPECTED_FIELDS`, not a literal repeated
+    here: a scorer that starts reporting a new published quantity must carry it
+    into the artifact automatically, or the quantity is published without a
+    Tier-1 re-score behind it.
+    """
     expected: dict[str, dict[str, float]] = {}
     for dataset, res in summary.get("results", {}).items():
+        missing = [f for f in DerScore.EXPECTED_FIELDS if f not in res]
+        if missing:
+            raise KeyError(
+                f"summary.json result for {dataset!r} lacks {missing} — it was "
+                f"written by an older scorer; re-run the scoring step "
+                f"(python -m raven_diar.reproduce ...) before promoting."
+            )
         expected[dataset] = {
-            "der_full": round(float(res["der_full"]), 4),
-            "der_classic": round(float(res["der_classic"]), 4),
-            "miss": round(float(res["miss"]), 4),
-            "fa": round(float(res["fa"]), 4),
-            "conf": round(float(res["conf"]), 4),
+            f: round(float(res[f]), 4) for f in DerScore.EXPECTED_FIELDS
         }
     return expected
 

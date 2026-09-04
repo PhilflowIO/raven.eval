@@ -241,7 +241,15 @@ make verify     # re-scores the promoted RTTMs with no GPU / no gated model
 
 `promote` copies the `gold/` + `hyp/` RTTM trees and derives `expected.json` from
 the run's `summary.json` (never hand-typed), so a committed DER can only ever
-equal what the scorer produced.
+equal what the scorer produced. It refuses a `summary.json` that lacks any
+currently published scalar — a run scored by an older scorer must be re-scored,
+not promoted with fields missing.
+
+Once committed, `make analyse ARTIFACT=artifacts/<run>/<model>` reads the same
+RTTMs past the aggregate — bootstrap interval, DER by reference speaker count,
+reference overlap, boundary offsets — with no GPU and no keys. Anything you want
+to *say* about a row (how precise, where it breaks down, what kind of error)
+should come from there rather than from the single number.
 
 ## Optional: dscore cross-check
 

@@ -12,8 +12,14 @@ there has an implementation in `raven_eval_core` and vice versa —
 `tests/test_metric_contract.py` fails the build in both directions, the metric-side
 twin of the dataset-list guard in `tests/test_dataset_contract.py`. DER reported at both
 `collar=0.0, skip_overlap=False` (pyannote/DIHARD "full") and `collar=0.25`
-(NIST/CALLHOME classic). Automatic VAD, Hungarian speaker mapping. Primary scorer
-`pyannote.metrics`. A cross-check against `dscore` (nryant/dscore) is wired as an
+(NIST/CALLHOME classic), each with its **own** miss/FA/confusion decomposition,
+aggregated **corpus-wide** (`Σerr/Σtotal`) with the unweighted file-mean reported
+alongside. Uncertainty on every published DER is a seeded 10 000-resample
+bootstrap over files. Automatic VAD, Hungarian speaker mapping. Primary scorer
+`pyannote.metrics`. The collars, the folding threshold, the aggregation and the
+bootstrap settings are all read from the contract file by
+`tests/test_diar_harness.py` — a test that restated them as literals would pass
+just as happily against a contract that had changed underneath it. A cross-check against `dscore` (nryant/dscore) is wired as an
 **optional** `make dscore-check` (see `raven_diar/dscore_check.py`): it asserts
 dscore's DER agrees with `pyannote.metrics` on the same RTTMs within 0.5 pp. It is
 gated on a local dscore checkout (dscore is a script repo, not a pip package, so
@@ -167,58 +173,116 @@ committed under `artifacts/<run>/<model>/`:
 
 - `gold/<dataset>/<file>.rttm` — the reference (gold) diarization.
 - `hyp/<dataset>/<file>.rttm` — the diarizer's hypothesis for the same file.
-- `expected.json` — `{"<dataset>": {"der_full", "der_classic", "miss", "fa", "conf"}}`
-  (percent; `miss + fa + conf == der_full` by construction).
+- `expected.json` — every published scalar per dataset: `der_full` /
+  `der_classic` with **each collar's own** `miss`/`fa`/`conf` decomposition, and
+  `der_full_filemean` / `der_classic_filemean`, the same files under the other
+  aggregation convention.
 
-`make verify` re-loads gold+hyp and recomputes corpus DER at **both** collars with
-`raven_eval_core.der` (pyannote.metrics — no torch, no GPU, no gated model),
-asserting each field matches `expected.json` within **±0.05 pp**. Corpus DER is
-the NIST-correct `Σ(miss+fa+conf) / Σ(total)` over files, never a mean of per-file
-DERs. A committed `artifacts/_demo_der/` dir proves the mechanism end-to-end; it is
-a self-consistent fixture, **not** a Raven product number.
+`make verify` re-loads gold+hyp and recomputes all of them with
+`raven_diar.score` (→ `raven_eval_core.der` → pyannote.metrics — no torch, no
+GPU, no gated model), asserting each field matches `expected.json` within
+**±0.05 pp**. A committed `artifacts/_demo_der/` dir proves the mechanism
+end-to-end; it is a self-consistent fixture, **not** a Raven product number.
+
+**Two conventions, both published.** A DER is not a number until its
+*aggregation* is named, the same way it is not a number until its collar is
+named:
+
+| aggregation | definition | who reports it |
+|---|---|---|
+| **corpus** (primary) | `Σ(miss+fa+conf) / Σ(scored reference speech)` over all files — a 50-minute meeting outweighs a 30-second clip | CALLHOME, DIHARD, the pyannote model cards |
+| **file-mean** | unweighted mean of per-file DERs — every file counts once | the ETH diarization benchmark ([arXiv 2509.26177](https://arxiv.org/abs/2509.26177), Table 3 caption) |
+
+The two are 0.334 pp apart on our German CALLHOME row and 2.4 pp apart on
+VoxConverse dev, where short clips dominate the count but not the speech. Both
+are pinned in [`benchmark.config.yaml`](./benchmark.config.yaml) →
+`der.aggregation`, mirrored by `raven_diar.config` and asserted equal by
+`tests/test_diar_harness.py`. The headline table prints the corpus figure and
+carries the file-mean beside it.
+
+**Past the corpus scalar.** `expected.json` is an aggregate; the per-file scores
+underneath it are what make a claim *about* that aggregate checkable.
+`make analyse ARTIFACT=artifacts/<run>/<model>` recomputes, from the same
+committed RTTMs and on a laptop, four things a single DER cannot say: a
+seeded bootstrap **confidence interval** over files, DER **by reference speaker
+count**, the reference **overlap fraction**, and speaker-aware **boundary
+offsets** with the segment-length regime the missed speech sits in. Every
+paragraph below that makes a claim of precision, difficulty or error *kind*
+quotes that command's output.
 
 ## DER — speaker diarization (public datasets)
 
-**Reproduced (Etappe 5).** `pyannote-community-1` was run on VoxConverse, CALLHOME-de and AMI; the
-per-file gold + hypothesis RTTMs and `expected.json` are committed under
-`artifacts/`, so `make verify` (and CI) re-score every number below on every push
-with **no GPU and no gated model**. The from-audio run needs an HF token, the
-gated model license, and a GPU ([`docs/TIER2-DER-KEYS.md`](./docs/TIER2-DER-KEYS.md));
-the re-score does not.
+**Reproduced (Etappe 5).** `pyannote-community-1` was run on VoxConverse,
+CALLHOME-de and AMI; the per-file gold + hypothesis RTTMs and `expected.json`
+are committed under `artifacts/`, so `make verify` (and CI) re-score every number
+below on every push with **no GPU and no gated model**. The from-audio run needs
+an HF token, the gated model license, and a GPU
+([`docs/TIER2-DER-KEYS.md`](./docs/TIER2-DER-KEYS.md)); the re-score does not.
 
-**Independent reproduction of the vendor benchmark.** On VoxConverse **test** at
-`collar=0.0, skip_overlap=False` — the exact metric pyannote's model card reports
-("no forgiveness collar, nor skipping overlapping speech") — we measure
-**11.15 % DER** against pyannote's own published **11.2 %**: a **0.05 pp** delta,
-computed here with our scorer on committed RTTMs. The `v0.3` labels pyannote
-benchmarked are the VoxConverse repo's `master` branch (the project has no git
-tags — `v0.3` is a dataset-version label), pinned here at commit `24bf60be`.
-Model `pyannote/speaker-diarization-community-1` @ `3533c8cf`. Determinism: the
-full set was run twice, DER identical to 15 significant digits.
+**Independent reproduction of the vendor benchmark — and how precise it is.** On
+VoxConverse **test** at `collar=0.0, skip_overlap=False` — the exact metric
+pyannote's model card reports ("no forgiveness collar, nor skipping overlapping
+speech") — we measure **11.15 % DER** against pyannote's own published
+**11.2 %**. The `v0.3` labels pyannote benchmarked are the VoxConverse repo's
+`master` branch (the project has no git tags — `v0.3` is a dataset-version
+label), pinned here at commit `24bf60be`. Model
+`pyannote/speaker-diarization-community-1` @ `3533c8cf`.
+
+That 0.05 pp gap is **not** evidence of agreement to 0.05 pp, and this page used
+to leave that impression. Bootstrapping the same 232 files gives a 95 % interval
+of **[10.12, 12.23]**, a half-width of ±1.06 pp — twenty times the gap. What the
+reproduction shows is that our scorer and pyannote's land in the same place on
+the same data; the *precision* of either number is bounded by the corpus, not by
+the agreement. The same holds on AMI: **17.05 %** against pyannote's **17.0 %**,
+with an interval of **[14.96, 19.07]**, ±2.06 pp on 16 meetings. Determinism is a
+separate property and holds separately: the full VoxConverse set was run twice,
+DER identical to 15 significant digits.
 
 **The German anchor (CALLHOME-de).** On the German telephone set
 (`talkbank/callhome` config `deu`, n=120) community-1 scores **16.08 % DER** at
-`collar=0.25, skip_overlap=False` — the protocol the ETH diarization benchmark
-(arXiv 2509.26177) uses for its per-language German column. There it sits
+`collar=0.25, skip_overlap=False`, 95 % CI **[14.97, 17.27]** — the protocol the
+ETH diarization benchmark uses for its per-language German column. There it sits
 **between pyannote 3.1 (19.0 %) and the commercial pyannoteAI/precision-2
 (8.3 %)** — exactly where an open model belongs. Unlike VoxConverse there is no
 published community-1-on-German-CALLHOME number to match exactly, so this is a
-*sanity-banded* reproducible measurement, corroborated by the reference overlap
-fraction (10.8 %, paper ≈ 12.6 %) and the miss-dominated error the literature
-predicts. **Protocol matters:** the same run reads 20.58 % at collar 0.0 vs
-16.08 % at 0.25 — 4.5 pp on convention alone, so a CALLHOME DER without a stated
-collar + overlap rule is noise.
+*sanity-banded* reproducible measurement. **Protocol matters:** the same run
+reads 20.58 % at collar 0.0 vs 16.08 % at 0.25 — 4.5 pp on convention alone, so a
+CALLHOME DER without a stated collar + overlap rule is noise.
+
+**What the corpus itself looks like.** The reference overlap of these 120 files
+is **12.01 % of speech** (overlapped seconds / seconds where anyone speaks),
+11.90 % ± 5.44 as a per-file mean, on 18.4344 h of recording — against the ETH
+paper's ≈ 12.6 % for the same corpus, which corroborates that we are scoring the
+set they scored. Two things about that figure. First, it depends entirely on the
+denominator: the same overlap is 10.72 % of Σ per-speaker time and 11.09 % of
+wall clock, and "the overlap fraction" names none of the three. All three are
+printed by `make analyse` and none of them is an assertion. Second, this page
+previously published **10.8 %**, which no denominator reproduces — the closest,
+overlap-over-speaker-time, is 0.1 pp away and the earlier figure's derivation is
+not recorded anywhere in the repository. It is withdrawn and replaced by the
+number above, which any reader can recompute.
 
 **The first hosted diarizer (AssemblyAI).** On the same German telephone set,
 AssemblyAI's Universal-3.5 Pro with `speaker_labels` scores **21.74 % DER** at
-`collar=0.25` against community-1's **16.08 %** under the identical protocol,
-scorer and gold RTTMs — 5.7 pp behind the open local model on German telephone
-speech. The error is **miss-dominated** (21.59 miss vs 3.28 false alarm): the
-hypothesis is derived from a *transcript*, so speech the ASR does not transcribe
-— backchannels, crosstalk, laughter — produces no turn at all and is scored as
-missed speech. That is a structural property of diarization-as-a-transcription-
-flag, not a tuning gap, and it is the reason both collars are published here:
-the same run reads 28.69 % at collar 0.0.
+`collar=0.25` (CI [20.66, 22.90]) against community-1's **16.08 %** under the
+identical protocol, scorer and gold RTTMs. Paired over the 120 files the gap is
+**+5.66 pp, 95 % CI [+4.52, +6.73]** — an interval clear of zero, so the ordering
+is a finding and not a coin flip on this corpus.
+
+The row is **miss-dominated**: at collar 0.25, miss 17.33 against false alarm
+1.66 and confusion 2.75. This page used to explain that as the ASR skipping
+backchannels, crosstalk and laughter — speech too short to be transcribed and so
+never turned into a turn. **Our own artifacts do not support that explanation.**
+Splitting the uncovered reference speech by the length of the reference segment
+it sits in gives 1 504 s in segments shorter than 0.5 s against 15 935 s in
+longer ones: **91 % of the missed speech is in long segments**, not short ones.
+Whatever the hosted row is losing, it is mostly not backchannels. What the
+instrument does confirm is a boundary difference: the median offset between a
+reference speaker-turn boundary and the nearest boundary of the same mapped
+speaker is **1 080 ms** for AssemblyAI and **92 ms** for community-1, with 28 %
+against 68 % of boundaries inside 250 ms. Deepgram sits between them (755 ms,
+34 %). That is the structural property of diarization-derived-from-a-transcript
+worth stating, and it is measured rather than inferred.
 
 Two things make this row comparable rather than merely adjacent. Both providers'
 turns come from the **same shared aggregator**
@@ -228,44 +292,90 @@ alias**: AssemblyAI publishes no immutable version, its default is a two-model
 fallback chain, so the adapter sends `speech_models: ["universal-3-5-pro"]` alone
 and fails the file if the response's `speech_model_used` names anything else. An
 alias can still move under a re-train — that limitation is the vendor's, and it
-is stated rather than hidden. Cost of this row: 18.43 h of audio at 0.23 $/h
-(0.21 model + 0.02 diarization add-on) ≈ **4.24 $**.
+is stated rather than hidden. Cost of this row: the gold RTTMs span **18.4344 h**
+of recording (recomputed from the committed references by `make analyse`, so that
+half is an artifact) at AssemblyAI's list 0.23 $/h (0.21 model + 0.02
+diarization add-on) ≈ **4.24 $** — a list-price calculation, not a measurement,
+and the only figure on this page that is not re-derivable from the repository.
 
 **The meeting regime (AMI).** On the AMI test split (16 four-speaker meetings,
 Mix-Headset = the IHM condition, gold = the `only_words` RTTMs of
 `pyannote/AMI-diarization-setup` @ `67c2d539`) community-1 scores **17.05 % DER**
 at `collar=0.0, skip_overlap=False` — against pyannote's own published
-**17.0 %** for "AMI (IHM)" under the same protocol: a **0.05 pp** delta, the
-second vendor number this scorer reproduces exactly. At collar 0.25 the same
-run reads 13.10 %. Audio for this set is fetched by `prepare()` from the
-Edinburgh AMI mirror (CC-BY-4.0), so the run below is fully self-contained.
+**17.0 %** for "AMI (IHM)" under the same protocol, with the ±2.06 pp interval
+noted above. At collar 0.25 the same run reads 13.10 %. Reference overlap on this
+split is 14.58 % of speech, a fifth again more than the telephone set. Audio is
+fetched by `prepare()` from the Edinburgh AMI mirror (CC-BY-4.0), so the run
+below is fully self-contained.
 
 **The second diarizer (Sortformer 4spk-v1) — a reference row, not a shippable
 option.** `nvidia/diar_sortformer_4spk-v1` @ `9f17b10d` is an end-to-end neural
 diarizer run locally through NeMo (no HF token, no gated licence). On CALLHOME-de
 — the same 120 German telephone files, the same gold, the same scorer — it reads
-**17.34 % DER at collar 0.0** and **11.41 % at collar 0.25**. Its weights are
-**CC-BY-NC-4.0 (non-commercial)**, so this row exists to bound the field, not to
-be shipped: no commercial deployment may follow from it, whatever the number says.
-Both collars again move the picture by ~6 pp, which is why neither figure means
-anything without its convention stated.
+**17.34 % DER at collar 0.0** and **11.41 % at collar 0.25** (CI [10.19, 12.67]).
+Its weights are **CC-BY-NC-4.0 (non-commercial)**, so this row exists to bound
+the field, not to be shipped: no commercial deployment may follow from it,
+whatever the number says.
+
+**This row is also the external check on our whole measurement chain.** The ETH
+benchmark measures the same checkpoint on the same corpus under the same collar
+and reports **11.1 %**. We report 11.41 %. Under *their* aggregation — the
+unweighted file-mean their Table 3 caption describes — our own committed RTTMs
+read **11.07 %**, which rounds to their 11.1 %. It is the same measurement; the
+0.3 pp is the aggregation convention and nothing else. Ruled out as causes, with
+numbers: UEM (0.000 pp on this corpus, see below), sample scope (n=120, 18.4344 h
+against their stated 18.4 h), and chunking (their 12-minute threshold is above
+our 9.2-minute mean file length). This is the reconciliation that made the
+convention worth pinning in the contract file rather than leaving implicit.
+
+**The same reconciliation fails for the streaming v2 checkpoint, in our favour.**
+ETH report 9.6 % for `diar_streaming_sortformer_4spk-v2` on German CALLHOME; we
+read **8.98 %** corpus and **9.07 %** file-mean, 0.5–0.6 pp *better* under either
+convention. We do not know why, and the direction of the gap is not a reason to
+be relaxed about it. The open candidates, in the order worth testing, are the
+streaming latency preset (we run NVIDIA's "very high latency" configuration; the
+paper does not state theirs), the checkpoint revision (ours is `5240a640`, theirs
+unstated) and gold preparation. Until one of them explains it, our v2 German
+number is an unexplained disagreement with the only independent measurement of
+the same thing, and it is flagged here rather than quietly enjoyed.
 
 **What the German column shows.** Five diarizers on the same 120 CALLHOME-de
 files, same gold, same scorer, same two collars. At the classic collar:
 pyannote-community-1 **16.08**, deepgram-nova-3 19.31, assemblyai-universal-3-5-pro
 21.74, sortformer-4spk-v1 11.41 — and sortformer-streaming-4spk-v2 at **8.98**,
-which is the best number on the page and, unlike v1, one we could ship: its
-weights are CC-BY-4.0, not CC-BY-NC-4.0. So on German telephone speech the
-streaming NVIDIA checkpoint is 7.1 pp ahead of the model Raven actually runs,
-which is in turn ahead of both metered vendors.
+the lowest DER any row on this page reaches on *this dataset* and, unlike v1, one
+we could ship: its weights are CC-BY-4.0, not CC-BY-NC-4.0. Paired over the same
+files, the streaming checkpoint is **7.10 pp ahead of community-1, CI [+5.95,
++8.23]**, and **2.42 pp ahead of v1, CI [+1.11, +3.74]**; both intervals exclude
+zero. (Numbers on different datasets are not comparable, which is why "best on
+the page" is the wrong phrase: VoxConverse dev reads 5.00 % for community-1 and
+means nothing next to a telephone number.)
 
-Read the error columns before the ranking. Both hosted rows are miss-dominated
-(AssemblyAI 21.59 miss against 3.28 false alarm), and that is structural rather
-than incidental: neither vendor exposes diarization on its own, so speech the
-ASR does not transcribe — backchannels, interjections, laughter — produces no
-turn at all and scores as missed speech. A diarization-only system has no such
-failure mode. The comparison is still fair, because it is the product each
-vendor actually sells.
+**Where each model breaks down.** The corpus number hides the axis the field
+actually degrades on. Split by *reference* speaker count, at collar 0.25
+(n = 104 / 12 / 4 files at 2 / 3 / 4 speakers):
+
+| model | 2 spk | 3 spk | 4 spk |
+|---|---:|---:|---:|
+| sortformer-streaming-4spk-v2 | 8.87 | 9.83 | **9.26** |
+| sortformer-4spk-v1 | 10.95 | 13.75 | 15.91 |
+| pyannote-community-1 | 15.59 | 17.78 | 23.38 |
+| deepgram-nova-3 | 18.81 | 20.47 | **28.42** |
+| assemblyai-universal-3-5-pro | 21.80 | 20.98 | 22.36 |
+
+The four-speaker column rests on four files and carries no interval worth
+printing; read it as a direction, not a measurement. The direction is consistent:
+every model except the streaming checkpoint gets worse as speakers are added, and
+Deepgram worst — +9.6 pp from two speakers to four. On VoxConverse **test**,
+where community-1 has 146 files with five or more speakers, the same split reads
+4.56 / 8.11 / 9.29 / 6.41 / **8.76** for 1 / 2 / 3 / 4 / 5+ speakers: the model
+Raven runs does **not** fall off a cliff in the many-speaker regime, which is the
+regime a meeting product lives in. That matters against the published cap
+behaviour of the Sortformer family — NVIDIA report 13.24 % DER at ≤4 speakers
+against 42.56 % at ≥5 on DIHARD-III Eval, and the ETH benchmark measures the same
+jump — and no row on this page says anything about Sortformer above four
+speakers, because the checkpoint is hard-capped there and no such file was
+scored.
 
 No winner mark is awarded here. Under ADR-app-0036 a star needs at least two
 rows among *shippable* models on the same set, and it may never go to a
@@ -294,27 +404,38 @@ replaces quadratic attention, so GPU memory does not track duration — sampled 
 telephone call. Meeting-length audio is reachable.
 
 **Reachable is not the same as good.** On AMI the streaming checkpoint reads
-25.97 % / 23.03 % against community-1's 17.05 % / 13.10 % — 9.9 pp *behind* at
-the classic collar, on the corpus shape that matters most to Raven, and this from
-the model that wins German telephone by 7.1 pp. The error columns say why: miss
-20.52 % against community-1's 9.52 %, with false alarm and confusion both lower
-(2.82 / 2.63 versus 3.58 / 3.95). The streaming model is systematically too
-conservative on meeting speech — it hears less, not the wrong person. That is
-consistent with NVIDIA's own note that a newer `4spk-v2.1` checkpoint exists
-"providing greater robustness for meeting speech"; measuring that one is the
-obvious next row, and it is not measured here.
+25.97 % / 23.03 % against community-1's 17.05 % / 13.10 %. Paired over the same
+16 meetings that is **+9.93 pp at collar 0.25, CI [+7.31, +12.60]** — a gap that
+clears zero comfortably even on 16 files, on the corpus shape that matters most
+to Raven, and this from the model that wins German telephone by 7.1 pp. The error
+columns say why: at collar 0.25, miss 18.99 % against community-1's 7.78 %, with
+false alarm and confusion both *lower* (1.72 / 2.33 versus 2.35 / 2.97). The
+streaming model hears less rather than mishearing — it is more conservative on
+meeting speech across every one of these meetings, and the paired interval is
+what licenses saying so. Its boundaries are not the problem: median offset 80 ms
+against community-1's 207 ms on the same split. That is consistent with NVIDIA's
+own note that a newer `4spk-v2.1` checkpoint exists "providing greater robustness
+for meeting speech"; measuring that one is the obvious next row, and it is not
+measured here.
 
 Both AMI recordings are 4-speaker, inside the checkpoint's hard cap. The cap
-still bounds where the model may be used at all: NVIDIA reports 13.24 % DER at
-≤4 speakers against 42.56 % at ≥5 on DIHARD-III Eval, so a five-person meeting is
-outside what this row says anything about.
+still bounds where the model may be used at all: a five-person meeting is outside
+what this row says anything about.
 
-The v1 memory curve and the forced-streaming comparison above are **Tier-3
-diagnostics, not published numbers**: they were measured on ten files and on one
-particular GPU, and no artifact backs them, so by this repo's own rule they
-cannot be cited or compared. They are recorded because they are the evidence for
-a *decision* — why the v1 AMI cell is empty — not as results. Both
-`sortformer-streaming-4spk-v2` figures are published rows and have artifacts.
+**No UEM is declared, and on the German column that costs nothing.** Scoring runs
+without an explicit un-partitioned evaluation map, so `pyannote.metrics`
+approximates one by the union of the reference and hypothesis extents. Scored
+against an explicit reference-extent UEM instead, CALLHOME-de moves by **0.002 pp**
+for community-1 and **0.000 pp** for sortformer-v1 — the German column, and with
+it the whole ETH comparison, is unaffected. AMI and VoxConverse are not: at collar
+0.0 the AMI row reads 16.92 % under a reference UEM against 17.05 % as published,
+which turns the 0.05 pp agreement with pyannote's 17.0 % into a 0.08 pp
+disagreement *with the sign reversed*. Both sit far inside the ±2.06 pp interval,
+so nothing about the reproduction claim changes — but the exact-agreement framing
+is convention-dependent and is not repeated above. A UEM spanning the full audio
+would be mathematically identical to the current state; only a restrictive
+upstream UEM moves anything, and none is present in this repository or in the
+pinned upstream revisions.
 
 Reproduce (your HF token + gated license + GPU + shared FFmpeg libs):
 
@@ -349,27 +470,37 @@ make promote   METRIC=der RESULTS=results/reproduce-der/sortformer-streaming-4sp
 make verify
 ```
 
-| model | dataset | DER (collar 0.0) | DER (collar 0.25) | miss | FA | conf | n | run |
-|-------|---------|-----------------:|------------------:|-----:|---:|-----:|--:|-----|
-| pyannote-community-1 | voxconverse (dev) | 7.17 | 5.00 | 2.33 | 2.26 | 2.58 | 216 | [2026-07-30](./artifacts/2026-07-30/pyannote-community-1/) |
-| pyannote-community-1 | voxconverse (**test**) | **11.15** | 8.41 | 3.38 | 4.08 | 3.68 | 232 | [2026-07-31](./artifacts/2026-07-31-voxconverse-test/pyannote-community-1/) |
-| pyannote-community-1 | callhome-de (German, telephone) | 20.58 | **16.08** | 13.46 | 3.54 | 3.57 | 120 | [2026-07-31](./artifacts/2026-07-31-callhome-de/pyannote-community-1/) |
-| pyannote-community-1 | ami (test, 4-speaker meetings, IHM) | **17.05** | 13.10 | 9.52 | 3.58 | 3.95 | 16 | [2026-09-02](./artifacts/2026-09-02-ami/pyannote-community-1/) |
-| sortformer-4spk-v1 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 17.34 | 11.41 | 8.27 | 6.43 | 2.64 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer/sortformer-4spk-v1/) |
-| assemblyai-universal-3-5-pro | callhome-de (German, telephone) | 28.69 | **21.74** | 21.59 | 3.28 | 3.82 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-assemblyai/assemblyai-universal-3-5-pro/) |
-| deepgram-nova-3 | callhome-de (German, telephone) | 26.12 | **19.31** | 17.27 | 4.16 | 4.69 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-deepgram/deepgram-nova-3/) |
-| sortformer-streaming-4spk-v2 | callhome-de (German, telephone) | 14.82 | **8.98** | 5.94 | 7.20 | 1.68 | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer-v2/sortformer-streaming-4spk-v2/) |
-| sortformer-streaming-4spk-v2 | ami (test, 4-speaker meetings, IHM) | **25.97** | 23.03 | 20.52 | 2.82 | 2.63 | 16 | [2026-09-03](./artifacts/2026-09-03-ami-sortformer-v2/sortformer-streaming-4spk-v2/) |
+Read the table with its column groups: `miss`/`FA`/`conf` sum to the DER **in the
+same group**, never across groups. The collar-0.0 decomposition does not add up
+to the collar-0.25 DER and is not a breakdown of it.
 
-> VoxConverse **test** DER@0.0 = 11.15 % vs pyannote's published 11.2 % (Δ 0.05 pp)
-> — a direct, un-caveated reproduction. Dev (7.17 %) is the easier split. For
-> CALLHOME-de the comparable column is **collar 0.25** (16.08 %, the ETH-paper
-> protocol), which lands between pyannote 3.1 and pyannoteAI (see above). AMI
-> **test** DER@0.0 = 17.05 % vs pyannote's published 17.0 % for AMI (IHM)
-> (Δ 0.05 pp) — the second direct reproduction. On CALLHOME-de the hosted
-> AssemblyAI row (21.74 % at collar 0.25) sits 5.7 pp behind community-1
-> (16.08 %) under the same protocol — a measurement on one public set, not a
-> verdict on either product.
+| model | dataset | DER@0.0 | miss@0.0 | FA@0.0 | conf@0.0 | DER@0.25 | miss@0.25 | FA@0.25 | conf@0.25 | file-mean@0.25 | 95 % CI @0.25 | n | run |
+|-------|---------|--------:|---------:|-------:|---------:|---------:|----------:|--------:|----------:|---------------:|---------------|--:|-----|
+| pyannote-community-1 | voxconverse (dev) | 7.17 | 2.33 | 2.26 | 2.58 | 5.00 | 1.64 | 1.14 | 2.22 | 7.39 | [4.37, 5.70] | 216 | [2026-07-30](./artifacts/2026-07-30/pyannote-community-1/) |
+| pyannote-community-1 | voxconverse (**test**) | **11.15** | 3.38 | 4.08 | 3.68 | 8.41 | 2.64 | 2.60 | 3.17 | 8.89 | [7.59, 9.25] | 232 | [2026-07-31](./artifacts/2026-07-31-voxconverse-test/pyannote-community-1/) |
+| pyannote-community-1 | callhome-de (German, telephone) | 20.58 | 13.46 | 3.54 | 3.57 | **16.08** | 11.35 | 1.65 | 3.08 | 15.99 | [14.97, 17.27] | 120 | [2026-07-31](./artifacts/2026-07-31-callhome-de/pyannote-community-1/) |
+| pyannote-community-1 | ami (test, 4-speaker meetings, IHM) | **17.05** | 9.52 | 3.58 | 3.95 | 13.10 | 7.78 | 2.35 | 2.97 | 12.94 | [10.96, 15.18] | 16 | [2026-09-02](./artifacts/2026-09-02-ami/pyannote-community-1/) |
+| sortformer-4spk-v1 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 17.34 | 8.27 | 6.43 | 2.64 | 11.41 | 6.38 | 2.88 | 2.15 | 11.07 | [10.19, 12.67] | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer/sortformer-4spk-v1/) |
+| assemblyai-universal-3-5-pro | callhome-de (German, telephone) | 28.69 | 21.59 | 3.28 | 3.82 | **21.74** | 17.33 | 1.66 | 2.75 | 21.47 | [20.66, 22.90] | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-assemblyai/assemblyai-universal-3-5-pro/) |
+| deepgram-nova-3 | callhome-de (German, telephone) | 26.12 | 17.27 | 4.16 | 4.69 | **19.31** | 14.05 | 1.81 | 3.45 | 19.16 | [18.17, 20.53] | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-deepgram/deepgram-nova-3/) |
+| sortformer-streaming-4spk-v2 | callhome-de (German, telephone) | 14.82 | 5.94 | 7.20 | 1.68 | **8.98** | 4.77 | 2.93 | 1.28 | 9.07 | [8.11, 9.96] | 120 | [2026-09-03](./artifacts/2026-09-03-callhome-de-sortformer-v2/sortformer-streaming-4spk-v2/) |
+| sortformer-streaming-4spk-v2 | ami (test, 4-speaker meetings, IHM) | **25.97** | 20.52 | 2.82 | 2.63 | 23.03 | 18.99 | 1.72 | 2.33 | 23.07 | [19.84, 25.80] | 16 | [2026-09-03](./artifacts/2026-09-03-ami-sortformer-v2/sortformer-streaming-4spk-v2/) |
+
+Every interval is a 10 000-resample percentile bootstrap over **files**, seed
+`20260903`, pinned in [`benchmark.config.yaml`](./benchmark.config.yaml) →
+`der.uncertainty` — so it is reproducible to the digit, not merely to the
+concept. Recompute any row's interval, speaker split, overlap fraction and
+boundary distribution with `make analyse ARTIFACT=<the run link>`.
+
+> VoxConverse **test** DER@0.0 = 11.15 % vs pyannote's published 11.2 % and AMI
+> **test** DER@0.0 = 17.05 % vs their 17.0 % — two direct reproductions on the
+> exact protocol they state. Read both as "the same place on the same data", not
+> as agreement to a tenth: the corpora themselves carry ±1.06 pp and ±2.06 pp.
+> Dev (7.17 %) is the easier split. For CALLHOME-de the comparable column is
+> **collar 0.25** (16.08 %, the ETH-paper protocol), which lands between pyannote
+> 3.1 and pyannoteAI. The hosted AssemblyAI row sits 5.66 pp behind community-1
+> under the same protocol, CI [+4.52, +6.73] — a measurement on one public set,
+> not a verdict on either product.
 
 > The `sortformer-4spk-v1` row is a **non-commercial reference measurement**
 > (CC-BY-NC-4.0 weights). It is listed to bound the field on German telephone
@@ -386,6 +517,13 @@ make verify
 > post-processing YAMLs are per-corpus tuning and are deliberately not applied.
 > The checkpoint is capped at **4 speakers**; both sets are inside that cap, and
 > nothing here says anything about a five-person meeting.
+
+> The v1 memory curve and the forced-streaming comparison above are **Tier-3
+> diagnostics, not published numbers**: they were measured on ten files and on one
+> particular GPU, and no artifact backs them, so by this repo's own rule they
+> cannot be cited or compared. They are recorded because they are the evidence for
+> a *decision* — why the v1 AMI cell is empty — not as results. Both
+> `sortformer-streaming-4spk-v2` figures are published rows and have artifacts.
 
 > Public-dataset DER is **not** Raven's private-meeting DER — it is the externally
 > checkable proxy anyone can reproduce, and it will differ from the internal number.
