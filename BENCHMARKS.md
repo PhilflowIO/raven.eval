@@ -19,12 +19,30 @@ bootstrap over files. Automatic VAD, Hungarian speaker mapping. Primary scorer
 `pyannote.metrics`. The collars, the folding threshold, the aggregation and the
 bootstrap settings are all read from the contract file by
 `tests/test_diar_harness.py` — a test that restated them as literals would pass
-just as happily against a contract that had changed underneath it. A cross-check against `dscore` (nryant/dscore) is wired as an
-**optional** `make dscore-check` (see `raven_diar/dscore_check.py`): it asserts
-dscore's DER agrees with `pyannote.metrics` on the same RTTMs within 0.5 pp. It is
-gated on a local dscore checkout (dscore is a script repo, not a pip package, so
-it can't be pinned as a normal dependency) and therefore is **not** in CI — it
-skips cleanly when `DSCORE_DIR` is unset.
+just as happily against a contract that had changed underneath it.
+
+**Cross-checked against a second implementation.** `dscore` (nryant/dscore) wraps
+NIST's `md-eval`, the reference DER. On **2026-09-04 that cross-check was
+executed** for the first time: 15 (gold, hypothesis) pairs drawn from four
+diarizers and three datasets, both collars, 30 comparisons, worst disagreement
+**0.030 pp** — inside even the ±0.05 pp tolerance this repo reproduces its own
+numbers to. Two implementations, one answer.
+
+Worth naming what that run cost, because the check had been advertised as wired
+for weeks without ever having been executed, and each of these alone would have
+failed the first attempt: it passed no collar flag at all (comparing our
+collar-0.25 DER against dscore's collar-0.0 default), it named a flag
+(`--score_overlaps`) dscore does not have, it pinned a commit (`f2d33d3`) that
+does not exist in that repository, and it handed relative paths to a subprocess
+run from another directory. A cross-check that has not been run is not a
+cross-check. The collar conversion the run established — `dscore --collar X`
+equals `pyannote collar 2X`, because md-eval applies the collar per side while
+pyannote centres a window of that total width — is now a named constant with a
+test that needs no checkout.
+
+`make dscore-check` stays **optional** and outside CI: dscore is a script
+repository, not a pip package, so it cannot be pinned as a normal dependency. It
+is gated on a local checkout and skips cleanly when `DSCORE_DIR` is unset.
 
 ## BLEU — translation-shaped corpora
 
