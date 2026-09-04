@@ -99,9 +99,17 @@ def _device_facts() -> dict[str, object]:
         nemo_version = __import__("nemo").__version__
     except Exception:  # pragma: no cover - provenance is best-effort
         nemo_version = None
+    # What the sweep can actually spend, not what the card nominally holds. A
+    # shared box runs other things — this one keeps a speech service resident —
+    # so an OOM recorded against the card's total would read as "a 24 GB card
+    # fails at N minutes" when the run never had 24 GB. The budget is the number
+    # the OOM point means anything against, so it is captured before any weights
+    # are loaded and reported beside the total.
+    free_bytes, _total_bytes = torch.cuda.mem_get_info()
     return {
         "device_name": props.name,
         "device_total_gb": round(props.total_memory / 1024**3, 3),
+        "device_free_at_start_gb": round(free_bytes / 1024**3, 3),
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
         "nemo": nemo_version,
@@ -259,7 +267,12 @@ def main(argv: list[str] | None = None) -> int:
     if fit is not None:
         print(f"fit: peak ≈ {fit:.3g} GB/s² · duration²")
     if curve["oom_at_s"] is not None:
-        print(f"OOM at {curve['oom_at_s']:.0f}s on {curve['environment']['device_name']}")
+        env = curve["environment"]
+        print(
+            f"OOM at {curve['oom_at_s']:.0f}s on {env['device_name']} with "
+            f"{env['device_free_at_start_gb']:.1f} GB free of "
+            f"{env['device_total_gb']:.1f} GB at start"
+        )
     return 0
 
 
