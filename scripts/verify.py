@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""Tier-1 zero-setup verification: re-score committed model outputs → published WER.
+"""Tier-1 zero-setup verification: re-score committed model outputs → published numbers.
 
 Scans ``artifacts/**/<run>/<model>/predictions_<subset>.jsonl`` (the exact
 per-utterance ``{"reference","prediction","latency_s"}`` lines Raven's eval
 runner writes), re-computes the **corpus** WER + CER per subset with our own
 scorer, and asserts each matches the expected value committed alongside in
 ``artifacts/<run>/<model>/expected.json``. Runs with no GPU and no API keys.
+
+BLEU rides the same artifact, not a parallel one. A subset whose expected entry
+carries a ``"bleu"`` key is additionally re-scored with
+``raven_eval_core.bleu.corpus_bleu_score`` and compared the same way. That key is
+optional by design: it is present exactly for the translation-shaped corpora
+(Swiss-German dialect spoken, standard German transcribed) whose loaders declare
+``bleu+wer``, and absent for plain transcription sets, where a BLEU would be
+noise. ``sacrebleu`` is a base dependency precisely so this path stays GPU-free
+and network-free like the rest of Tier-1.
 
 Exit code is nonzero on any mismatch OR on an empty artifacts dir (so CI can't
 silently go green on a run that produced nothing).
@@ -54,6 +63,7 @@ import re
 import sys
 from pathlib import Path
 
+from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
 from raven_eval_core.der import compute_der_corpus, load_rttm
 from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
 from raven_eval_core.flozi_wer import normalize_flozi as normalize_text
@@ -67,16 +77,27 @@ TOLERANCE_PCT = 0.05
 # deterministic given the same RTTMs, so 0.05 pp only absorbs float/round jitter.
 DER_TOLERANCE_PCT = 0.05
 
+# BLEU re-score tolerance, on sacrebleu's 0-100 scale. sacrebleu is deterministic
+# given the same text and the same pinned tokenizer, so this only absorbs float
+# jitter across patch releases — not a changed tokenizer, which would move BLEU by
+# whole points and MUST fail here.
+BLEU_TOLERANCE = 0.05
+
 __all__ = [
+    "BLEU_TOLERANCE",
     "DER_TOLERANCE_PCT",
     "TOLERANCE_PCT",
+    "bleu_signature",
+    "corpus_bleu_score",
     "corpus_cer_pct",
     "corpus_wer_pct",
     "find_der_model_dirs",
     "main",
     "normalize_text",
+    "read_pairs",
     "score_der_dir",
     "score_jsonl",
+    "score_jsonl_bleu",
     "verify",
     "verify_der",
 ]
@@ -86,8 +107,8 @@ __all__ = [
 _PRED_RE = re.compile(r"^predictions_(?P<subset>.+)\.jsonl$")
 
 
-def score_jsonl(path: Path) -> tuple[float, float, int]:
-    """Read one predictions_*.jsonl -> (wer_pct, cer_pct, n_samples)."""
+def read_pairs(path: Path) -> tuple[list[str], list[str]]:
+    """Read one predictions_*.jsonl -> (references, predictions), raw text."""
     refs: list[str] = []
     preds: list[str] = []
     with path.open(encoding="utf-8") as fh:
@@ -101,7 +122,25 @@ def score_jsonl(path: Path) -> tuple[float, float, int]:
                 preds.append(row["prediction"])
             except (json.JSONDecodeError, KeyError) as exc:
                 raise ValueError(f"{path}:{lineno}: bad record: {exc}") from exc
+    return refs, preds
+
+
+def score_jsonl(path: Path) -> tuple[float, float, int]:
+    """Read one predictions_*.jsonl -> (wer_pct, cer_pct, n_samples)."""
+    refs, preds = read_pairs(path)
     return corpus_wer_pct(refs, preds), corpus_cer_pct(refs, preds), len(refs)
+
+
+def score_jsonl_bleu(path: Path) -> float:
+    """Corpus BLEU (0-100) for one predictions_*.jsonl, on RAW text.
+
+    Deliberately NOT flozi-normalized: flozi strips punctuation and case and maps
+    number words to digits, all of which are part of what a translation-shaped
+    reference is asking for. BLEU's tokenizer is the declared normalization here
+    (``benchmark.config.yaml`` → ``bleu.variants[published].tokenize``).
+    """
+    refs, preds = read_pairs(path)
+    return corpus_bleu_score(refs, preds)
 
 
 def find_model_dirs(artifacts_dir: Path) -> list[Path]:
@@ -164,16 +203,49 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
             wer_ok = abs(wer_pct - float(exp["wer_pct"])) <= TOLERANCE_PCT
             cer_ok = abs(cer_pct - float(exp["cer_pct"])) <= TOLERANCE_PCT
             ok = wer_ok and cer_ok
-            all_ok = all_ok and ok
-            rows.append(
-                {"model": str(rel), "subset": subset, "n": n,
-                 "wer": wer_pct, "cer": cer_pct,
-                 "exp_wer": float(exp["wer_pct"]), "exp_cer": float(exp["cer_pct"]),
-                 "status": "PASS" if ok else "FAIL",
-                 "detail": "" if ok else
-                 f"Δwer={wer_pct - float(exp['wer_pct']):+.3f} "
-                 f"Δcer={cer_pct - float(exp['cer_pct']):+.3f} (tol {TOLERANCE_PCT})"}
+            detail = "" if ok else (
+                f"Δwer={wer_pct - float(exp['wer_pct']):+.3f} "
+                f"Δcer={cer_pct - float(exp['cer_pct']):+.3f} (tol {TOLERANCE_PCT})"
             )
+            row = {"model": str(rel), "subset": subset, "n": n,
+                   "wer": wer_pct, "cer": cer_pct,
+                   "exp_wer": float(exp["wer_pct"]),
+                   "exp_cer": float(exp["cer_pct"])}
+
+            # BLEU is opt-in per subset: the key is present only where the corpus
+            # is translation-shaped. Absent -> not scored, and not failed for it.
+            if "bleu" in exp:
+                bleu = score_jsonl_bleu(pred_path)
+                exp_bleu = float(exp["bleu"])
+                bleu_ok = abs(bleu - exp_bleu) <= BLEU_TOLERANCE
+                row["bleu"] = bleu
+                row["exp_bleu"] = exp_bleu
+                if not bleu_ok:
+                    detail = (detail + " " if detail else "") + (
+                        f"Δbleu={bleu - exp_bleu:+.3f} (tol {BLEU_TOLERANCE})"
+                    )
+                ok = ok and bleu_ok
+
+                # The signature, not the word "BLEU", is what makes the number
+                # comparable: tokenizer, case handling, smoothing and sacrebleu
+                # version. Checking only the score would let a tokenizer default
+                # shift inside our `>=2.4,<3` range pass unnoticed whenever the
+                # shift happens to move the score by less than the tolerance —
+                # which is precisely the drift the signature exists to catch.
+                exp_sig = exp.get("bleu_signature")
+                if exp_sig is not None:
+                    sig = bleu_signature()
+                    if sig != exp_sig:
+                        detail = (detail + " " if detail else "") + (
+                            f"bleu_signature drift: committed {exp_sig!r}, "
+                            f"this environment {sig!r}"
+                        )
+                        ok = False
+
+            all_ok = all_ok and ok
+            row["status"] = "PASS" if ok else "FAIL"
+            row["detail"] = detail
+            rows.append(row)
     return all_ok, rows
 
 
@@ -312,19 +384,31 @@ def _print_der_table(rows: list[dict]) -> None:
 
 
 def _print_table(rows: list[dict]) -> None:
-    hdr = f"{'model':<28} {'subset':<14} {'n':>4} {'wer%':>8} {'exp%':>8} {'cer%':>8} {'status':>6}"
+    # The BLEU columns appear only when a subset actually carries one, so a
+    # transcription-only artifacts dir prints exactly the table it always did.
+    with_bleu = any("bleu" in r for r in rows)
+    hdr = (f"{'model':<28} {'subset':<14} {'n':>4} {'wer%':>8} {'exp%':>8} "
+           f"{'cer%':>8}")
+    if with_bleu:
+        hdr += f" {'bleu':>8} {'expbleu':>8}"
+    hdr += f" {'status':>6}"
     print(hdr)
     print("-" * len(hdr))
     for r in rows:
-        print(
+        line = (
             f"{r.get('model',''):<28} {r.get('subset',''):<14} "
             f"{r.get('n',''):>4} "
             f"{r.get('wer',float('nan')):>8.3f} "
             f"{r.get('exp_wer',float('nan')):>8.3f} "
-            f"{r.get('cer',float('nan')):>8.3f} "
-            f"{r['status']:>6}"
-            + (f"  {r['detail']}" if r.get("detail") else "")
+            f"{r.get('cer',float('nan')):>8.3f}"
         )
+        if with_bleu:
+            # A subset without a declared BLEU prints blank, not a fake 0/nan.
+            got = f"{r['bleu']:>8.3f}" if "bleu" in r else f"{'':>8}"
+            want = f"{r['exp_bleu']:>8.3f}" if "exp_bleu" in r else f"{'':>8}"
+            line += f" {got} {want}"
+        line += f" {r['status']:>6}"
+        print(line + (f"  {r['detail']}" if r.get("detail") else ""))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -356,7 +440,12 @@ def main(argv: list[str] | None = None) -> int:
     total = 0
     n_fail = 0
     if wer_rows:
-        print("== WER ==")
+        # Naming the BLEU signature on the run is the point of sacrebleu: the
+        # string, not the word "BLEU", is what makes the number comparable.
+        print("== WER ==" + (
+            f"  (BLEU where declared: {bleu_signature()})"
+            if any("bleu" in r for r in wer_rows) else ""
+        ))
         _print_table(wer_rows)
         all_ok = all_ok and wer_ok
         total += len(wer_rows)

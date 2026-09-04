@@ -1,0 +1,21 @@
+{
+  "model_id": "assemblyai/universal-3-5-pro",
+  "label": "assemblyai-universal-3-5-pro",
+  "adapter": "assemblyai",
+  "model_revision": "universal-3-5-pro",
+  "dataset": "callhome-de",
+  "dataset_revision": "17c8a153215aa7c50b805078fd6284ba81c2fc47",
+  "limit_per_dataset": null,
+  "n_skipped_no_audio": 0,
+  "results": {
+    "callhome-de": {
+      "dataset": "callhome-de",
+      "n_files": 120,
+      "der_full": 28.689526098466384,
+      "der_classic": 21.73715941017974,
+      "miss": 21.591105587680094,
+      "fa": 3.2827326929858347,
+      "conf": 3.815687817800459
+    }
+  }
+}

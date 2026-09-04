@@ -27,6 +27,9 @@ verify:             ## Tier-1: re-score committed WER + DER artifacts → reprod
 # EXTRA overrides the dependency extra, because a diarizer's backend is its own
 # (pyannote -> `diar`, sortformer -> `sortformer`); nobody installs both to run one:
 #   make reproduce METRIC=der DATASET=ami MODEL=sortformer-4spk-v1 EXTRA=sortformer
+# The hosted lane needs no GPU at all, only an API key — and it bills per hour of
+# audio, so smoke it with LIMIT before running a whole corpus:
+#   make reproduce METRIC=der DATASET=callhome-de MODEL=deepgram-nova-3 EXTRA=diar-hosted LIMIT=3
 # Keys/GPU/gating: docs/TIER2-KEYS.md (WER) + docs/TIER2-DER-KEYS.md (DER).
 EXTRA ?= $(if $(filter der,$(METRIC)),diar,asr)
 

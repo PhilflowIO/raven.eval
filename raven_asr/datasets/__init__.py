@@ -23,12 +23,23 @@ WER_LOADERS: Final[dict[str, str]] = {
     "fleurs": "fleurs_de:FleursDeLoader",
     "mls-de": "mls_german:MlsGermanLoader",
     "voxpopuli-de": "voxpopuli_de:VoxPopuliDeLoader",
+    # Swiss German dialect corpora — translation-shaped (Swiss German audio,
+    # Standard German reference), acquired by URL + sha256 rather than through
+    # a pinned HF revision. See raven_asr.config.DIALECT_DATASET_IDS.
+    "spc-test": "spc_test:SpcTestLoader",
+    "fhnw-all-dialects": "fhnw_all_dialects:FhnwAllDialectsLoader",
+    # Dialect probe + its control spur. Two ids, one module on purpose: the
+    # Bavarian number is only a dialect statement as a DELTA against the
+    # Standard German recording of the same speaker on the same sentences, so
+    # the two are registered and retired together, never one without the other.
+    "xsid-bar": "xsid_audio:XsidBavarianLoader",
+    "xsid-de-control": "xsid_audio:XsidGermanControlLoader",
 }
 
 # Modules in this package that are infrastructure, not a dataset loader. Kept
 # here so the contract test can tell "unregistered loader" from "shared base".
 NON_LOADER_MODULES: Final[frozenset[str]] = frozenset(
-    {"__init__", "base", "hf_single_config"}
+    {"__init__", "base", "hf_single_config", "local_archive"}
 )
 
 

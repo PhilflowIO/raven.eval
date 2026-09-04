@@ -15,6 +15,16 @@ dependencies = [
     # pipeline exactly, which needs these two pure-python libs (no GPU/torch):
     "unidecode",     # foreign-diacritic transliteration (umlauts preserved)
     "text2num",      # alpha2digit(de): German number words -> digits (imports as text_to_num)
+    # BLEU for translation-shaped corpora (Swiss-German dialect spoken / standard
+    # German transcribed). BASE dependency, deliberately not behind an extra: the
+    # Tier-1 re-scorer (scripts/verify.py) re-scores committed BLEU rows and CI
+    # runs it after `uv sync --locked --extra dev` only. sacrebleu is pure python
+    # (colorama/lxml/numpy/portalocker/regex/tabulate) — no torch, no GPU.
+    # Floor at 2.4: `BLEU(..., references=…)` and the signature API this repo
+    # relies on are stable from there. Capped below 3 because a major release is
+    # exactly where a tokenizer default could move and silently shift every
+    # published BLEU; the signature records the exact version per number.
+    "sacrebleu>=2.4,<3",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +51,20 @@ diar = [
     "torch",
     "torchaudio",
     "huggingface-hub",
+    "datasets",
+    "soundfile",
+    "numpy",
+]
+# Tier-2 DER, HOSTED-API lane (raven_diar/adapters/{deepgram,assemblyai}.py and
+# the hosted adapters that follow them). No torch, no GPU, no model weights: an
+# HTTP client plus the dataset loader is the whole runtime. One extra for the
+# lane rather than one per vendor — a second name for the same dependency set is
+# how the two drift apart. Its own extra so running a hosted diarizer never
+# drags in a multi-GB local-inference stack, and so the Tier-1 re-score path
+# stays untouched by any of it. Adapters import httpx lazily, so listing the
+# registry works without this extra at all.
+diar-hosted = [
+    "httpx",
     "datasets",
     "soundfile",
     "numpy",

@@ -103,10 +103,35 @@ DER_DATASETS: Final[dict[str, DiarDatasetSpec]] = {
 class DiarizerSpec:
     """Identifies a diarizer + its adapter binding for the runner."""
 
-    model_id: str        # HF slug (gated model — needs an accepted license + token)
+    model_id: str        # HF slug, or `<vendor>/<model>` for a hosted API
     adapter: str         # adapter module under raven_diar.adapters
     label: str           # short id used in result/artifact directory names
-    revision: str        # HF revision hash/tag — pin, never floating
+    revision: str        # the pin — never floating; strictness per `revision_kind`
+    # WHERE it runs. True for a diarizer behind a vendor API rather than from
+    # weights we fetch: it selects the dependency extra and means an API key
+    # instead of a GPU.
+    hosted: bool = False
+    # HOW IMMUTABLE the pin is — a different question from `hosted`, and the one
+    # a published number actually depends on. "commit" = a 40-hex HF/git commit;
+    # the bytes cannot change underneath us. "vendor-alias" = the most specific
+    # selector a hosted API offers, which is a MOVING target: the vendor can
+    # re-train behind it and nothing in the API says so. Declaring that weakness
+    # per diarizer keeps it testable, instead of loosening the rule for everyone
+    # — which would let a local spec silently stop pinning a commit. A hosted
+    # adapter must additionally assert at run time that the response names the
+    # alias it asked for.
+    revision_kind: str = "commit"
+    # SPDX-ish slug for the WEIGHTS (for a hosted API: the terms the vendor
+    # grants). ``DiarDatasetSpec`` has carried a licence from the start; the
+    # diarizer side did not, which left the one fact that decides how a row may
+    # be published living only in a code comment.
+    license: str = "unknown"
+    # Whether a row from this diarizer may compete for a winner mark. Stated
+    # rather than derived from ``license``, because "may we ship this" is a
+    # decision about our product, not a string match: getting it wrong by
+    # regex-ing a licence slug is exactly the failure worth avoiding. Under
+    # ADR-app-0036 a non-commercial model is measured and shown, never awarded.
+    shippable: bool = True
 
 
 KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
@@ -119,6 +144,8 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         # Pinned to the HF model commit every published DER row was measured on
         # (artifacts/*/pyannote-community-1/summary.json: model_revision).
         revision="3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+        license="MIT (gated: accept the model conditions on HF)",
+        shippable=True,
     ),
     # NVIDIA Sortformer 4spk-v1. NOT gated, NO API key: public CC-BY-NC-4.0
     # weights run locally through NeMo (`--extra sortformer`). Hard 4-speaker
@@ -129,6 +156,67 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         label="sortformer-4spk-v1",
         # HF `main` as of 2026-09-03 (repo has no tags; lastModified 2025-12-15).
         revision="9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08",
+        license="CC-BY-NC-4.0",
+        # Non-commercial weights. Under ADR-app-0036 this is a reference row:
+        # it may be measured and displayed — and it currently beats the shipped
+        # default on German telephone speech — but it must never carry a winner
+        # mark, because we could not ship the thing that won.
+        shippable=False,
+    ),
+    # NVIDIA Streaming Sortformer 4spk-v2 — the SHIPPABLE Sortformer. Same
+    # adapter module as v1 (same NeMo model class, same output shape); what
+    # differs is data: a streaming config and a different checkpoint file.
+    "sortformer-streaming-4spk-v2": DiarizerSpec(
+        model_id="nvidia/diar_streaming_sortformer_4spk-v2",
+        adapter="sortformer",
+        label="sortformer-streaming-4spk-v2",
+        # HF `main` as of 2026-09-03 (repo has no tags; lastModified
+        # 2026-08-12). Pinned via hf_hub_download in the adapter — NeMo's
+        # from_pretrained takes no revision and would track the branch.
+        revision="5240a64075176943f677d30fa2171c780229f341",
+        # Verbatim from the model card, section "Licence" (2026-09-03):
+        # "License to use this model is covered by the CC-BY-4.0." This is the
+        # whole difference from v1: CC-BY-4.0 permits commercial use, so a row
+        # from this checkpoint may compete for a winner mark.
+        license="CC-BY-4.0",
+        shippable=True,
+    ),
+    # Deepgram, the first HOSTED diarizer: no GPU, no weights — an API key
+    # (DEEPGRAM_API_KEY) and per-second billing. Deepgram has no diarization-only
+    # endpoint, so `model_id` is the pinned ASR model whose word timings the turns
+    # are folded from, and `revision` is the pinned `diarize_model` version (the
+    # analogue of an HF revision hash) — never "latest".
+    "deepgram-nova-3": DiarizerSpec(
+        model_id="nova-3-general",
+        adapter="deepgram",
+        label="deepgram-nova-3",
+        revision="v2",
+        hosted=True,
+        revision_kind="vendor-alias",
+        # A hosted API grants terms of service, not a weights licence. Commercial
+        # use is what the paid tier is for, so a Deepgram row may compete.
+        license="Deepgram commercial terms of service (paid API)",
+        shippable=True,
+    ),
+    # AssemblyAI Universal-3.5 Pro. HOSTED: needs ASSEMBLYAI_API_KEY, no GPU.
+    # AssemblyAI has NO diarization-only endpoint — diarization is the
+    # `speaker_labels` flag on a transcription request, so a DER run also pays
+    # for a transcript (0.21 $/h model + 0.02 $/h diarization add-on, verified on
+    # assemblyai.com/pricing 2026-09-03). `revision` IS the model alias: the
+    # vendor publishes no immutable version, and its DEFAULT is a two-model
+    # fallback chain, so the adapter sends this alias alone and asserts the
+    # response's `speech_model_used` matches it.
+    "assemblyai-universal-3-5-pro": DiarizerSpec(
+        model_id="assemblyai/universal-3-5-pro",
+        adapter="assemblyai",
+        label="assemblyai-universal-3-5-pro",
+        revision="universal-3-5-pro",
+        revision_kind="vendor-alias",
+        hosted=True,
+        # A hosted API grants terms of service, not a weights licence.
+        # Commercial use is what the paid tier is for, so this row may compete.
+        license="AssemblyAI commercial terms of service (paid API)",
+        shippable=True,
     ),
     # Adding the next diarizer (diarizen, a hosted API, …) is a module under
     # raven_diar/adapters/ exposing an ``ADAPTER`` factory plus a spec entry

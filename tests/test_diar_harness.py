@@ -71,15 +71,69 @@ def test_datasets_and_diarizers_registered():
     )
 
 
+#: Vendor aliases that mean "whatever is newest" — the exact thing a published
+#: number may not hang on, because it moves without us doing anything.
+FLOATING_ALIASES = frozenset({"", "latest", "main", "master", "head", "stable", "default"})
+
+
 def test_dataset_revisions_are_pinned_commits():
     """A published number must hang on an immutable revision, never a branch."""
     import re
 
-    specs = [*DER_DATASETS.values(), *KNOWN_DIARIZERS.values()]
-    for spec in specs:
+    for spec in DER_DATASETS.values():
         assert re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
             f"{spec}: revision {spec.revision!r} is not a full commit hash"
         )
+
+
+def test_diarizer_revisions_are_commits_unless_the_vendor_offers_none():
+    """Same invariant, one declared exception — hosted APIs publish no commit.
+
+    A hosted diarizer (Deepgram, AssemblyAI, …) exposes only a model *alias*,
+    which the vendor can re-train behind. That weakness must be declared per
+    spec (`revision_kind="vendor-alias"`), never smuggled in by loosening the
+    regex for everyone: a local-weights spec that silently stopped pinning a
+    commit would then pass unnoticed.
+    """
+    import re
+
+    for key, spec in KNOWN_DIARIZERS.items():
+        if spec.revision_kind == "commit":
+            assert re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
+                f"{key}: revision {spec.revision!r} is not a full commit hash"
+            )
+        elif spec.revision_kind == "vendor-alias":
+            assert spec.revision, f"{key}: a vendor alias must still be explicit"
+            assert not re.fullmatch(r"[0-9a-f]{40}", spec.revision), (
+                f"{key}: revision looks like a commit — declare revision_kind"
+                f"='commit' so the strict rule applies"
+            )
+            # "whatever is newest" is the one alias a published number may not
+            # hang on: it moves without us doing anything.
+            assert spec.revision.strip().lower() not in FLOATING_ALIASES, (
+                f"{key}: revision {spec.revision!r} is a floating vendor alias"
+            )
+        else:
+            raise AssertionError(
+                f"{key}: unknown revision_kind {spec.revision_kind!r} — expected "
+                f"'commit' or 'vendor-alias'"
+            )
+
+
+def test_where_it_runs_and_how_it_is_pinned_stay_consistent():
+    """`hosted` and `revision_kind` are different questions with one sane pairing.
+
+    A model whose weights we fetch ourselves always has a commit to pin, so a
+    local spec declaring "vendor-alias" is a spec that quietly stopped pinning.
+    The reverse is deliberately NOT asserted: a hosted API that ever offers a
+    real immutable version should be allowed to claim it.
+    """
+    for key, spec in KNOWN_DIARIZERS.items():
+        if not spec.hosted:
+            assert spec.revision_kind == "commit", (
+                f"{key}: runs from weights we fetch, so it has a commit to pin — "
+                f"'vendor-alias' here would be an unpinned local model"
+            )
 
 
 # ── AMI loader (gold from the pinned setup clone, audio from the mirror) ──────
@@ -255,3 +309,24 @@ def test_promote_rejects_empty_run(tmp_path: Path):
     (run / "summary.json").write_text(json.dumps({"results": {}}))
     with pytest.raises(FileNotFoundError):
         promote(run, tmp_path / "artifacts", "r")
+
+
+def test_the_published_gap_threshold_matches_the_contract():
+    """The folding threshold is a published quantity, not an implementation detail.
+
+    A ~1 pp DER swing across a 4x sweep of it is twenty times the reproduction
+    tolerance, so a reader who does not know the value cannot reproduce the
+    number. Config and code must therefore not be able to drift apart.
+    """
+    import yaml
+
+    from raven_diar.adapters.aggregate import DEFAULT_GAP_MERGE_S
+
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "benchmark.config.yaml").read_text()
+    )
+    assert config["der"]["turn_gap_merge_s"] == DEFAULT_GAP_MERGE_S, (
+        "benchmark.config.yaml publishes a turn-folding threshold that the "
+        "shared aggregator does not use — every hosted DER row would be "
+        "measured under rules the committed contract misstates."
+    )

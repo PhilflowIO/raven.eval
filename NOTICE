@@ -93,6 +93,46 @@ European-Parliament plenary speech with force-aligned transcripts.
     https://huggingface.co/datasets/facebook/voxpopuli
 
 --------------------------------------------------------------------------------
+xSID-audio (xsid-bar, xsid-de-control — WER)
+--------------------------------------------------------------------------------
+Audio and reference transcripts for the `xsid-bar` (Bavarian) and
+`xsid-de-control` (Standard German, same speaker) datasets derive from
+xSID-audio, the speech companion to the xSID cross-lingual intent corpus.
+
+  Licensed under CC BY-SA 4.0
+  (https://creativecommons.org/licenses/by-sa/4.0/).
+  Citation:
+    Blaschke, V., Winkler, M., & Plank, B. (2026). "Standard-to-Dialect
+    Transfer Trends Differ across Text and Speech", ACL 2026.
+    https://aclanthology.org/2026.acl-long.309/
+    plus, for the underlying German/Bavarian xSID data:
+    van der Goot et al. (2021) and Winkler et al. (2024).
+  Source:
+    https://zenodo.org/records/21605015
+    DOI 10.5281/zenodo.21605015, version 0.2 (published 2026-07-27)
+
+ADDITIONAL AUTHORS' CONDITION — NOT A LICENCE TERM.
+CC BY-SA 4.0 does not carry the restriction below, so it does NOT propagate
+automatically with the licence. Anyone who receives this audio, or a share-alike
+derivative of it, must be told of it separately. Reproduced verbatim from the
+Zenodo record description and the corpus README:
+
+    "We share the audio recordings for research on processing spoken language
+    data, but do not permit their use in the context of speech synthesis or
+    voice cloning."
+
+raven.eval only runs speech recognition on these clips. Nothing from this corpus
+may enter a TTS, voice-conversion or voice-cloning pipeline, and this paragraph
+must travel with any republished clip. The audio itself is fetched from Zenodo by
+the loader and is never redistributed here; committed reference text is
+CC BY-SA 4.0 and is redistributed under those terms with this attribution — note
+that share-alike binds adaptations of that text, unlike the CC-BY corpora above.
+
+Measurement caveat, restated here because a licence file is often the only page
+a re-user reads: one speaker recorded BOTH varieties, and the speech is read, not
+spontaneous. Only the delta between the two ids is a statement about Bavarian.
+
+--------------------------------------------------------------------------------
 VoxConverse (diarization — DER)
 --------------------------------------------------------------------------------
 Gold diarization RTTMs for the `voxconverse` dataset derive from VoxConverse.
@@ -143,6 +183,104 @@ materialises it locally from the HF dataset the reproducer downloads. Only deriv
 RTTM label text would be a Tier-1 commit candidate.
 
 --------------------------------------------------------------------------------
+Swiss Parliaments Corpus — test split (spc-test — WER/BLEU)
+--------------------------------------------------------------------------------
+Reference transcripts for the `spc-test` dataset derive from the Swiss
+Parliaments Corpus (SPC), Bernese cantonal parliament: Swiss German speech
+aligned to the Standard German parliamentary record. Acquired as the two test
+parquet shards of `i4ds/SPC_test`, fetched by URL at a pinned revision and
+sha256-verified (raven_asr/datasets/spc_test.py).
+
+  License: MIT — INFERRED, NOT STATED BY THE DISTRIBUTION WE FETCH.
+    The `i4ds/SPC_test` dataset card carries no license tag at all: the Hub API
+    returns its `cardData` without a `license` key (checked 2026-09-03). We
+    inherit MIT from the upstream FHNW publication that this repository
+    re-releases — https://www.cs.technik.fhnw.ch/i4ds-datasets lists
+    "Swiss Parliaments Corpus … License: MIT" (checked 2026-09-01).
+    This is an inference from the upstream publication, not a licence grant
+    read off the artefact we download. It is recorded here as an inference on
+    purpose; if i4ds tags the card, replace this paragraph with the tag.
+  Citation:
+    Plüss et al., "Swiss Parliaments Corpus, an Automatically Aligned Swiss
+    German Speech to Standard German Text Corpus", SwissText 2021.
+  Source:
+    https://huggingface.co/datasets/i4ds/SPC_test
+    https://www.cs.technik.fhnw.ch/i4ds-datasets
+
+Audio is fetched by the reproducer from the pinned Hub revision and never
+redistributed here. Only per-utterance reference/hypothesis text would be a
+Tier-1 artifact commit candidate.
+
+--------------------------------------------------------------------------------
+FHNW "All Swiss German Dialects Test Set" (fhnw-all-dialects — WER/BLEU)
+--------------------------------------------------------------------------------
+Reference transcripts for the `fhnw-all-dialects` dataset derive from the FHNW
+i4ds "All Swiss German Dialects Test Set" (SwissText 2021 shared task 3, "Swiss
+German Speech to Standard German Text"): 5,750 utterances / 12.72 h, dialect
+distribution close to the real distribution in Switzerland, Standard German
+sentence text in an adapted Common Voice layout.
+
+  Licensed under the MIT License. Stated verbatim in the `README.txt` shipped
+  inside the distribution archive (sha256
+  7ca2492143b6d418ca42d6407f939ce8d2c53f66999e05906931ccefe6ff3148, verified
+  2026-09-01):
+
+      Name:        All Swiss German Dialects Test Set
+      Description: Swiss German test set with a dialect distribution close to
+                   the real distribution in Switzerland
+      Version:     v1
+      License:     MIT
+
+  The archive states the licence by name and carries no copyright line of its
+  own; the corpus is published by FHNW i4ds (Fachhochschule Nordwestschweiz,
+  Institute for Data Science), to whom copyright is attributed here.
+  Citation:
+    Plüss et al., "Swiss German Speech to Standard German Text", SwissText 2021
+    shared task 3 (FHNW i4ds).
+  Source:
+    https://www.dropbox.com/s/rfmjqkdjox7xstq/clickworker_collection_1.zip?dl=1
+    https://huggingface.co/i4ds
+
+  Durability caveat, recorded because a licence is not an acquisition path:
+  the only distribution we know of is a Dropbox share link. It is citable and
+  checksummed — a stranger can fetch and verify the exact bytes our numbers were
+  measured on — but it has no version history and no institutional commitment,
+  and it can disappear without notice. Per ADR-app-0054 the link is carried as a
+  tracked liability: the sha256 is verified on every acquisition so a silent
+  substitution fails loudly, a durable mirror (self-hosting is permitted by MIT;
+  a Zenodo deposit would add a DOI) is being pursued and is OUTSTANDING as of
+  2026-09-03, and only if the link dies before that mirror exists is the
+  published number marked as measured-but-no-longer-externally-reproducible.
+
+--------------------------------------------------------------------------------
+The MIT License, as it applies to both Swiss corpora above
+--------------------------------------------------------------------------------
+Both Swiss datasets are MIT — one verbatim from its archive, one inferred from
+the upstream publication as spelled out above. Reproduced in full so the terms
+travel with this distribution rather than by reference:
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+Neither copyright holder supplied a copyright line with the distribution, so
+none is invented here; the grant above is reproduced as published.
+
+--------------------------------------------------------------------------------
 If a future dataset forbids redistributing its reference transcripts, do NOT
 commit them: commit only the hypothesis + a reference hash/id, and let
 `scripts/verify.py` pull the references from Hugging Face at re-score time.
@@ -168,6 +306,13 @@ the numbers:
   - unidecode   — GPL-2.0-or-later. Used for the flozi transliteration step.
   - num2words   — LGPL. Pulled in on the diagnostic-normalization path.
     (`text2num`/`alpha2digit` provides the flozi words→digits direction.)
+
+The BLEU scoring path adds no copyleft obligation:
+
+  - sacrebleu   — Apache-2.0 (Matt Post et al.). The BLEU numbers published here
+    are produced by it under the conventions pinned in benchmark.config.yaml, and
+    each number is published with the sacrebleu signature that names them. Cite:
+    Matt Post, "A Call for Clarity in Reporting BLEU Scores", WMT 2018.
 
 Distributing raven.eval as source keeps the MIT-licensed code MIT — you install
 these deps yourself from PyPI under their own terms. But anyone who ships a

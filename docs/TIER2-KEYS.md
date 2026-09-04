@@ -14,6 +14,18 @@ uv sync --extra dev --extra asr --extra modal
 
 ## Datasets (no key)
 
+### No system FFmpeg needed on this lane
+
+The WER loaders decode audio with **soundfile**, not `torchcodec`. That is a
+deliberate constraint, not an accident: `datasets` 5.x decodes an `Audio()`
+feature through `torchcodec`, which `dlopen`s the FFmpeg `libav*` shared objects
+at runtime — the same trap `TIER2-DER-KEYS.md` documents for the pyannote lane.
+Requiring a system FFmpeg build to run `make reproduce METRIC=wer` would be a
+much steeper entry price than this lane needs, so the loaders switch decoding off
+(`Audio(decode=False)`) and decode the raw bytes themselves. A side benefit: they
+observe the file's **true** sample rate instead of the one the dataset card
+declares, and dataset cards are wrong about this often enough to matter.
+
 Public HF dataset `flozi00/asr-german-mixed-evals`, subsets `Tuda-De`,
 `multilingual_librispeech`, `common_voice_19_0`. The loader prefers a local HF
 snapshot and falls back to streaming from huggingface.co. Pin a revision with
@@ -34,6 +46,11 @@ for a byte-reproducible reference set.
 
 The `*_URL` / `*_API_KEY` variables name **your** endpoints — this repo never
 ships URLs or key values, only the env-var names the runner reads.
+
+DER adapters keep their own key table in `docs/TIER2-DER-KEYS.md` — the only
+key-bearing one today is `assemblyai-universal-3-5-pro`
+(`ASSEMBLYAI_API_KEY`, hosted, **billed per hour of audio**). Same rule: names
+here, values only in your environment.
 
 Set the key in your environment before `make reproduce`. Missing-key failures
 surface per-utterance in the runner log; the run resumes per-subset from

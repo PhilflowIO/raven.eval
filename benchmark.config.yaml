@@ -3,6 +3,13 @@
 # field here changes the numbers; the config is committed so third parties see
 # the precise rules our DER/WER values were computed under.
 
+# Which of the top-level blocks below are metric contracts. Named explicitly,
+# because deriving it as "everything that is not `datasets`" turns any new
+# top-level key — publication rules, provenance notes — into a metric that the
+# contract test then demands an implementation for. The list is checked in both
+# directions against raven_eval_core.SCORED_METRICS.
+metrics: [der, wer, bleu]
+
 der:
   scorer_primary: pyannote.metrics      # dscore cross-check WIRED (optional): make dscore-check / raven_diar.dscore_check — gated on a local DSCORE_DIR checkout (dscore is not pip-installable), skips cleanly, not in CI
   # DER is reported TWICE — the two conventions are NOT comparable, so we publish both:
@@ -15,6 +22,21 @@ der:
       skip_overlap: false
   speaker_mapping: hungarian   # optimal, via scipy.linear_sum_assignment
   vad: automatic               # no oracle VAD, no oracle #speakers, no per-dataset tuning
+  # Hosted diarizers return speaker-labelled WORDS, not turns. Folding words
+  # into turns bridges silences up to this many seconds; every hosted adapter
+  # uses the one shared implementation (raven_diar/adapters/aggregate.py) so a
+  # DER gap between two vendors measures the models and not two private
+  # foldings. It is declared here because it is a PUBLISHED quantity: measured
+  # on 10 CALLHOME-de files with Deepgram, DER moves about 1 pp across a 4x
+  # sweep of it — twenty times the 0.05 pp reproduction tolerance.
+  #   gap 0.25 -> 28.96 / 21.22   (full / classic collar)
+  #   gap 0.50 -> 28.33 / 20.30   <- published
+  #   gap 1.00 -> 29.54 / 21.07
+  # The trade is the expected one: a wider gap misses less and false-alarms
+  # more. 0.5 is not tuned, it is the middle of a shallow curve — but a reader
+  # who does not know the value cannot reproduce the number, which is why it
+  # stopped being an implementation detail.
+  turn_gap_merge_s: 0.5
 
 wer:
   scorer: jiwer
@@ -26,6 +48,28 @@ wer:
   # note in the header of scripts/verify.py for why the two do not interchange.
   normalization: flozi-strict
   also_reported: [permissive, verbatim, cer, ier]   # diagnostic lenses in raven_eval_core.wer, not the published number
+
+bleu:
+  scorer: sacrebleu                 # rejected: nltk.translate.bleu_score — no pinned tokenizer, so the single most score-moving convention would sit outside this contract
+  # BLEU is reported for TRANSLATION-SHAPED corpora only: Swiss-German dialect is
+  # SPOKEN in dialect and TRANSCRIBED in standard German, so the reference is a
+  # translation, not a transcript. WER counts every legitimate lexical choice
+  # ("gäll" -> "nicht wahr") as a substitution and mismeasures that shape; such a
+  # dataset is scored bleu+wer, and the BLEU is the headline of the pair.
+  # "BLEU" alone is not a number (Post 2018, "A Call for Clarity in Reporting BLEU
+  # Scores") — every convention that moves it is pinned here and mirrored by the
+  # constants in raven_eval_core/bleu.py. tests/test_metric_contract.py fails the
+  # build if the two ever disagree, in either direction.
+  variants:
+    - name: published               # the number we publish
+      tokenize: 13a                 # mteval-v13a, the WMT default
+      lowercase: false              # case-sensitive (signature reads case:mixed) — German capitalizes nouns
+      smooth_method: exp            # sacrebleu default exponential smoothing, pinned rather than inherited
+      effective_order: false        # all 4 orders at corpus level
+      max_ngram_order: 4
+  aggregation: corpus               # Σ n-gram stats over the subset, NEVER a mean of per-sentence BLEUs
+  signature: sacrebleu              # every published BLEU carries its sacrebleu signature (e.g. nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0) — that string, not the word "BLEU", is what makes it comparable
+  also_reported: [sentence]         # raven_eval_core.bleu.sentence_bleu_diagnostic — per-row diagnostic under effective_order=True, not the published number
 
 # Public datasets the Tier-2 full-rerun scores against. Audio is fetched by the
 # harness itself (HF at a pinned revision / the official mirror); we never
@@ -60,3 +104,45 @@ datasets:
     - id: german-mixed       # avemio / flozi00 asr-german-mixed-evals (Tuda-De CC-BY-4.0, MLS CC-BY-4.0, CV CC0)
       hf: flozi00/asr-german-mixed-evals
       license: CC-BY-4.0 / CC0-1.0 (per subset)
+    # Swiss German dialect corpora. Translation-shaped — Swiss German spoken,
+    # Standard German written — so `metric: bleu+wer`. Each is reported on its
+    # own: there is no aggregate spanning dialects and no dialect contribution to
+    # any overall average.
+    - id: spc-test           # Swiss Parliaments Corpus test, Bernese cantonal parliament
+      hf: i4ds/SPC_test
+      license: MIT (inferred from upstream FHNW SPC; the HF card carries no license tag)
+      metric: bleu+wer
+      acquisition: two test parquet shards by URL, sha256-verified (raven_asr/datasets/spc_test.py)
+    - id: fhnw-all-dialects  # FHNW All Swiss German Dialects Test Set, SwissText 2021 task 3
+      license: MIT
+      metric: bleu+wer
+      acquisition: Dropbox zip by URL, sha256-verified; durability vendor — a durable mirror is outstanding
+    # ── Dialect probe + its control spur — read the publication rules below ──
+    - id: xsid-bar           # xSID-audio v0.2, Bavarian (rural Upper Bavaria) read speech
+      zenodo: "21605015"
+      doi: 10.5281/zenodo.21605015
+      version: "0.2"
+      license: CC-BY-SA-4.0 (+ authors' no-speech-synthesis condition — see /NOTICE)
+      representativeness: low
+      eligible_for_aggregate: false
+    - id: xsid-de-control    # SAME speaker, SAME sentences, Standard German
+      zenodo: "21605015"
+      doi: 10.5281/zenodo.21605015
+      version: "0.2"
+      license: CC-BY-SA-4.0 (+ authors' no-speech-synthesis condition — see /NOTICE)
+      representativeness: low
+      eligible_for_aggregate: false
+
+# How the dialect rows above may and may not be published. These are not style
+# preferences; each one names a way the number would otherwise mislead.
+dialect_publication_rules:
+  # One speaker, read speech. The number answers "does the model collapse on
+  # Bavarian at all", not "how good is it on Bavarian".
+  - no dialect row ever carries a winner mark, however many rows exist.
+  # xsid-bar alone measures one voice. xsid-bar minus xsid-de-control measures
+  # the dialect. Ship the pair or ship neither.
+  - a dialect row is published only alongside its same-speaker control row.
+  # A mean over Swiss German and Bavarian describes no population.
+  - never form an aggregate that spans two dialect areas.
+  # eligible_for_aggregate=false in raven_asr.config carries this in code.
+  - dialect datasets stay out of any cross-dataset or `overall` average.

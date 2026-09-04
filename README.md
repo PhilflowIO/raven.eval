@@ -44,10 +44,26 @@ portably reproducible).
 Raven is a German meeting-transcription product that publishes measured WER and DER
 numbers. This repository is how you check them without asking us for anything:
 public datasets (DER: VoxConverse, CALLHOME-de, AMI — WER: Tuda-De, Common Voice,
-MLS, FLEURS, VoxPopuli-de), pinned model and dataset commits, and the scoring code
-Raven runs internally, lifted out and stripped of anything private.
+MLS, FLEURS, VoxPopuli-de, xSID-audio), pinned model and dataset commits, and the
+scoring code Raven runs internally, lifted out and stripped of anything private.
 
 It is packaged so a stranger can check our work. That includes you.
+
+### The dialect rows come with rules
+
+`xsid-bar` (Bavarian) and `xsid-de-control` (Standard German) are a matched pair
+from Zenodo record [21605015](https://zenodo.org/records/21605015), DOI
+`10.5281/zenodo.21605015` v0.2. **One** person recorded both varieties, reading
+the same sentences aloud. That makes the pair a probe — does a model collapse on
+Bavarian at all — and not a Bavarian benchmark: only the *delta* between the two
+ids is a statement about dialect; either number alone describes one voice.
+
+So: no winner mark on a dialect row, no aggregate spanning two dialect areas, and
+dialect ids stay out of any cross-dataset average. The rules are written out in
+`benchmark.config.yaml` under `dialect_publication_rules` and carried in code by
+`WerDatasetSpec.eligible_for_aggregate`. The corpus also carries an authors'
+condition that is **not** part of its CC BY-SA licence and therefore does not
+travel on its own — it is reproduced verbatim in [`NOTICE`](./NOTICE).
 
 ## How do you know the scorer itself is correct?
 
@@ -90,6 +106,9 @@ and we make the reproducible ones *actually* reproducible:
 ## Every number states the rules it was computed under
 
 The exact scoring rules live in [`benchmark.config.yaml`](./benchmark.config.yaml).
+Every metric declared there has an implementation in `raven_eval_core`, and every
+implementation is declared there — `tests/test_metric_contract.py` fails the build
+in both directions, and for BLEU it compares the pinned conventions field by field.
 DER is reported at **both** `collar=0.0` and `collar=0.25` (the two conventions are
 not comparable), so our numbers line up with the pyannote model cards and the ETH
 benchmark paper (arXiv 2509.26177). DER is always dataset-relative: the same model
@@ -112,6 +131,34 @@ under the same normalization and dataset.
 **Can WER be above 100 %?** Yes — insertions count as errors, so a hypothesis much
 longer than the reference can push WER past 100 %.
 
+## What is BLEU, and why does a speech benchmark report it?
+
+BLEU (bilingual evaluation understudy) scores how many n-grams — word sequences of
+length 1 to 4 — a candidate text shares with a reference, with a brevity penalty
+for output that is too short. It runs 0–100; **higher is better**, the opposite
+direction from WER and DER.
+
+It is here because not every corpus is transcription-shaped. Swiss-German dialect
+speech is *spoken* in dialect and *transcribed* in standard German: the reference
+is a translation of what was said, not a record of it. A correct output can
+legitimately differ in word choice and order ("gäll" → "nicht wahr", "lueg" →
+"schau"), and WER charges every one of those as an error. Such a dataset is scored
+**bleu+wer**, with BLEU as the headline of the pair.
+
+The committed `artifacts/_demo_bleu/` fixture shows the gap on eight rows: the
+same output reads as **14.29 % WER** (a badly broken transcript) and **72.24
+BLEU** (a largely correct translation).
+
+**Which BLEU?** The word alone is not a number — tokenizer, case handling and
+smoothing each move it by whole points, which is why cross-paper BLEU comparisons
+were unreliable for years (Post 2018, *A Call for Clarity in Reporting BLEU
+Scores*). We score with **sacrebleu** under conventions pinned in
+[`benchmark.config.yaml`](./benchmark.config.yaml) — `13a` tokenizer,
+case-sensitive, `exp` smoothing, corpus-level — and publish sacrebleu's signature
+(`nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:…`) next to every number.
+That string, not the word "BLEU", is what makes the number comparable. Per-sentence
+BLEU exists in `raven_eval_core.bleu` as a diagnostic and is never published.
+
 ## What is diarization error rate (DER)?
 
 Diarization error rate (DER) measures how accurately a system answers "who spoke
@@ -128,9 +175,10 @@ the number substantially — never compare DER across different rules.
 
 - **`raven_eval_core/`** — the standalone, secret-free metric core. `der.py`
   (Diarization Error Rate via `pyannote.metrics`, collar + overlap parametrized,
-  Hungarian mapping, RTTM I/O) and `flozi_wer.py` (the single source of truth for
+  Hungarian mapping, RTTM I/O), `flozi_wer.py` (the single source of truth for
   published German WER — same normalization for the runner and the re-scorer, so they
-  can't drift). No hardcoded names, no private data.
+  can't drift) and `bleu.py` (corpus BLEU via `sacrebleu` under pinned conventions,
+  for translation-shaped corpora). No hardcoded names, no private data.
 - **`raven_asr/`** — Tier-2 WER harness: pull a public HF subset → run a model
   (Modal / OpenAI / Deepgram / Mistral / vLLM adapter) → score → `predictions_*.jsonl`.
 - **`raven_diar/`** — Tier-2 DER harness: prepare a public diarization dataset → run
@@ -147,12 +195,14 @@ the number substantially — never compare DER across different rules.
   eval runs on real customer meetings whose audio can't be published (consent); those
   are a separate, non-public datapoint. The numbers *here* are on public datasets and
   will differ — that's expected, and we don't blur them.
-- **The demo fixtures** (`artifacts/_demo/`, `artifacts/_demo_der/`) prove the
+- **The demo fixtures** (`artifacts/_demo/`, `artifacts/_demo_bleu/`,
+  `artifacts/_demo_der/`) prove the
   re-score mechanism end-to-end; they are **not** Raven product numbers.
 
 ## License and data attribution
 
 Code is **MIT**. Dataset licenses are separate and belong to their owners — see
 [`NOTICE`](./NOTICE) for per-dataset attribution (Tuda-De / MLS / FLEURS = CC-BY,
-Common Voice / VoxPopuli = CC0, VoxConverse labels = CC-BY, …). **We never redistribute restricted audio** —
+Common Voice / VoxPopuli = CC0, VoxConverse labels = CC-BY, xSID-audio = CC-BY-SA
+**plus a no-speech-synthesis condition the licence does not carry**, …). **We never redistribute restricted audio** —
 only the tooling and, where the license permits, the reference/hypothesis label files.
