@@ -82,9 +82,56 @@ sortformer = [
     "numpy",
 ]
 
+# Tier-2 DER, DiariZen lane (raven_diar/adapters/diarizen.py). Its own extra and
+# NOT compatible with `diar`: DiariZen vendors a modified pyannote.audio 3.1.1
+# inside its own repository, the two import each other, and the fork changes
+# signatures the pipeline calls — so upstream pyannote.audio is not a substitute
+# and 3.1.1 cannot coexist with the >=4.0 the pyannote lane needs. Both halves
+# therefore come from the SAME pinned DiariZen commit.
+#
+# The runtime dependencies are listed here rather than inherited, because
+# DiariZen's own pyproject declares NONE (its requirements.txt is a development
+# superset that pulls jupyterlab and tensorboard). What is listed is what the
+# inference path actually imports; torch and numpy are pinned to the pair the
+# fork is known to run on, since 3.1.1-era pyannote does not survive numpy 2.
+diarizen = [
+    "diarizen @ git+https://github.com/BUTSpeechFIT/DiariZen@a60b18151dbbe246e4199d8ef5cd2ece3872ea94",
+    "pyannote.audio @ git+https://github.com/BUTSpeechFIT/DiariZen@a60b18151dbbe246e4199d8ef5cd2ece3872ea94#subdirectory=pyannote-audio",
+    "torch==2.1.1",
+    "torchaudio==2.1.1",
+    "numpy==1.26.4",
+    "accelerate==1.6.0",   # diarizen/utils.py imports it; not optional
+    "psutil",
+    "toml",
+    "einops",
+    "scipy",
+    "soundfile",
+    "huggingface-hub",
+    "datasets",
+]
+
+[tool.uv]
+# `diar` (pyannote.audio>=4.0), `sortformer` (NeMo's torch) and `diarizen`
+# (pyannote.audio 3.1.1 + torch 2.1.1) are mutually exclusive by construction.
+# Declaring that lets uv lock each lane instead of failing to find one
+# resolution that satisfies all three — which is also the honest statement:
+# nobody installs two diarizer backends to run one.
+conflicts = [
+    [{ extra = "diar" }, { extra = "diarizen" }],
+    [{ extra = "sortformer" }, { extra = "diarizen" }],
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# The `diarizen` extra pins two packages by git URL (see that extra's comment:
+# the library and its vendored pyannote fork must come from the same commit, and
+# neither is on PyPI). Hatchling refuses direct references unless told to allow
+# them. It applies only to that one optional extra; every other dependency here
+# is a normal version range from PyPI.
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["raven_eval_core", "raven_asr", "raven_diar"]

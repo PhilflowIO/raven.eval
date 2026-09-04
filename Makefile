@@ -41,6 +41,10 @@ rescore:            ## Maintenance: add newly published fields to committed expe
 # EXTRA overrides the dependency extra, because a diarizer's backend is its own
 # (pyannote -> `diar`, sortformer -> `sortformer`); nobody installs both to run one:
 #   make reproduce METRIC=der DATASET=ami MODEL=sortformer-4spk-v1 EXTRA=sortformer
+#   make reproduce METRIC=der DATASET=callhome-de MODEL=diarizen-wavlm-large-s80-md-v2 EXTRA=diarizen
+# The diarizen lane CONFLICTS with `diar` and `sortformer` (it needs pyannote.audio
+# 3.1.1 and torch 2.1.1); uv knows, and `uv sync --extra diarizen` swaps the
+# environment rather than failing to resolve one that holds both.
 # The hosted lane needs no GPU at all, only an API key — and it bills per hour of
 # audio, so smoke it with LIMIT before running a whole corpus:
 #   make reproduce METRIC=der DATASET=callhome-de MODEL=deepgram-nova-3 EXTRA=diar-hosted LIMIT=3
