@@ -73,17 +73,58 @@ def _cut_prefix(source: Path, seconds: float, dest: Path) -> float:
     return frames / rate
 
 
-def _fit_quadratic_through_origin(points: list[tuple[float, float]]) -> float | None:
-    """Least-squares ``a`` for ``peak_gb ≈ a · duration_s²``.
+def _fit_through_origin(
+    points: list[tuple[float, float]], power: int
+) -> tuple[float, float] | None:
+    """Least-squares ``a`` for ``peak_gb ≈ a · duration_s**power``, plus its RMS error.
 
     Through the origin on purpose: the constant term is the model's own resident
     weights, which do not scale with duration and are reported separately as the
     idle baseline. Fitting an intercept here would let a large constant hide the
     growth term the claim is about.
     """
-    num = sum(d * d * gb for d, gb in points)
-    den = sum((d * d) ** 2 for d, gb in points)
-    return num / den if den else None
+    if not points:
+        return None
+    num = sum(d**power * gb for d, gb in points)
+    den = sum((d**power) ** 2 for d, gb in points)
+    if not den:
+        return None
+    a = num / den
+    rms = (sum((gb - a * d**power) ** 2 for d, gb in points) / len(points)) ** 0.5
+    return a, rms
+
+
+def _growth_regime(points: list[tuple[float, float]]) -> dict[str, object]:
+    """Fit BOTH a linear and a quadratic law and say which one the data prefers.
+
+    The claim this script exists for has two halves — the offline checkpoint's
+    memory grows with the *square* of the duration, the streaming one's does not
+    — and a script that only ever fits a quadratic cannot tell them apart. It
+    would report a coefficient for the streaming checkpoint too, and the
+    coefficient would mean nothing. So both laws are fitted and the one with the
+    smaller RMS residual is named; a reader can check the other's residual
+    rather than take the verdict on trust.
+    """
+    fits: dict[str, object] = {}
+    for power, name in ((1, "linear"), (2, "quadratic")):
+        fitted = _fit_through_origin(points, power)
+        if fitted is None:
+            continue
+        a, rms = fitted
+        fits[name] = {
+            "form": f"peak_allocated_gb = a * duration_s**{power}",
+            "a": a,
+            "rms_residual_gb": round(rms, 4),
+        }
+    if not fits:
+        return {"fits": {}, "prefers": None, "n_points": 0}
+    prefers = min(fits, key=lambda k: fits[k]["rms_residual_gb"])
+    return {
+        "fits": fits,
+        "prefers": prefers,
+        "through_origin": True,
+        "n_points": len(points),
+    }
 
 
 def _device_facts() -> dict[str, object]:
@@ -196,7 +237,7 @@ def measure(
         (float(p["duration_s"]), float(p["peak_allocated_gb"]))
         for p in points if p["status"] == "ok"
     ]
-    coefficient = _fit_quadratic_through_origin(ok)
+    growth = _growth_regime(ok)
     oom_at = next((p["duration_s"] for p in points if p["status"] == "oom"), None)
 
     return {
@@ -218,12 +259,7 @@ def measure(
         "environment": facts,
         "resident_after_load_gb": round(baseline_gb, 4),
         "points": points,
-        "fit": {
-            "form": "peak_allocated_gb = a * duration_s**2",
-            "a_gb_per_s2": coefficient,
-            "through_origin": True,
-            "n_points": len(ok),
-        },
+        "growth": growth,
         "oom_at_s": oom_at,
     }
 
@@ -263,9 +299,10 @@ def main(argv: list[str] | None = None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(curve, indent=2) + "\n", encoding="utf-8")
     print(f"\nwrote {args.out}")
-    fit = curve["fit"]["a_gb_per_s2"]
-    if fit is not None:
-        print(f"fit: peak ≈ {fit:.3g} GB/s² · duration²")
+    growth = curve["growth"]
+    for name, fit in growth["fits"].items():
+        marker = "  <- preferred" if name == growth["prefers"] else ""
+        print(f"{name:>9}: a = {fit['a']:.3g}, rms {fit['rms_residual_gb']:.3f} GB{marker}")
     if curve["oom_at_s"] is not None:
         env = curve["environment"]
         print(

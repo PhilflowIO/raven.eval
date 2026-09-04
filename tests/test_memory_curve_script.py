@@ -34,7 +34,10 @@ def test_importing_the_script_pulls_no_gpu_stack():
 def test_fit_recovers_a_known_quadratic():
     a = 3.5e-5
     points = [(d, a * d * d) for d in (120, 240, 360, 480, 600)]
-    assert mem._fit_quadratic_through_origin(points) == pytest.approx(a, rel=1e-9)
+    fitted, rms = mem._fit_through_origin(points, 2)
+    assert fitted == pytest.approx(a, rel=1e-9)
+    assert rms == pytest.approx(0.0, abs=1e-9)
+    assert mem._fit_through_origin([], 2) is None
 
 
 def test_fit_is_through_the_origin_not_least_squares_with_an_intercept():
@@ -45,9 +48,28 @@ def test_fit_is_through_the_origin_not_least_squares_with_an_intercept():
     """
     a, offset = 3.5e-5, 1.0
     points = [(d, a * d * d + offset) for d in (120, 240, 360, 480, 600)]
-    fitted = mem._fit_quadratic_through_origin(points)
+    fitted, _rms = mem._fit_through_origin(points, 2)
     assert fitted > a  # the offset is visibly pushed into the coefficient
-    assert mem._fit_quadratic_through_origin([]) is None
+
+
+def test_the_growth_regime_tells_the_two_checkpoints_apart():
+    """The whole claim is quadratic-vs-not, so the script must decide it.
+
+    Only ever fitting a quadratic would report a coefficient for the streaming
+    checkpoint too, and that coefficient would mean nothing.
+    """
+    quadratic = [(d, 3.5e-5 * d * d) for d in (120, 240, 360, 480, 600)]
+    assert mem._growth_regime(quadratic)["prefers"] == "quadratic"
+
+    linear = [(d, 5e-4 * d) for d in (120, 360, 600, 1200, 1800)]
+    regime = mem._growth_regime(linear)
+    assert regime["prefers"] == "linear"
+    assert regime["fits"]["linear"]["a"] == pytest.approx(5e-4, rel=1e-9)
+    # Both laws are always reported, so the verdict can be checked, not trusted.
+    assert regime["fits"]["quadratic"]["rms_residual_gb"] > 0
+    assert regime["n_points"] == 5
+
+    assert mem._growth_regime([])["prefers"] is None
 
 
 def test_prefix_cut_reports_the_length_it_actually_wrote(tmp_path: Path):
