@@ -509,13 +509,44 @@ in-the-wild audio with many speakers. The Sortformer column is empty here and st
 checkpoints are hard-capped at four speakers, so a 5+ number for them would be a
 statement about folding, not about diarization.
 
+**DiariZen was trained on two of these three corpora, and that changes how two
+of its rows may be read.** Its model card states the training data verbatim:
+"trained on far-field, single-channel audio from a diverse set of public
+datasets, including **AMI**, AISHELL-4, AliMeeting, NOTSOFAR-1, MSDWild, DIHARD3,
+RAMC, and **VoxConverse**." So its VoxConverse and AMI numbers are in-domain —
+possibly on the very recordings it saw — while every other model on those rows is
+being tested out-of-domain. That is not a defect of the model and not a mistake
+in the measurement; it is a property of the comparison, and it has to be stated
+where the comparison is made:
+
+- The **VoxConverse** rows above, including the 1.58 pp lead over community-1 and
+  the flat speaker-count profile, compare a model on its training distribution
+  against models that never saw it. The lead is real as a number and is **not**
+  evidence of better generalisation.
+- The **AMI** row below is the same situation.
+- **CALLHOME is not in that list**, so the German row — the one this page's main
+  ranking rides on, and the one that reconciles with the ETH benchmark to 0.24 pp
+  — is a clean out-of-domain measurement for every model in it.
+
+A benchmark that quietly ranks a model on its own training data is the failure
+this page exists to avoid, so the training overlap is named beside the rows
+rather than in a footnote.
+
+**On meetings DiariZen does not rescue the picture.** AMI test, all 16 meetings,
+same gold and same scorer: **23.14 %** at collar 0.25 against the streaming
+Sortformer's 23.03 and community-1's 13.10. It ties the capped checkpoint and
+loses to community-1 by 10 pp — while holding the in-domain advantage described
+above. Whatever the many-speaker argument is worth on VoxConverse, it does not
+transfer to meeting audio.
+
 So the two corpora answer different questions and neither answers both. On
-German telephone speech the shippable streaming checkpoint is genuinely ahead of
-DiariZen; on in-the-wild audio with many speakers DiariZen is the only entrant
-here that has been measured at all in that regime. A meeting product needs the
-second question answered, and this page can now say that it has not been answered
-for the model Raven runs — not because the model failed it, but because the
-architecture forbids the measurement.
+German telephone speech — the one set nobody here trained on — the shippable
+streaming checkpoint is genuinely ahead of DiariZen. On in-the-wild audio with
+many speakers DiariZen is the only entrant measured at all in that regime, and
+it is measured there in-domain. A meeting product needs the second question
+answered, and this page can now say that it has not been answered for the model
+Raven runs — not because the model failed it, but because the architecture
+forbids the measurement.
 
 **The third reconciliation, and the one that needed the splits.** The ETH
 benchmark reads **5.2 %** for DiariZen on VoxConverse and states that it evaluated
@@ -677,6 +708,7 @@ to the collar-0.25 DER and is not a breakdown of it.
 | diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 15.70 | 11.95 | 2.95 | 0.80 | **12.07** | 10.44 | 1.08 | 0.55 | 11.84 | [11.19, 13.01] | 120 | [2026-09-04](./artifacts/2026-09-04-callhome-de-diarizen/diarizen-wavlm-large-s80-md-v2/) |
 | diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | voxconverse (dev) | 4.52 | 1.51 | 1.67 | 1.34 | **2.75** | 0.86 | 0.72 | 1.17 | 3.31 | [2.32, 3.26] | 216 | [2026-09-04](./artifacts/2026-09-04-voxconverse-dev-diarizen/diarizen-wavlm-large-s80-md-v2/) |
 | diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | voxconverse (**test**) | 9.17 | 3.55 | 3.42 | 2.21 | **6.83** | 2.86 | 2.07 | 1.90 | 6.85 | [6.12, 7.59] | 232 | [2026-09-04](./artifacts/2026-09-04-voxconverse-test-diarizen/diarizen-wavlm-large-s80-md-v2/) |
+| diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | ami (meetings) | 25.69 | 22.68 | 1.14 | 1.87 | **23.14** | 21.38 | 0.51 | 1.25 | 22.49 | [20.16, 26.11] | 16 | [2026-09-05](./artifacts/2026-09-05-ami-diarizen/diarizen-wavlm-large-s80-md-v2/) |
 
 Every interval is a 10 000-resample percentile bootstrap over **files**, seed
 `20260903`, pinned in [`benchmark.config.yaml`](./benchmark.config.yaml) →

@@ -829,3 +829,60 @@ def test_diarizen_turns_a_pyannote_annotation_into_scoreable_segments():
     assert result.segments == [(0.0, 5.0, "A"), (10.0, 20.0, "B")]
     assert result.raw["n_speakers"] == 2
     assert result.raw["revision"] == "c" * 40
+
+
+# ── the dispatcher's call and the adapters' signatures must agree ────────────
+
+
+def _runner_kwarg_names() -> set[str]:
+    """The keyword names ``_make_diarizer`` actually passes, read from source.
+
+    Parsed rather than written down, so this test cannot drift: adding a kwarg
+    to the dispatcher immediately tightens the contract instead of leaving a
+    hardcoded list behind that still passes.
+    """
+    import ast
+
+    tree = ast.parse(
+        (REPO_ROOT / "raven_diar" / "reproduce.py").read_text(encoding="utf-8")
+    )
+    fn = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "_make_diarizer"
+    )
+    call = next(
+        n for n in ast.walk(fn)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "adapter_cls"
+    )
+    names = {kw.arg for kw in call.keywords if kw.arg}
+    assert names, "could not read the dispatcher's kwargs — the test is blind"
+    return names
+
+
+def test_every_adapter_accepts_exactly_what_the_runner_passes():
+    """A missing kwarg makes a registered diarizer unrunnable, and only at run time.
+
+    This is not hypothetical: the ``language`` kwarg was added to the dispatcher
+    for the hosted adapters, the DiariZen adapter did not grow it, and the model
+    stayed registered, tested and documented while being impossible to run —
+    the failure appeared only after downloading weights on a GPU box.
+
+    Signatures are inspected, not called: building an adapter for real would
+    need torch, nemo or the diarizen fork, and this must stay a GPU-free test.
+    """
+    import inspect
+
+    expected = _runner_kwarg_names()
+    for key, spec in KNOWN_DIARIZERS.items():
+        adapter_cls = DIARIZER_ADAPTERS.resolve(spec.adapter)
+        signature = inspect.signature(adapter_cls.__init__)
+        try:
+            signature.bind_partial(None, **dict.fromkeys(expected))
+        except TypeError as exc:
+            raise AssertionError(
+                f"{key}: {spec.adapter} cannot be built by the runner — "
+                f"{exc}. The dispatcher passes {sorted(expected)}; an adapter "
+                f"that ignores one still has to accept it."
+            ) from exc
