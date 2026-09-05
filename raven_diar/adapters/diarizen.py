@@ -69,6 +69,12 @@ class DiariZenDiarizer:
         provider_id: str = "diarizen-wavlm-large-s80-md-v2",
         model_id: str = MODEL_ID,
         revision: str | None = None,
+        # Accepted and ignored: this model is language-agnostic (it scores
+        # speaker turns, not words). It is in the signature because the runner
+        # builds EVERY adapter with the same kwargs — branching on
+        # ``spec.hosted`` in the dispatcher is precisely what the registry
+        # exists to prevent.
+        language: str | None = None,
         embedding_revision: str | None = None,
     ) -> None:
         self.provider_id = provider_id
