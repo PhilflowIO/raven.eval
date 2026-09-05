@@ -11,13 +11,13 @@ page states it per diarizer rather than hiding it.
 |---|---|---|---|---|---|
 | `pyannote-community-1` | `diar` | **yes** | **yes** (accept on HF) | strongly recommended | needs system FFmpeg *shared* libs (see below) |
 | `sortformer-4spk-v1` | `sortformer` | no | no (weights are public) | strongly recommended | CC-BY-NC-4.0 → **non-commercial**; hard cap of **4 speakers** |
+| `sortformer-streaming-4spk-v2` | `sortformer` | no | no (weights are public) | strongly recommended | CC-BY-4.0 → **commercial use permitted**; hard cap of **4 speakers**; streaming latency preset via `SORTFORMER_LATENCY_PRESET` |
+| `diarizen-wavlm-large-s80-md-v2` | `diarizen` | no | no (weights are public) | required | CC-BY-NC-4.0 → **non-commercial**; no speaker cap (clusters to 20); **conflicts with the other local lanes** |
 | `deepgram-nova-3` | `diar-hosted` | no | no | **none** | hosted API — needs `DEEPGRAM_API_KEY` and **costs money per hour of audio** |
+| `assemblyai-universal-3-5-pro` | `diar-hosted` | no | no | **none** (hosted) | needs `ASSEMBLYAI_API_KEY`; **costs money per hour of audio** — see below |
 
 The local models run without an API key; the hosted lanes are the inverse —
 no GPU at all, but a metered vendor bill. Adding another diarizer is a module
-| `assemblyai-universal-3-5-pro` | `diar-hosted` | no | no | **none** (hosted) | needs `ASSEMBLYAI_API_KEY`; **costs money per hour of audio** — see below |
-
-The local models need no API key; the hosted ones need no GPU. Adding another diarizer is a module
 under `raven_diar/adapters/` exposing an `ADAPTER` factory plus a `DiarizerSpec`
 entry in `raven_diar/config.py` — the runner dispatches through
 `raven_diar/registry.py` and is not edited (see that module's docstring).
@@ -94,6 +94,43 @@ acceptance, an API key. What it does need:
 The revision is pinned via `hf_hub_download` rather than NeMo's
 `from_pretrained`, which accepts no `revision` and would silently track the HF
 branch — a published DER must not be able to drift under a re-upload.
+
+## The DiariZen requirements
+
+`BUT-FIT/diarizen-wavlm-large-s80-md-v2` is a WavLM+Conformer segmenter with VBx
+clustering. It is the reason this lane exists at all: it is the one entrant with
+no hard speaker cap — its clustering resolves up to 20 speakers globally, where a
+Sortformer checkpoint folds everything past four — and an independent benchmark
+names it the strongest open-source candidate on German telephone speech. Its
+weights are **CC-BY-NC-4.0**, so its row is a reference row: shown, never awarded.
+
+1. **The `diarizen` extra**, and it is not like the others. DiariZen ships no
+   usable `pyannote.audio` dependency: it vendors a *modified* pyannote.audio
+   3.1.1 inside its own repository, and the two import each other. The fork also
+   changes signatures the pipeline calls and adds the `VBxClustering` class the
+   published checkpoints configure, which upstream does not have. So the extra
+   installs **both halves from the same pinned commit**, and upstream
+   `pyannote.audio==3.1.1` from PyPI is not a substitute.
+
+2. **It conflicts with `diar` and `sortformer`** — pyannote.audio 3.1.1 and >=4.0
+   cannot share an environment, and neither can their torch pins. That is
+   declared in `[tool.uv] conflicts`, so `uv sync --extra diarizen` swaps the
+   environment instead of failing to find one resolution for all three lanes.
+
+3. **No token, no gated licence, no accepted conditions.** Both the checkpoint
+   and the speaker-embedding model (`pyannote/wespeaker-voxceleb-resnet34-LM`)
+   are public.
+
+4. **Two revisions are pinned, not one.** The library's `from_pretrained` passes
+   no `revision` to either download, so it would leave a published number hanging
+   on two HuggingFace branches at once. The adapter does both downloads itself
+   and records the embedding pin in `summary.json`.
+
+```bash
+uv sync --extra dev --extra diarizen
+make reproduce METRIC=der DATASET=callhome-de \
+  MODEL=diarizen-wavlm-large-s80-md-v2 EXTRA=diarizen
+```
 
 ## The Deepgram requirements
 
@@ -181,14 +218,15 @@ against another provider partly a difference of two vendors' folding rules.
 ```bash
 uv sync --extra dev --extra diar        # pyannote lane: torch + pyannote.audio
 uv sync --extra dev --extra sortformer  # sortformer lane: nemo_toolkit[asr] + torch
+uv sync --extra dev --extra diarizen    # diarizen lane: DiariZen + its pyannote fork
 uv sync --extra dev --extra diar-hosted # hosted lane: httpx + loader, no torch
-uv sync --extra dev --extra diar-hosted  # hosted lane: httpx only (no torch, no GPU)
 ```
 
-Both extras are heavy (torch) and deliberately isolated: Tier-1 verify never
-imports either, so `make verify` stays light and GPU-free. `make reproduce`
-defaults to `diar` for `METRIC=der`; select the other lane with
-`EXTRA=sortformer`.
+The local lanes are heavy (torch) and deliberately isolated: Tier-1 verify never
+imports any of them, so `make verify` stays light and GPU-free. `make reproduce`
+defaults to `diar` for `METRIC=der`; select another lane with `EXTRA=sortformer`
+or `EXTRA=diarizen`. The three local lanes are mutually exclusive by
+construction — installing one replaces another, which is why each is named.
 
 ## Pin the model & dataset revisions (reproducibility)
 

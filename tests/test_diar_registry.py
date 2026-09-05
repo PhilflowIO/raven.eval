@@ -704,3 +704,128 @@ def test_hosted_adapters_refuse_to_be_built_without_a_language():
             f"{module.__name__}: language has a default again — that is the bug"
         )
         assert param.kind is inspect.Parameter.KEYWORD_ONLY
+
+
+# ── diarizen adapter (the pipeline needs a GPU; the pinning does not) ─────────
+
+
+def test_diarizen_is_registered_non_shippable_and_pinned():
+    """The ETH benchmark's best open-source candidate, measured on our terms.
+
+    CC-BY-NC-4.0, so it is a reference row: shown, never awarded. That pairing is
+    also asserted generically by `test_non_commercial_weights_are_never_shippable`
+    — this test pins the specific facts that make the row meaningful.
+    """
+    spec = KNOWN_DIARIZERS["diarizen-wavlm-large-s80-md-v2"]
+    assert spec.model_id == "BUT-FIT/diarizen-wavlm-large-s80-md-v2"
+    assert spec.adapter == "diarizen"
+    assert spec.license == "CC-BY-NC-4.0"
+    assert spec.shippable is False
+    assert not spec.hosted and spec.revision_kind == "commit"
+    assert "diarizen" in DIARIZER_ADAPTERS.available()
+
+
+def test_every_weights_revision_an_adapter_pins_itself_is_a_commit():
+    """The registry is not the only place a published number hangs on weights.
+
+    DiariZen clusters with a SECOND model from a different HF repo, which its own
+    library downloads without a revision. Pinning it in the adapter is correct —
+    it is a property of the library, not a choice per row — but a pin outside
+    `KNOWN_DIARIZERS` is a pin the spec sweep never sees. So the invariant is
+    extended rather than duplicated: every `*_REVISION` an adapter module
+    declares must be a full commit hash, for every adapter, forever.
+    """
+    import importlib
+    import re
+
+    checked = 0
+    for name in DIARIZER_ADAPTERS.available():
+        module = importlib.import_module(f"raven_diar.adapters.{name}")
+        for attr in dir(module):
+            if not attr.endswith("_REVISION"):
+                continue
+            value = getattr(module, attr)
+            if not isinstance(value, str):
+                continue
+            checked += 1
+            assert re.fullmatch(r"[0-9a-f]{40}", value), (
+                f"raven_diar.adapters.{name}.{attr} = {value!r} is not a full "
+                f"commit hash — a published number would follow a branch"
+            )
+    assert checked, "the sweep found no adapter-level revision pin to check"
+
+
+def test_diarizen_pins_both_weight_sets_it_downloads(monkeypatch):
+    """`DiariZenPipeline.from_pretrained` passes no revision to either download.
+
+    Using it would leave a published DER hanging on two HuggingFace branches at
+    once — the checkpoint and the speaker-embedding model — so the adapter does
+    both downloads itself. This drives the real code path with the library
+    faked out, so the guarantee survives a refactor of the adapter.
+    """
+    import sys
+    import types
+
+    from raven_diar.adapters import diarizen as dz
+
+    calls: dict[str, dict] = {}
+
+    hub = types.ModuleType("huggingface_hub")
+    hub.snapshot_download = lambda **kw: calls.setdefault("snapshot", kw) and "/hub"
+    hub.hf_hub_download = lambda **kw: calls.setdefault("file", kw) and "/emb.bin"
+    # `and` short-circuits on the falsy dict return, so return the paths plainly:
+    hub.snapshot_download = lambda **kw: (calls.__setitem__("snapshot", kw), "/hub")[1]
+    hub.hf_hub_download = lambda **kw: (calls.__setitem__("file", kw), "/emb.bin")[1]
+
+    inference = types.ModuleType("diarizen.pipelines.inference")
+    inference.DiariZenPipeline = lambda **kw: calls.setdefault("pipeline", kw)
+    pipelines = types.ModuleType("diarizen.pipelines")
+    package = types.ModuleType("diarizen")
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setitem(sys.modules, "diarizen", package)
+    monkeypatch.setitem(sys.modules, "diarizen.pipelines", pipelines)
+    monkeypatch.setitem(sys.modules, "diarizen.pipelines.inference", inference)
+
+    dz.ADAPTER(revision="c" * 40)._ensure_pipeline()
+
+    assert calls["snapshot"]["repo_id"] == "BUT-FIT/diarizen-wavlm-large-s80-md-v2"
+    assert calls["snapshot"]["revision"] == "c" * 40
+    assert calls["file"]["repo_id"] == "pyannote/wespeaker-voxceleb-resnet34-LM"
+    assert calls["file"]["revision"] == dz.EMBEDDING_REVISION
+    # The harness owns the RTTM layout; the library must not write its own.
+    assert calls["pipeline"]["rttm_out_dir"] is None
+
+
+def test_diarizen_names_the_embedding_pin_in_the_run_config():
+    """A summary naming only the checkpoint would under-describe the run."""
+    from raven_diar.adapters import diarizen as dz
+
+    assert dz.ADAPTER(revision="c" * 40).run_config == {
+        "embedding_model_id": "pyannote/wespeaker-voxceleb-resnet34-LM",
+        "embedding_revision": dz.EMBEDDING_REVISION,
+    }
+
+
+def test_diarizen_turns_a_pyannote_annotation_into_scoreable_segments():
+    """The pipeline returns an Annotation; the harness wants sorted triples."""
+    from raven_diar.adapters.diarizen import DiariZenDiarizer
+
+    class _Turn:
+        def __init__(self, start, end):
+            self.start, self.end = start, end
+
+    class _Annotation:
+        def itertracks(self, yield_label=False):  # noqa: ARG002 - signature parity
+            # Deliberately unsorted, with one zero-length turn: pyannote does not
+            # promise an order, and a zero-length turn is not scoreable.
+            yield _Turn(10.0, 20.0), "_", "B"
+            yield _Turn(0.0, 5.0), "_", "A"
+            yield _Turn(7.0, 7.0), "_", "A"
+
+    diarizer = DiariZenDiarizer(revision="c" * 40)
+    diarizer._pipeline = lambda path: _Annotation()  # skip the GPU pipeline
+    result = diarizer.diarize(Path("unused.wav"))
+    assert result.segments == [(0.0, 5.0, "A"), (10.0, 20.0, "B")]
+    assert result.raw["n_speakers"] == 2
+    assert result.raw["revision"] == "c" * 40

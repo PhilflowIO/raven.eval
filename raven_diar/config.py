@@ -249,7 +249,26 @@ KNOWN_DIARIZERS: Final[dict[str, DiarizerSpec]] = {
         license="AssemblyAI commercial terms of service (paid API)",
         shippable=True,
     ),
-    # Adding the next diarizer (diarizen, a hosted API, …) is a module under
+    # DiariZen (BUT Speech@FIT). Public CC-BY-NC-4.0 weights, no gating, no API
+    # key — but its own dependency lane (`--extra diarizen`), because the library
+    # vendors a MODIFIED pyannote.audio 3.1.1 that cannot share an environment
+    # with the >=4.0 the pyannote lane needs. See the adapter's docstring.
+    "diarizen-wavlm-large-s80-md-v2": DiarizerSpec(
+        model_id="BUT-FIT/diarizen-wavlm-large-s80-md-v2",
+        adapter="diarizen",
+        label="diarizen-wavlm-large-s80-md-v2",
+        # HF `main` as of 2026-09-04 (the repo publishes no tags).
+        revision="027b3e221b9d81dce2be794084f1dbd3ba2da403",
+        # Model card, verbatim (2026-09-04): "please ensure non-commercial usage,
+        # in accordance with the CC BY-NC 4.0 license."
+        license="CC-BY-NC-4.0",
+        # Non-commercial weights: a reference row under ADR-app-0036. It is here
+        # because the ETH benchmark calls it the best open-source candidate and
+        # because it is the one entrant without a hard speaker cap — measuring it
+        # is the point; shipping it is not an option.
+        shippable=False,
+    ),
+    # Adding the next diarizer (a hosted API, …) is a module under
     # raven_diar/adapters/ exposing an ``ADAPTER`` factory plus a spec entry
     # here. The runner resolves ``adapter`` through raven_diar.registry and is
     # not touched — see that module's docstring.
