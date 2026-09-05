@@ -484,22 +484,42 @@ that wins German telephone by 7.1 pp loses meetings by 9.9 pp.
 
 **The offline Sortformer still has no AMI row; the streaming one does.** The
 offline `4spk-v1` model attends over the whole recording, so activation memory
-grows with the *square* of the duration: measured on one 3090, peak allocation is
-1.02 GB at 2 min, 4.95 GB at 6 min, 12.65 GB at 10 min, and OOM at 12 min
-(fit: ≈3.5e-5 GB/s²). The **shortest** AMI test meeting is 14 min (≈25 GB) and the
-longest is 50 min (≈310 GB) — so the AMI split is out of reach of a 24 GB GPU by
-construction, not by configuration, and an 80 GB card would still stop at ~25 min.
-Forcing v1's streaming path instead is measurably a different (worse) regime — on
-ten CALLHOME files it reads 23.13 % / 16.42 % where the offline model reads
-18.94 % / 12.77 % — so no AMI number is published for v1 rather than one published
-under a silently different protocol.
+grows with the *square* of the duration. That is not asserted here — it is
+measured by [`scripts/measure_sortformer_memory.py`](./scripts/measure_sortformer_memory.py),
+which cuts one AMI recording into a duration ladder, records peak allocation for
+each, fits **both** a linear and a quadratic law through the origin, and names
+whichever fits better. The committed curves are
+[`diagnostics/sortformer-4spk-v1-memory.json`](./diagnostics/sortformer-4spk-v1-memory.json)
+and [`diagnostics/sortformer-streaming-4spk-v2-memory.json`](./diagnostics/sortformer-streaming-4spk-v2-memory.json).
+
+| duration | `4spk-v1` peak | `streaming-4spk-v2` peak |
+|---:|---:|---:|
+| 2 min | 1.02 GB | 0.66 GB |
+| 6 min | 4.95 GB | 0.67 GB |
+| 10 min | 12.65 GB | 0.81 GB |
+| 12 min | **OOM** (16.0 GB free) | 0.88 GB |
+| 20 min | — | 1.16 GB |
+| 40 min | — | 1.85 GB |
+
+The two checkpoints do not merely differ in size, they differ in *regime*, and
+the fit says so rather than the prose: for v1 the quadratic law wins (a =
+3.58e-5 GB/s², residual 0.35 GB against the linear law's 1.44 GB); for v2 the
+linear law wins (a = 9.06e-4 GB/s, residual 0.32 GB against the quadratic law's
+0.60 GB). A bounded speaker cache replaces quadratic attention, which is exactly
+what NVIDIA claim for it — v2 uses less memory at 40 minutes than v1 does at 3.
+
+Extrapolating v1's fitted coefficient: the **shortest** AMI test meeting is 14
+min (≈25 GB) and the longest is 50 min (≈322 GB). So the AMI split is out of
+reach of a 24 GB GPU by construction, not by configuration, and an 80 GB card
+would still stop at ~25 min. Forcing v1's streaming path instead is measurably a
+different (worse) regime — on ten CALLHOME files it reads 23.13 % / 16.42 % where
+the offline model reads 18.94 % / 12.77 % — so no AMI number is published for v1
+rather than one published under a silently different protocol.
 
 The `diar_streaming_sortformer_4spk-v2` checkpoint is NVIDIA's own answer to
 exactly that, and it holds: all 16 AMI test meetings completed on the same 24 GB
-3090, the 49.5-minute one in 8.2 s of wall clock. A bounded speaker cache
-replaces quadratic attention, so GPU memory does not track duration — sampled at
-~1.1 GB above idle during a 30-minute meeting, the same order as a 10-minute
-telephone call. Meeting-length audio is reachable.
+3090, the 49.5-minute one in 8.2 s of wall clock. Meeting-length audio is
+reachable.
 
 **Reachable is not the same as good.** On AMI the streaming checkpoint reads
 25.97 % / 23.03 % against community-1's 17.05 % / 13.10 %. Paired over the same
@@ -623,11 +643,17 @@ boundary distribution with `make analyse ARTIFACT=<the run link>`.
 > The checkpoint is capped at **4 speakers**; both sets are inside that cap, and
 > nothing here says anything about a five-person meeting.
 
-> The v1 memory curve and the forced-streaming comparison above are **Tier-3
+> The memory curves and the forced-streaming comparison above are **Tier-3
 > diagnostics, not published numbers**: they were measured on ten files and on one
-> particular GPU, and no artifact backs them, so by this repo's own rule they
-> cannot be cited or compared. They are recorded because they are the evidence for
-> a *decision* — why the v1 AMI cell is empty — not as results. Both
+> particular GPU, so by this repo's own rule they cannot be cited or compared.
+> They are recorded because they are the evidence for a *decision* — why the v1
+> AMI cell is empty — not as results. The curves now have committed JSON and a
+> script that reproduces them, which makes the reasoning checkable without making
+> the numbers portable: each file records the device, driver, torch and NeMo
+> build it belongs to. Note in particular that the 12-minute OOM is against the
+> **16.0 GB this shared box actually had free** (a resident speech service holds
+> the rest), not against the card's nominal 24 GB — the transferable finding is
+> the growth law, not the duration at which one machine ran out. Both
 > `sortformer-streaming-4spk-v2` figures are published rows and have artifacts.
 
 > Public-dataset DER is **not** Raven's private-meeting DER — it is the externally

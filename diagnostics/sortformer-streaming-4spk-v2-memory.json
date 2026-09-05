@@ -1,0 +1,94 @@
+{
+  "tier": 3,
+  "not_a_published_number": "Peak allocation is a property of this GPU, driver, torch and NeMo build, not of the model alone. This curve is the evidence for why the v1 AMI cell in BENCHMARKS.md is empty; it is not comparable to any other measurement and must never be quoted as a result.",
+  "measured_at": "2026-09-04T13:49:25Z",
+  "model": {
+    "key": "sortformer-streaming-4spk-v2",
+    "model_id": "nvidia/diar_streaming_sortformer_4spk-v2",
+    "revision": "5240a64075176943f677d30fa2171c780229f341",
+    "label": "sortformer-streaming-4spk-v2"
+  },
+  "audio_source": "EN2002c.Mix-Headset.wav",
+  "environment": {
+    "device_name": "NVIDIA GeForce RTX 3090",
+    "device_total_gb": 23.559,
+    "device_free_at_start_gb": 15.978,
+    "torch": "2.13.0+cu130",
+    "cuda": "13.0",
+    "nemo": "3.0.0",
+    "driver": "580.173.02",
+    "python": "3.11.15",
+    "host": "philsai"
+  },
+  "resident_after_load_gb": 0.4662,
+  "points": [
+    {
+      "duration_s": 120.0,
+      "peak_allocated_gb": 0.6594,
+      "status": "ok"
+    },
+    {
+      "duration_s": 240.0,
+      "peak_allocated_gb": 0.6652,
+      "status": "ok"
+    },
+    {
+      "duration_s": 360.0,
+      "peak_allocated_gb": 0.6735,
+      "status": "ok"
+    },
+    {
+      "duration_s": 480.0,
+      "peak_allocated_gb": 0.7426,
+      "status": "ok"
+    },
+    {
+      "duration_s": 600.0,
+      "peak_allocated_gb": 0.8117,
+      "status": "ok"
+    },
+    {
+      "duration_s": 720.0,
+      "peak_allocated_gb": 0.8809,
+      "status": "ok"
+    },
+    {
+      "duration_s": 840.0,
+      "peak_allocated_gb": 0.95,
+      "status": "ok"
+    },
+    {
+      "duration_s": 1200.0,
+      "peak_allocated_gb": 1.1573,
+      "status": "ok"
+    },
+    {
+      "duration_s": 1800.0,
+      "peak_allocated_gb": 1.5029,
+      "status": "ok"
+    },
+    {
+      "duration_s": 2400.0,
+      "peak_allocated_gb": 1.8484,
+      "status": "ok"
+    }
+  ],
+  "growth": {
+    "fits": {
+      "linear": {
+        "form": "peak_allocated_gb = a * duration_s**1",
+        "a": 0.0009061570327552987,
+        "rms_residual_gb": 0.3172
+      },
+      "quadratic": {
+        "form": "peak_allocated_gb = a * duration_s**2",
+        "a": 4.0472421708440407e-07,
+        "rms_residual_gb": 0.5985
+      }
+    },
+    "prefers": "linear",
+    "through_origin": true,
+    "n_points": 10
+  },
+  "oom_at_s": null
+}

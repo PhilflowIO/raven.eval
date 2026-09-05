@@ -1,0 +1,75 @@
+{
+  "tier": 3,
+  "not_a_published_number": "Peak allocation is a property of this GPU, driver, torch and NeMo build, not of the model alone. This curve is the evidence for why the v1 AMI cell in BENCHMARKS.md is empty; it is not comparable to any other measurement and must never be quoted as a result.",
+  "measured_at": "2026-09-04T13:48:39Z",
+  "model": {
+    "key": "sortformer-4spk-v1",
+    "model_id": "nvidia/diar_sortformer_4spk-v1",
+    "revision": "9f17b10df44c0a4c8f3c86fbddc9ee2d6ab9ac08",
+    "label": "sortformer-4spk-v1"
+  },
+  "audio_source": "EN2002c.Mix-Headset.wav",
+  "environment": {
+    "device_name": "NVIDIA GeForce RTX 3090",
+    "device_total_gb": 23.559,
+    "device_free_at_start_gb": 15.978,
+    "torch": "2.13.0+cu130",
+    "cuda": "13.0",
+    "nemo": "3.0.0",
+    "driver": "580.173.02",
+    "python": "3.11.15",
+    "host": "philsai"
+  },
+  "resident_after_load_gb": 0.4877,
+  "points": [
+    {
+      "duration_s": 120.0,
+      "peak_allocated_gb": 1.0176,
+      "status": "ok"
+    },
+    {
+      "duration_s": 240.0,
+      "peak_allocated_gb": 2.51,
+      "status": "ok"
+    },
+    {
+      "duration_s": 360.0,
+      "peak_allocated_gb": 4.9454,
+      "status": "ok"
+    },
+    {
+      "duration_s": 480.0,
+      "peak_allocated_gb": 8.3237,
+      "status": "ok"
+    },
+    {
+      "duration_s": 600.0,
+      "peak_allocated_gb": 12.645,
+      "status": "ok"
+    },
+    {
+      "duration_s": 720.0,
+      "peak_allocated_gb": null,
+      "status": "oom",
+      "error": "CUDA out of memory. Tried to allocate 2.41 GiB. GPU 0 has a total capacity of 23.56 GiB of which 395.75 MiB is free. Process 3991 has 7.32 GiB memory in use. Including non-PyTorch memory, this process has 15.84 GiB memory in use. Of the allocated memory 15.50 GiB is allocated by PyTorch, and 34.79 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)"
+    }
+  ],
+  "growth": {
+    "fits": {
+      "linear": {
+        "form": "peak_allocated_gb = a * duration_s**1",
+        "a": 0.01778690909090909,
+        "rms_residual_gb": 1.4425
+      },
+      "quadratic": {
+        "form": "peak_allocated_gb = a * duration_s**2",
+        "a": 3.581250709340597e-05,
+        "rms_residual_gb": 0.3495
+      }
+    },
+    "prefers": "quadratic",
+    "through_origin": true,
+    "n_points": 5
+  },
+  "oom_at_s": 720.0
+}
