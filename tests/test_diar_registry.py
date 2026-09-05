@@ -232,6 +232,106 @@ def test_only_the_streaming_checkpoint_gets_a_streaming_config():
     }
 
 
+def test_latency_presets_match_the_model_card_table():
+    """The four presets are a transcription of NVIDIA's table, not a guess.
+
+    Values verbatim from the ``diar_streaming_sortformer_4spk-v2`` model card,
+    section "Setting up Streaming Configuration" (fetched 2026-09-04), in 80 ms
+    frames. A preset that drifts from this table silently changes what a
+    diagnostic run means, so the table is pinned here.
+    """
+    from raven_diar.adapters.sortformer import LATENCY_PRESETS
+
+    assert LATENCY_PRESETS == {
+        "very-high-latency": {
+            "chunk_len": 340, "chunk_right_context": 40, "fifo_len": 40,
+            "spkcache_update_period": 300, "spkcache_len": 188,
+        },
+        "high-latency": {
+            "chunk_len": 124, "chunk_right_context": 1, "fifo_len": 124,
+            "spkcache_update_period": 124, "spkcache_len": 188,
+        },
+        "low-latency": {
+            "chunk_len": 6, "chunk_right_context": 7, "fifo_len": 188,
+            "spkcache_update_period": 144, "spkcache_len": 188,
+        },
+        "ultra-low-latency": {
+            "chunk_len": 3, "chunk_right_context": 1, "fifo_len": 188,
+            "spkcache_update_period": 144, "spkcache_len": 188,
+        },
+    }
+    # Input-buffer latency is chunk + right context; the ordering the names
+    # claim has to be the ordering the numbers produce.
+    latency = {
+        name: cfg["chunk_len"] + cfg["chunk_right_context"]
+        for name, cfg in LATENCY_PRESETS.items()
+    }
+    assert (latency["very-high-latency"] > latency["high-latency"]
+            > latency["low-latency"] > latency["ultra-low-latency"])
+
+
+def test_the_published_preset_is_the_default_and_is_named_in_run_config():
+    """Every committed v2 row was measured at "very high latency"."""
+    from raven_diar.adapters.sortformer import SortformerDiarizer
+
+    streaming = SortformerDiarizer(
+        model_id="nvidia/diar_streaming_sortformer_4spk-v2", revision="b" * 40
+    )
+    assert streaming.latency_preset == "very-high-latency"
+    assert streaming.run_config["latency_preset"] == "very-high-latency"
+    assert streaming.run_config["streaming_config"]["chunk_len"] == 340
+
+    offline = SortformerDiarizer(
+        model_id="nvidia/diar_sortformer_4spk-v1", revision="a" * 40
+    )
+    assert offline.latency_preset is None
+    assert offline.run_config["streaming_config"] is None
+
+
+def test_env_selects_a_preset_and_the_choice_travels_with_the_run(monkeypatch):
+    """A diagnostic run must be self-describing, or it can be promoted by mistake."""
+    from raven_diar.adapters.sortformer import PRESET_ENV_VAR, SortformerDiarizer
+
+    monkeypatch.setenv(PRESET_ENV_VAR, "low-latency")
+    diarizer = SortformerDiarizer(
+        model_id="nvidia/diar_streaming_sortformer_4spk-v2", revision="b" * 40
+    )
+    assert diarizer.latency_preset == "low-latency"
+    assert diarizer._streaming_config["chunk_len"] == 6
+    assert diarizer.run_config == {
+        "latency_preset": "low-latency",
+        "streaming_config": {
+            "chunk_len": 6, "chunk_right_context": 7, "fifo_len": 188,
+            "spkcache_update_period": 144, "spkcache_len": 188,
+        },
+    }
+    # An explicit argument still wins over the environment.
+    assert SortformerDiarizer(
+        model_id="nvidia/diar_streaming_sortformer_4spk-v2",
+        revision="b" * 40,
+        latency_preset="high-latency",
+    ).latency_preset == "high-latency"
+
+
+def test_a_bad_preset_fails_at_construction_not_as_a_different_der():
+    from raven_diar.adapters.sortformer import SortformerDiarizer
+
+    with pytest.raises(ValueError, match="unknown latency preset"):
+        SortformerDiarizer(
+            model_id="nvidia/diar_streaming_sortformer_4spk-v2",
+            revision="b" * 40,
+            latency_preset="medium-latency",
+        )
+    # v1 has no streaming mode at all — asking for a preset is a mistake, and a
+    # silent no-op would publish a number under a configuration it never had.
+    with pytest.raises(ValueError, match="not a streaming checkpoint"):
+        SortformerDiarizer(
+            model_id="nvidia/diar_sortformer_4spk-v1",
+            revision="a" * 40,
+            latency_preset="low-latency",
+        )
+
+
 def test_streaming_config_is_pushed_into_nemo_and_validated_by_nemo():
     """Prove the knobs land on the model and that NeMo's own check is called."""
     from raven_diar.adapters.sortformer import SortformerDiarizer

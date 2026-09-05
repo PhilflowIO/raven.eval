@@ -155,6 +155,13 @@ def run(
         "n_skipped_no_audio": n_skipped,
         "results": {dataset: score.as_dict()},
     }
+    # Optional, adapter-declared: settings that change WHAT WAS MEASURED but are
+    # not a model or dataset pin — Sortformer's streaming latency preset is the
+    # first. An adapter that has none stays absent from the summary rather than
+    # writing a null, so existing summaries keep their shape.
+    run_config = getattr(diarizer, "run_config", None)
+    if run_config:
+        summary["diarizer_config"] = run_config
     summary_path = out_dir / "summary.json"
     summary_path.write_text(
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
