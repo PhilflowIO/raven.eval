@@ -461,3 +461,46 @@ def test_an_adapter_without_a_run_config_leaves_the_summary_shape_alone(
     """Committed summaries have no such key; hosted adapters must not grow a null."""
     summary = _fake_run(tmp_path, monkeypatch, _StubDiarizer())
     assert "diarizer_config" not in summary
+
+
+def test_the_contract_pins_the_operating_point_of_every_multi_config_model():
+    """A streaming model has one DER per latency setting, so the setting is contract.
+
+    `benchmark.config.yaml` documents publicly what every published number was
+    produced under. Leaving the preset out of it made the contract incomplete in
+    the one way that mattered: on German CALLHOME the same checkpoint reads 8.98
+    at 30.4 s of input-buffer latency and 9.82 at 1.04 s.
+
+    The pin is asserted against the adapter, not merely for presence, so the
+    file and the code cannot drift apart.
+    """
+    import yaml
+
+    from raven_diar.adapters.sortformer import DEFAULT_PRESETS, LATENCY_PRESETS
+
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parent.parent / "benchmark.config.yaml")
+        .read_text(encoding="utf-8")
+    )
+    pinned = config["der"]["model_configuration"]
+
+    for label, entry in pinned.items():
+        spec = KNOWN_DIARIZERS[label]  # a pin for an unknown model is a typo
+        preset = entry["latency_preset"]
+        assert preset in LATENCY_PRESETS, f"{label}: unknown preset {preset!r}"
+        assert DEFAULT_PRESETS[spec.model_id] == preset, (
+            f"{label}: the contract says {preset!r} but the adapter defaults to "
+            f"{DEFAULT_PRESETS[spec.model_id]!r} — one of them is publishing a "
+            f"different number than the page claims"
+        )
+
+    # Every model that HAS a configurable operating point must be pinned; a new
+    # streaming checkpoint must not slip in unpinned.
+    labels_by_model_id = {s.model_id: k for k, s in KNOWN_DIARIZERS.items()}
+    for model_id in DEFAULT_PRESETS:
+        label = labels_by_model_id.get(model_id)
+        if label is not None:
+            assert label in pinned, (
+                f"{label} runs under a latency preset that the public contract "
+                f"does not state"
+            )

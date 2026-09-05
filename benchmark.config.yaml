@@ -31,6 +31,20 @@ der:
     - name: classic         # NIST / CALLHOME convention (Raven's historical value)
       collar: 0.25
       skip_overlap: false
+  # WHICH configuration a model with more than one was measured under. A
+  # streaming diarizer does not have one DER, it has one per latency setting:
+  # on German CALLHOME the same Sortformer v2 checkpoint reads 8.98 at 30.4 s of
+  # input-buffer latency and 9.82 at 1.04 s. That is 0.84 pp — seventeen times
+  # the +-0.05 pp tolerance every number here is reproduced to, and it is the
+  # whole explanation of our disagreement with the ETH benchmark's 9.6. So the
+  # operating point is part of the contract, not a runtime detail.
+  # The effective value is also written into every run's summary.json (and thus
+  # into the artifact), so a run at a non-default setting cannot be promoted as
+  # if it were this one. Presets are named in raven_diar/adapters/sortformer.py
+  # (LATENCY_PRESETS), transcribed from NVIDIA's model card and pinned by test.
+  model_configuration:
+    sortformer-streaming-4spk-v2:
+      latency_preset: very-high-latency   # 30.4 s input buffer, NVIDIA's lowest-DER row
   speaker_mapping: hungarian   # optimal, via scipy.linear_sum_assignment
   vad: automatic               # no oracle VAD, no oracle #speakers, no per-dataset tuning
 
