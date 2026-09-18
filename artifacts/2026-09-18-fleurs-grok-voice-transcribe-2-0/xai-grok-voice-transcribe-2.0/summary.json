@@ -1,0 +1,17 @@
+{
+  "model_id": "grok-voice-transcribe-2.0",
+  "label": "xai-grok-voice-transcribe-2.0",
+  "adapter": "xai",
+  "limit_per_subset": 100,
+  "results": [
+    {
+      "subset": "fleurs",
+      "n_samples": 100,
+      "wer_pct": 4.5879,
+      "wer_filler_tolerant_pct": 4.5899,
+      "cer_pct": 2.5676,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null
+    }
+  ]
+}

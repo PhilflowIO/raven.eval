@@ -1,0 +1,17 @@
+{
+  "model_id": "grok-voice-transcribe-2.0",
+  "label": "xai-grok-voice-transcribe-2.0",
+  "adapter": "xai",
+  "limit_per_subset": 50,
+  "results": [
+    {
+      "subset": "fhnw-all-dialects",
+      "n_samples": 50,
+      "wer_pct": 43.4968,
+      "wer_filler_tolerant_pct": 43.4968,
+      "cer_pct": 22.695,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null
+    }
+  ]
+}

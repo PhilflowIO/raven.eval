@@ -1,0 +1,17 @@
+{
+  "model_id": "grok-voice-transcribe-2.0",
+  "label": "xai-grok-voice-transcribe-2.0",
+  "adapter": "xai",
+  "limit_per_subset": 100,
+  "results": [
+    {
+      "subset": "voxpopuli-de",
+      "n_samples": 100,
+      "wer_pct": 12.6761,
+      "wer_filler_tolerant_pct": 12.3824,
+      "cer_pct": 8.3948,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null
+    }
+  ]
+}

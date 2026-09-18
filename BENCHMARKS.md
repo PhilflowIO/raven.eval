@@ -122,6 +122,7 @@ end-to-end; they are self-consistent fixtures, **not** Raven product numbers.
 | id | source | config / split | license |
 |----|--------|----------------|---------|
 | `german-mixed` | `flozi00/asr-german-mixed-evals` | subsets `Tuda-De`, `common_voice_19_0`, `multilingual_librispeech` | CC-BY-4.0 / CC0 per subset (attribution in `/NOTICE`) |
+| `avemio-german-mixed-test` | `avemio/ASR-GERMAN-MIXED-TEST` | `test` (Common Voice + MLS German, one split) | CC-BY-4.0, strictest component (attribution in `/NOTICE`) |
 | `fleurs` | `google/fleurs` | `de_de` / `test` | CC-BY-4.0 |
 | `mls-de` | `facebook/multilingual_librispeech` | `german` / `test` | CC-BY-4.0 |
 | `voxpopuli-de` | `facebook/voxpopuli` | `de` / `test` | CC0-1.0 |
@@ -167,6 +168,29 @@ WER. CER is on raw text.
 | primeline/parakeet-primeline | Tuda-De | 4.02 | 2.75 | 414 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 |
 | primeline/parakeet-primeline | multilingual_librispeech | 3.04 | 1.90 | 3996 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 |
 | primeline/parakeet-primeline | common_voice_19_0 | 2.58 | 0.85 | 5389 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 |
+| xai/grok-voice-transcribe-2.0 | avemio-german-mixed-test | 6.87 | 3.85 | 100 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | fleurs | 4.59 | 2.57 | 100 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | mls-de | 8.37 | 10.53 | 100 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | voxpopuli-de | 12.68 | 8.39 | 100 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | spc-test | 41.08 | 23.85 | 50 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | fhnw-all-dialects | 43.50 | 22.70 | 50 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+
+**xAI Grok Voice Transcribe 2.0** (hosted, us-east-1, `language=de`, `format=true`,
+2026-09-18) was run on exactly the samples the Raven benchmark page compares every
+provider on: the first 100 rows of `avemio-german-mixed-test`, `fleurs`, `mls-de`
+and `voxpopuli-de`, the first 50 of `spc-test` and `fhnw-all-dialects`. That the
+loaders here yield those same rows was checked reference by reference before the
+run. 500 of 500 utterances returned; 1.50 h of audio, USD 0.15 at the listed
+USD 0.10 per hour. Each artifact also commits `wer_strict_de_pct` — the page's
+strict-de, length-weighted lens (`raven_eval_core.corpus_wer_strict_de_pct`),
+re-scored by `make verify` like the published number — so the page's value is
+computed here and not only next to it: 6.62 / 5.19 / 8.44 / 12.36 % on the four
+read-aloud sets. The two Swiss sets are translation-shaped, so their headline is
+BLEU (43.42 on `spc-test`, 40.65 on `fhnw-all-dialects`, signature in each
+`expected.json`) and the WER beside it is a floor. On `mls-de` the model sometimes
+appends the audiobook's spoken section marker ("Ende von Abschnitt eins"), which
+the reference omits; those are counted as insertions, which is why CER exceeds WER
+there.
 
 Re-score any row with `make verify` (Tier-1, no GPU) — it recomputes these from
 the committed `predictions_*.jsonl` and asserts they match within ±0.05 pp.

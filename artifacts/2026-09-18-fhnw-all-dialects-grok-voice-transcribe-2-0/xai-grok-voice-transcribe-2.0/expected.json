@@ -1,0 +1,9 @@
+{
+  "fhnw-all-dialects": {
+    "wer_pct": 43.4968,
+    "cer_pct": 22.695,
+    "wer_strict_de_pct": 44.3038,
+    "bleu": 40.6541,
+    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0"
+  }
+}
