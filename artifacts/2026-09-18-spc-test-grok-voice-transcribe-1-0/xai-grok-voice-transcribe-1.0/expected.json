@@ -1,0 +1,9 @@
+{
+  "spc-test": {
+    "wer_pct": 49.3776,
+    "cer_pct": 27.0138,
+    "wer_strict_de_pct": 49.863,
+    "bleu": 34.1309,
+    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0"
+  }
+}

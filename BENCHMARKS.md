@@ -174,6 +174,12 @@ WER. CER is on raw text.
 | xai/grok-voice-transcribe-2.0 | voxpopuli-de | 12.68 | 8.39 | 100 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
 | xai/grok-voice-transcribe-2.0 | spc-test | 41.08 | 23.85 | 50 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
 | xai/grok-voice-transcribe-2.0 | fhnw-all-dialects | 43.50 | 22.70 | 50 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-1.0 | avemio-german-mixed-test | 7.21 | 4.41 | 100 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | fleurs | 6.75 | 9.49 | 100 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | mls-de | 8.22 | 10.45 | 100 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | voxpopuli-de | 11.01 | 7.14 | 100 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | spc-test | 49.38 | 27.01 | 50 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | fhnw-all-dialects | 38.81 | 22.16 | 50 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
 
 **xAI Grok Voice Transcribe 2.0** (hosted, us-east-1, `language=de`, `format=true`,
 2026-09-18) was run on exactly the samples the Raven benchmark page compares every
@@ -191,6 +197,15 @@ BLEU (43.42 on `spc-test`, 40.65 on `fhnw-all-dialects`, signature in each
 appends the audiobook's spoken section marker ("Ende von Abschnitt eins"), which
 the reference omits; those are counted as insertions, which is why CER exceeds WER
 there.
+
+Its predecessor **Grok Voice Transcribe 1.0** ran on the same samples with the
+same settings (500 of 500, 1.50 h, USD 0.15): strict-de 6.84 / 7.51 / 8.55 /
+11.16 %, BLEU 34.13 (`spc-test`) and 37.10 (`fhnw-all-dialects`). The generation
+step is not uniform: 2.0 is clearly better on FLEURS (5.19 against 7.51) and on
+both Swiss BLEU scores, level on MLS, and worse on VoxPopuli plenary speech
+(12.36 against 11.16). 1.0 returns mostly lower-case text without punctuation,
+which is why its raw-text CER sits above its WER on `fleurs` and `mls-de`; the
+normalised lenses are unaffected.
 
 Re-score any row with `make verify` (Tier-1, no GPU) — it recomputes these from
 the committed `predictions_*.jsonl` and asserts they match within ±0.05 pp.

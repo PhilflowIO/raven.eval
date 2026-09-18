@@ -1,0 +1,17 @@
+{
+  "model_id": "grok-voice-transcribe-1.0",
+  "label": "xai-grok-voice-transcribe-1.0",
+  "adapter": "xai",
+  "limit_per_subset": 100,
+  "results": [
+    {
+      "subset": "mls-de",
+      "n_samples": 100,
+      "wer_pct": 8.2212,
+      "wer_filler_tolerant_pct": 8.2366,
+      "cer_pct": 10.4521,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null
+    }
+  ]
+}
