@@ -39,6 +39,8 @@ DEFAULT_CONCURRENCY: dict[str, int] = {
     "voxtral_mistral": 8,
     "deepgram": 20,
     "openai_whisper": 3,
+    # xAI documents 10 requests/s for REST STT; 8 in flight stays under it.
+    "xai": 8,
 }
 
 
@@ -81,6 +83,13 @@ def _make_adapter(spec: ModelSpec) -> ASRAdapter:
     if spec.adapter == "openai_whisper":
         from .adapters.openai_whisper import OpenAIWhisperAdapter
         return OpenAIWhisperAdapter(provider_id=spec.label, model_id=spec.model_id)
+    if spec.adapter == "xai":
+        from .adapters.xai import XaiSttAdapter
+        return XaiSttAdapter(
+            provider_id=spec.label,
+            model_id=spec.model_id,
+            api_key_env=spec.api_key_env or "XAI_API_KEY",
+        )
     if spec.adapter == "modal_app":
         from .adapters.modal_app import ModalAppAdapter
         app_name = MODAL_APP_NAMES.get(spec.label)

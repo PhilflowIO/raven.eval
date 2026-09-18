@@ -432,6 +432,14 @@ KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
         base_url_env="VLLM_BENCH_URL",
         api_key_env="VLLM_BENCH_API_KEY",
     ),
+    # xAI Grok Voice Transcribe — hosted, us-east-1, USD 0.10 per audio hour on
+    # the REST endpoint (docs.x.ai/developers/models/speech-to-text, 2026-09-18).
+    "xai/grok-voice-transcribe-2.0": ModelSpec(
+        model_id="grok-voice-transcribe-2.0",
+        adapter="xai",
+        label="xai-grok-voice-transcribe-2.0",
+        api_key_env="XAI_API_KEY",
+    ),
     # Modal-hosted STT apps. Each must expose a parameterized
     # `transcribe(audio_bytes, sr)` function.
     "modal/parakeet": ModelSpec(
