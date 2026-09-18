@@ -52,6 +52,7 @@ from .flozi_wer import (
 from .wer import (
     WerResult,
     compute_wer,
+    corpus_wer_strict_de_pct,
     normalize_permissive,
     normalize_strict_de,
     normalize_verbatim,
@@ -80,6 +81,8 @@ __all__ = [
     "corpus_wer_pct",
     "corpus_cer_pct",
     "corpus_wer_filler_tolerant_pct",
+    # strict-de lens, length-weighted — the Raven benchmark page's dataset rule
+    "corpus_wer_strict_de_pct",
     "evaluate",
     "FloziWerResult",
     # DER

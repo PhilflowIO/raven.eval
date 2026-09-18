@@ -9,6 +9,7 @@ import pytest
 
 from raven_eval_core import (
     compute_wer,
+    corpus_wer_strict_de_pct,
     normalize_permissive,
     normalize_strict_de,
     normalize_verbatim,
@@ -123,3 +124,28 @@ def test_generic_speaker_tags_still_stripped_by_default():
     # Generic (non-name) bracketed tags remain stripped without any config.
     assert normalize_strict_de("[Sprecher0] hallo welt") == "hallo welt"
     assert normalize_strict_de("[speaker 1] hallo welt") == "hallo welt"
+
+
+# --- corpus strict-de (the benchmark page's dataset rule) --------------------
+
+
+def test_corpus_strict_de_weights_by_reference_length():
+    # 1 wrong word in 4 + 0 wrong in 1: length-weighted = 1/5, not mean(0.25, 0)
+    refs = ["eins zwei drei vier", "hallo"]
+    hyps = ["eins zwei drei fünf", "hallo"]
+    assert corpus_wer_strict_de_pct(refs, hyps) == pytest.approx(20.0)
+
+
+def test_corpus_strict_de_counts_an_empty_hypothesis_as_all_wrong():
+    # compute_wer reports zero edit counts for an empty hypothesis; the corpus
+    # rule must still score it as a full miss, not as a perfect transcript.
+    assert corpus_wer_strict_de_pct(["guten tag"], [""]) == pytest.approx(100.0)
+
+
+def test_corpus_strict_de_skips_references_without_words():
+    assert corpus_wer_strict_de_pct(["...", "guten tag"], ["", "guten tag"]) == 0.0
+
+
+def test_corpus_strict_de_refuses_an_unscorable_corpus():
+    with pytest.raises(ValueError):
+        corpus_wer_strict_de_pct(["..."], ["x"])
