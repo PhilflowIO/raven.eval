@@ -9,7 +9,7 @@ import logging
 import re
 import sys
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from tqdm import tqdm
@@ -48,6 +48,13 @@ class _RunResult:
     references: list[str]
     predictions: list[str]
     latencies: list[float]
+    # Per-sample identity and audio length, parallel to the lists above. The id
+    # ties a prediction line to one utterance of the upstream split (so a reader
+    # can see which samples failed, and a downstream table can join on it); the
+    # duration is what turns latency into RTFx and a per-minute price into a
+    # cost. Both are properties of the input, not of the model.
+    sample_ids: list[str] = field(default_factory=list)
+    durations_s: list[float] = field(default_factory=list)
 
 
 def _make_adapter(spec: ModelSpec) -> ASRAdapter:
@@ -136,11 +143,12 @@ async def run_subset_async(
     semaphore = asyncio.Semaphore(concurrency)
     pbar = tqdm(total=len(samples), desc=f"{adapter.provider_id}/{subset}", unit="clip")
 
-    async def _one(sample: Sample) -> tuple[str, str, float] | None:
+    async def _one(sample: Sample) -> tuple[str, str, float, str, float] | None:
         async with semaphore:
             try:
                 r = await adapter.atranscribe(sample.audio, sample.sample_rate)
-                return (sample.reference, r.text, r.latency_s)
+                duration_s = len(sample.audio) / float(sample.sample_rate)
+                return (sample.reference, r.text, r.latency_s, sample.sample_id, duration_s)
             except Exception:
                 logger.exception("transcribe failed on sample %s", sample.sample_id)
                 return None
@@ -154,12 +162,14 @@ async def run_subset_async(
     pairs = [r for r in results if r is not None]
     if not pairs:
         return _RunResult(subset=subset, references=[], predictions=[], latencies=[])
-    refs_t, preds_t, lats_t = zip(*pairs, strict=False)
+    refs_t, preds_t, lats_t, ids_t, durs_t = zip(*pairs, strict=False)
     return _RunResult(
         subset=subset,
         references=list(refs_t),
         predictions=list(preds_t),
         latencies=list(lats_t),
+        sample_ids=list(ids_t),
+        durations_s=list(durs_t),
     )
 
 
@@ -291,19 +301,25 @@ async def run_async(
         # without re-running the bench (ADR-KV-024 §3 "persistence gap").
         predictions_path = out_dir / f"predictions_{_safe(subset)}.jsonl"
         with predictions_path.open("w", encoding="utf-8") as fh:
-            for ref, pred, lat in zip(
+            n = len(run_result.references)
+            ids = run_result.sample_ids or [None] * n
+            durs = run_result.durations_s or [None] * n
+            for ref, pred, lat, sid, dur in zip(
                 run_result.references,
                 run_result.predictions,
                 run_result.latencies,
+                ids,
+                durs,
                 strict=True,
             ):
-                fh.write(
-                    json.dumps(
-                        {"reference": ref, "prediction": pred, "latency_s": lat},
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
+                line: dict[str, object] = {
+                    "reference": ref, "prediction": pred, "latency_s": lat,
+                }
+                if sid is not None:
+                    line["sample_id"] = sid
+                if dur is not None:
+                    line["duration_s"] = round(dur, 6)
+                fh.write(json.dumps(line, ensure_ascii=False) + "\n")
         marker.write_text(json.dumps(asdict(entry)), encoding="utf-8")
         # Roll outputs after every subset so a crash leaves usable artefacts.
         _write_outputs(out_dir, spec, entries, limit)
