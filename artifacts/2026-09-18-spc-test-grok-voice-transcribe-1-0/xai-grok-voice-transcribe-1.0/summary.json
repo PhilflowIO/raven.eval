@@ -1,0 +1,17 @@
+{
+  "model_id": "grok-voice-transcribe-1.0",
+  "label": "xai-grok-voice-transcribe-1.0",
+  "adapter": "xai",
+  "limit_per_subset": 50,
+  "results": [
+    {
+      "subset": "spc-test",
+      "n_samples": 50,
+      "wer_pct": 49.3776,
+      "wer_filler_tolerant_pct": 49.3776,
+      "cer_pct": 27.0138,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null
+    }
+  ]
+}

@@ -440,6 +440,14 @@ KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
         label="xai-grok-voice-transcribe-2.0",
         api_key_env="XAI_API_KEY",
     ),
+    # The predecessor, and xAI's default when `model` is omitted — measured on the
+    # same samples so the generation step is a number, not a release note.
+    "xai/grok-voice-transcribe-1.0": ModelSpec(
+        model_id="grok-voice-transcribe-1.0",
+        adapter="xai",
+        label="xai-grok-voice-transcribe-1.0",
+        api_key_env="XAI_API_KEY",
+    ),
     # Modal-hosted STT apps. Each must expose a parameterized
     # `transcribe(audio_bytes, sr)` function.
     "modal/parakeet": ModelSpec(
