@@ -61,6 +61,23 @@ hash/id and regenerating the text from source at re-score time (the escape hatch
 below), rather than continuing to redistribute it.
 
 --------------------------------------------------------------------------------
+avemio German mixed test (avemio/ASR-GERMAN-MIXED-TEST — WER)
+--------------------------------------------------------------------------------
+Reference transcripts for the `avemio-german-mixed-test` dataset come from the
+test split of flozi00/asr-german-mixed as re-uploaded by avemio: re-transcribed
+Common Voice (CC0-1.0) and Multilingual LibriSpeech German (CC-BY-4.0).
+
+  Treated as CC-BY-4.0, the strictest component license — the card declares no
+  single SPDX tag and asks users to respect the component licenses.
+  Attribution (as the card requests): primeline and flozi00.
+  Source:
+    https://huggingface.co/datasets/avemio/ASR-GERMAN-MIXED-TEST
+
+Any committed `predictions_*.jsonl` for this dataset contains CC-BY-4.0 reference
+text and is redistributed under those terms with this attribution. The audio is
+fetched from Hugging Face by the reproducer; never redistributed here.
+
+--------------------------------------------------------------------------------
 FLEURS (google/fleurs, config de_de — WER)
 --------------------------------------------------------------------------------
 Reference transcripts for the `fleurs` dataset derive from FLEURS, the speech
