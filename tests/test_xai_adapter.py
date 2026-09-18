@@ -69,10 +69,13 @@ def test_missing_key_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
         XaiSttAdapter()
 
 
-def test_registry_builds_the_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("version", ["2.0", "1.0"])
+def test_registry_builds_the_adapter(
+    monkeypatch: pytest.MonkeyPatch, version: str
+) -> None:
     monkeypatch.setenv("XAI_API_KEY", "xai-test")
-    spec = KNOWN_MODELS["xai/grok-voice-transcribe-2.0"]
+    spec = KNOWN_MODELS[f"xai/grok-voice-transcribe-{version}"]
     adapter = runner._make_adapter(spec)
     assert isinstance(adapter, XaiSttAdapter)
-    assert adapter.model_id == "grok-voice-transcribe-2.0"
+    assert adapter.model_id == f"grok-voice-transcribe-{version}"
     assert adapter.provider_id == spec.label
