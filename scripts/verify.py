@@ -66,6 +66,7 @@ from pathlib import Path
 from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
 from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
+from raven_eval_core.wer import corpus_wer_strict_de_pct
 from raven_eval_core.flozi_wer import normalize_flozi as normalize_text
 
 # Abs-diff tolerance on wer_pct / cer_pct. 0.05 pp absorbs float/lib jitter
@@ -211,6 +212,21 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
                    "wer": wer_pct, "cer": cer_pct,
                    "exp_wer": float(exp["wer_pct"]),
                    "exp_cer": float(exp["cer_pct"])}
+
+            # strict-de is opt-in per subset, like BLEU: artifacts promoted before
+            # the key existed carry only the flozi-strict number and are not
+            # failed for lacking it.
+            if "wer_strict_de_pct" in exp:
+                refs_sd, hyps_sd = read_pairs(pred_path)
+                wer_sd = corpus_wer_strict_de_pct(refs_sd, hyps_sd)
+                exp_sd = float(exp["wer_strict_de_pct"])
+                row["wer_strict_de"] = wer_sd
+                row["exp_wer_strict_de"] = exp_sd
+                if abs(wer_sd - exp_sd) > TOLERANCE_PCT:
+                    detail = (detail + " " if detail else "") + (
+                        f"Δwer_strict_de={wer_sd - exp_sd:+.3f} (tol {TOLERANCE_PCT})"
+                    )
+                    ok = False
 
             # BLEU is opt-in per subset: the key is present only where the corpus
             # is translation-shaped. Absent -> not scored, and not failed for it.

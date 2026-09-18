@@ -21,6 +21,9 @@ from typing import Final
 WER_LOADERS: Final[dict[str, str]] = {
     "german-mixed": "flozi_mixed_evals:FloziMixedEvalsLoader",
     "fleurs": "fleurs_de:FleursDeLoader",
+    # The corpus behind the benchmark page's "avemio" column. Not the same rows
+    # as german-mixed above — a separate repo with its own order and references.
+    "avemio-german-mixed-test": "avemio_german_mixed_test:AvemioGermanMixedTestLoader",
     "mls-de": "mls_german:MlsGermanLoader",
     "voxpopuli-de": "voxpopuli_de:VoxPopuliDeLoader",
     # Swiss German dialect corpora — translation-shaped (Swiss German audio,

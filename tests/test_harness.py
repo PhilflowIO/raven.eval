@@ -137,11 +137,24 @@ def test_promote_then_verify_round_trips(
     expected = json.loads((dest / "expected.json").read_text())
     assert "Tuda-De" in expected
     assert expected["Tuda-De"]["wer_pct"] == 0.0
+    # the page lens is committed next to the published one, scored from the predictions
+    assert expected["Tuda-De"]["wer_strict_de_pct"] == 0.0
+
+    # every prediction line names its utterance and carries its audio length
+    lines = [json.loads(x) for x in (dest / "predictions_Tuda-De.jsonl").read_text().splitlines()]
+    assert all("sample_id" in x and x["duration_s"] > 0 for x in lines)
 
     verify = _load_verify()
     all_ok, rows = verify.verify(artifacts)
     assert rows
     assert all_ok, f"promoted artifact failed re-score: {rows}"
+
+    # a hand-edited page number is caught like a hand-edited published one
+    expected["Tuda-De"]["wer_strict_de_pct"] = 5.0
+    (dest / "expected.json").write_text(json.dumps(expected))
+    tampered_ok, tampered_rows = verify.verify(artifacts)
+    assert not tampered_ok
+    assert any("wer_strict_de" in r.get("detail", "") for r in tampered_rows)
 
 
 def _capture_vllm_adapter(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
@@ -219,3 +232,50 @@ def test_promote_refuses_empty_results(tmp_path: Path) -> None:
     empty.mkdir()
     with pytest.raises(FileNotFoundError):
         promote_mod.promote(empty, tmp_path / "artifacts", run_name="x")
+
+
+def test_promote_scores_bleu_on_a_translation_shaped_dataset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bleu+wer corpus gets its headline BLEU at promote time, and verify holds it."""
+    samples, registry = _make_samples(
+        "spc-test", ["das ist heute ein guter tag", "wir gehen morgen früh nach hause"]
+    )
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_FakeLoader(samples), "spc-test"),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+
+    results_dir = tmp_path / "results" / "primeline-whisper-large-v3-german"
+    runner.run(
+        model_key="primeline/whisper-large-v3-german",
+        subsets=["spc-test"],
+        limit=None,
+        out_dir=results_dir,
+    )
+    artifacts = tmp_path / "artifacts"
+    dest = promote_mod.promote(results_dir, artifacts, run_name="bleurun")
+
+    exp = json.loads((dest / "expected.json").read_text())["spc-test"]
+    assert exp["bleu"] == 100.0
+    assert exp["bleu_signature"].startswith("nrefs:1|")
+
+    all_ok, rows = _load_verify().verify(artifacts)
+    assert all_ok, rows
+
+
+def test_promote_leaves_bleu_off_a_dictation_dataset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    samples, registry = _make_samples("fleurs", ["hallo welt"])
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_FakeLoader(samples), "fleurs"),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    results_dir = tmp_path / "results" / "m"
+    runner.run(model_key="primeline/whisper-large-v3-german", subsets=["fleurs"],
+               limit=None, out_dir=results_dir)
+    dest = promote_mod.promote(results_dir, tmp_path / "artifacts", run_name="r")
+    assert "bleu" not in json.loads((dest / "expected.json").read_text())["fleurs"]

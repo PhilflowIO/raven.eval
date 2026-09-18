@@ -201,3 +201,31 @@ def compute_wer(
         ref_word_count=ref_word_count,
         ier=ier,
     )
+
+
+def corpus_wer_strict_de_pct(
+    references: Iterable[str], hypotheses: Iterable[str]
+) -> float:
+    """Corpus WER (%) under the strict-de lens, weighted by reference length.
+
+    ``Σ(wer_strict · ref_word_count) / Σ ref_word_count`` over the pairs whose
+    strict-normalized reference has at least one word. This is the rule the Raven
+    benchmark page aggregates a dataset by, stated here so the page number is
+    computed by this repo rather than only next to it.
+
+    Deliberately NOT ``Σ(sub + del + ins) / Σ ref_word_count``: for an empty
+    hypothesis ``compute_wer`` reports ``wer_strict = 1.0`` but zero edit
+    counts, so the edit-count form would score a model that returns nothing as
+    perfect on that utterance.
+    """
+    num = 0.0
+    den = 0
+    for ref, hyp in zip(references, hypotheses, strict=True):
+        r = compute_wer(ref, hyp)
+        if r.ref_word_count <= 0:
+            continue
+        num += r.wer_strict * r.ref_word_count
+        den += r.ref_word_count
+    if den == 0:
+        raise ValueError("no pair with a non-empty strict-de reference to score")
+    return 100.0 * num / den

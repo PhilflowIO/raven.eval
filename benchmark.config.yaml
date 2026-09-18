@@ -151,6 +151,9 @@ datasets:
     - id: voxconverse-test   # same corpus, TEST split — the split pyannote publishes its DER on
       license: CC-BY-4.0 (labels)
   wer:
+    - id: avemio-german-mixed-test   # avemio re-upload of the flozi00/asr-german-mixed TEST split (CV + MLS German)
+      hf: avemio/ASR-GERMAN-MIXED-TEST
+      license: CC-BY-4.0 (strictest component; CV CC0 + MLS CC-BY-4.0)
     - id: fleurs             # google/fleurs config de_de, split test — read parallel sentences
       hf: google/fleurs
       config: de_de

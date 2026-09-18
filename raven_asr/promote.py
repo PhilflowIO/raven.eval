@@ -6,7 +6,8 @@ layout ``scripts/verify.py`` re-scores:
 
     artifacts/<run-name>/<label>/
         predictions_<subset>.jsonl   (copied verbatim — the per-utterance model output)
-        expected.json                ({subset: {wer_pct, cer_pct}} from summary.json)
+        expected.json                ({subset: {wer_pct, cer_pct}} from summary.json,
+                                      plus wer_strict_de_pct scored from the predictions)
 
 Once committed, ``make verify`` re-computes the corpus WER/CER from the copied
 predictions with the SAME core scorer that produced ``summary.json`` and asserts
@@ -52,6 +53,73 @@ def _expected_from_summary(summary: dict) -> dict[str, dict[str, float]]:
     return expected
 
 
+def _read_pairs(path: Path) -> tuple[list[str], list[str]]:
+    refs: list[str] = []
+    preds: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if raw.strip():
+            row = json.loads(raw)
+            refs.append(row["reference"])
+            preds.append(row["prediction"])
+    return refs, preds
+
+
+def _add_bleu(expected: dict[str, dict], preds: list[Path]) -> None:
+    """Attach corpus BLEU + its signature to every translation-shaped subset.
+
+    ``benchmark.config.yaml`` makes BLEU the headline for a ``bleu+wer`` corpus
+    (spoken dialect, Standard German reference). The verifier already re-scores
+    a committed ``bleu`` key; this is where a real run gets one, from the
+    dataset's declared metric rather than from a flag the caller could forget.
+    Scored on raw text, exactly as ``scripts/verify.py`` re-scores it.
+    """
+    from raven_asr.config import WER_DATASETS, resolve_wer_dataset
+    from raven_eval_core import bleu_signature, corpus_bleu_score
+
+    for path in preds:
+        subset = _subset_for(path, expected)
+        if subset is None:
+            continue
+        try:
+            dataset_id, _ = resolve_wer_dataset(subset)
+        except KeyError:
+            continue
+        if WER_DATASETS[dataset_id].metric != "bleu+wer":
+            continue
+        refs, hyps = _read_pairs(path)
+        expected[subset]["bleu"] = round(corpus_bleu_score(refs, hyps), 4)
+        expected[subset]["bleu_signature"] = bleu_signature()
+
+
+def _subset_for(path: Path, expected: dict) -> str | None:
+    # Same filename rule as raven_asr.runner._safe (not imported: the runner
+    # pulls numpy/tqdm, and promote must stay light).
+    for s in expected:
+        if path.name == f"predictions_{re.sub(r'[^A-Za-z0-9._-]+', '_', s)}.jsonl":
+            return s
+    return None
+
+
+def _add_strict_de(expected: dict[str, dict[str, float]], preds: list[Path]) -> None:
+    """Attach the strict-de corpus WER to every subset that has predictions.
+
+    The published ``wer_pct`` is flozi-strict; the Raven benchmark page reads
+    strict-de, length-weighted (``raven_eval_core.corpus_wer_strict_de_pct``).
+    Committing both lets ``make verify`` defend the page number too, instead of
+    the page computing it from these predictions on its own.
+    """
+    from raven_eval_core import corpus_wer_strict_de_pct
+
+    for path in preds:
+        subset = _subset_for(path, expected)
+        if subset is None:
+            continue
+        refs, hyps = _read_pairs(path)
+        expected[subset]["wer_strict_de_pct"] = round(
+            corpus_wer_strict_de_pct(refs, hyps), 4
+        )
+
+
 def promote(
     results_dir: Path,
     artifacts_dir: Path,
@@ -77,6 +145,8 @@ def promote(
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     expected = _expected_from_summary(summary)
+    _add_strict_de(expected, preds)
+    _add_bleu(expected, preds)
     if not expected:
         raise ValueError(f"summary.json in {results_dir} has no results to promote")
 

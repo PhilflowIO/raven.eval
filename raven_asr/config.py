@@ -126,6 +126,24 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         durability="hf",
         notes="single train split; subsets selected by the `from` column.",
     ),
+    # avemio re-upload of the flozi00/asr-german-mixed TEST split — Common Voice
+    # + MLS German interleaved in one split. Distinct from `german-mixed` above
+    # (different repo, row order and references); it is the corpus the benchmark
+    # page's "avemio" column is measured on, first N rows in split order.
+    "avemio-german-mixed-test": WerDatasetSpec(
+        id="avemio-german-mixed-test",
+        loader="avemio_german_mixed_test",
+        license="CC-BY-4.0 (strictest of Common Voice CC0 + MLS CC-BY-4.0; card carries no SPDX tag)",
+        source="avemio/ASR-GERMAN-MIXED-TEST",
+        # The repo's last commit (2025-01-07). The page's numbers were measured at
+        # an unpinned HEAD that already was this commit, so pinning it claims
+        # nothing the published rows do not carry.
+        revision="17bcbc196567bca7eae3e94942588b5678fd748e",
+        subsets=("avemio-german-mixed-test",),
+        durability="hf",
+        stream_by_default=True,
+        notes="single test split, no config; reference column `transkription`.",
+    ),
     # FLEURS — read parallel sentences, the speech side of FLoRes.
     "fleurs": WerDatasetSpec(
         id="fleurs",
@@ -413,6 +431,14 @@ KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
         label="phi-4-multimodal",
         base_url_env="VLLM_BENCH_URL",
         api_key_env="VLLM_BENCH_API_KEY",
+    ),
+    # xAI Grok Voice Transcribe — hosted, us-east-1, USD 0.10 per audio hour on
+    # the REST endpoint (docs.x.ai/developers/models/speech-to-text, 2026-09-18).
+    "xai/grok-voice-transcribe-2.0": ModelSpec(
+        model_id="grok-voice-transcribe-2.0",
+        adapter="xai",
+        label="xai-grok-voice-transcribe-2.0",
+        api_key_env="XAI_API_KEY",
     ),
     # Modal-hosted STT apps. Each must expose a parameterized
     # `transcribe(audio_bytes, sr)` function.
