@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import statistics
 import sys
 from collections.abc import Iterable, Sequence
@@ -48,6 +47,14 @@ from pathlib import Path
 from pyannote.core import Annotation, Segment, Timeline
 from pyannote.metrics.diarization import DiarizationErrorRate
 
+from raven_eval_core.bootstrap import (
+    Interval,
+    Unit,
+    bootstrap_ratio_ci,
+    pair_by_id,
+    paired_bootstrap_ratio_delta,
+    ratio_pct,
+)
 from raven_eval_core.der import DiarSegment, load_rttm
 
 from .config import (
@@ -72,27 +79,10 @@ SHORT_SEGMENT_S: float = 0.5
 
 
 # ── confidence intervals (#5452) ──────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class Interval:
-    """A point estimate with a percentile bootstrap interval, all in percent."""
-
-    point: float
-    lo: float
-    hi: float
-    n: int
-    resamples: int
-    seed: int
-
-    @property
-    def half_width(self) -> float:
-        """Half the interval width — the ± a headline number should carry."""
-        return (self.hi - self.lo) / 2.0
-
-    def format(self) -> str:
-        return (f"{self.point:.3f} [{self.lo:.3f}, {self.hi:.3f}] "
-                f"(±{self.half_width:.3f}, n={self.n})")
+#
+# The resampler itself lives in raven_eval_core.bootstrap and is shared with WER;
+# what is DER-specific is only the sampling unit (a file) and what it contributes
+# (error seconds, scored reference seconds) under one collar.
 
 
 def _collar_fields(collar_name: str) -> tuple[str, str, str, str]:
@@ -104,13 +94,11 @@ def _collar_fields(collar_name: str) -> tuple[str, str, str, str]:
             f"total_{suffix}_s")
 
 
-def _err_total(rows: Sequence[FileScore], collar_name: str) -> tuple[float, float]:
-    """(Σ error seconds, Σ scored reference seconds) over ``rows``."""
+def _unit(row: FileScore, collar_name: str) -> Unit:
+    """(error seconds, scored reference seconds) of one file."""
     miss_f, fa_f, conf_f, total_f = _collar_fields(collar_name)
-    err = sum(getattr(r, miss_f) + getattr(r, fa_f) + getattr(r, conf_f)
-              for r in rows)
-    total = sum(getattr(r, total_f) for r in rows)
-    return err, total
+    return (getattr(row, miss_f) + getattr(row, fa_f) + getattr(row, conf_f),
+            getattr(row, total_f))
 
 
 def aggregate_der(rows: Sequence[FileScore], collar_name: str = "classic") -> float:
@@ -120,10 +108,7 @@ def aggregate_der(rows: Sequence[FileScore], collar_name: str = "classic") -> fl
     and the published corpus figure are all ``Σerr/Σtotal`` over their rows, so a
     bucket number and the headline number are the same kind of quantity.
     """
-    err, total = _err_total(rows, collar_name)
-    if total <= 0.0:
-        return 0.0
-    return err / total * 100.0
+    return ratio_pct([_unit(r, collar_name) for r in rows])
 
 
 def bootstrap_der_ci(
@@ -144,23 +129,11 @@ def bootstrap_der_ci(
 
     Each resample re-aggregates ``Σerr/Σtotal`` rather than averaging file DERs,
     so the resampled quantity is the estimator we publish and not a cousin of it.
+    Files with no scored reference speech carry no information and are left out.
     """
-    scored = [r for r in rows if getattr(r, _collar_fields(collar_name)[3]) > 0.0]
-    point = aggregate_der(scored, collar_name)
-    n = len(scored)
-    if n < 2:
-        return Interval(point=point, lo=point, hi=point, n=n,
-                        resamples=0, seed=seed)
-    rng = random.Random(seed)
-    draws: list[float] = []
-    for _ in range(resamples):
-        sample = [scored[rng.randrange(n)] for _ in range(n)]
-        draws.append(aggregate_der(sample, collar_name))
-    draws.sort()
-    tail = (1.0 - confidence) / 2.0
-    lo = draws[int(tail * (resamples - 1))]
-    hi = draws[int((1.0 - tail) * (resamples - 1))]
-    return Interval(point=point, lo=lo, hi=hi, n=n, resamples=resamples, seed=seed)
+    units = [u for u in (_unit(r, collar_name) for r in rows) if u[1] > 0.0]
+    return bootstrap_ratio_ci(units, resamples=resamples, seed=seed,
+                              confidence=confidence)
 
 
 def paired_bootstrap_delta(
@@ -172,7 +145,7 @@ def paired_bootstrap_delta(
     seed: int = DEFAULT_SEED,
     confidence: float = BOOTSTRAP_CONFIDENCE,
 ) -> Interval:
-    """Interval on ``DER(a) - DER(b)`` over the files both models scored.
+    """Interval on ``DER(a) - DER(b)`` over the same files.
 
     Paired: one resample draws a set of *files* and scores both models on that
     same set, so file difficulty cancels and the interval is about the models.
@@ -180,33 +153,18 @@ def paired_bootstrap_delta(
     an interval spanning zero means the ranking is a coin flip on this corpus,
     however many decimals separate the two point estimates.
 
-    Rows are matched by ``file_id``; files present for only one model are dropped
-    (an unpaired file cannot inform a paired comparison).
+    Rows are matched by ``file_id``. A file only one model has raises
+    :class:`~raven_eval_core.bootstrap.UnpairedUnitsError` instead of being
+    dropped: the comparison would otherwise be about a smaller corpus than
+    either published number, without saying so.
     """
-    by_id_b = {r.file_id: r for r in rows_b}
-    pairs = [(a, by_id_b[a.file_id]) for a in rows_a if a.file_id in by_id_b]
-    total_f = _collar_fields(collar_name)[3]
-    pairs = [(a, b) for a, b in pairs
-             if getattr(a, total_f) > 0.0 and getattr(b, total_f) > 0.0]
-    n = len(pairs)
-    point = (aggregate_der([a for a, _ in pairs], collar_name)
-             - aggregate_der([b for _, b in pairs], collar_name))
-    if n < 2:
-        return Interval(point=point, lo=point, hi=point, n=n,
-                        resamples=0, seed=seed)
-    rng = random.Random(seed)
-    draws: list[float] = []
-    for _ in range(resamples):
-        idx = [rng.randrange(n) for _ in range(n)]
-        sample_a = [pairs[i][0] for i in idx]
-        sample_b = [pairs[i][1] for i in idx]
-        draws.append(aggregate_der(sample_a, collar_name)
-                     - aggregate_der(sample_b, collar_name))
-    draws.sort()
-    tail = (1.0 - confidence) / 2.0
-    lo = draws[int(tail * (resamples - 1))]
-    hi = draws[int((1.0 - tail) * (resamples - 1))]
-    return Interval(point=point, lo=lo, hi=hi, n=n, resamples=resamples, seed=seed)
+    pairs = pair_by_id(
+        {r.file_id: _unit(r, collar_name) for r in rows_a},
+        {r.file_id: _unit(r, collar_name) for r in rows_b},
+    )
+    pairs = [(a, b) for a, b in pairs if a[1] > 0.0 and b[1] > 0.0]
+    return paired_bootstrap_ratio_delta(pairs, resamples=resamples, seed=seed,
+                                        confidence=confidence)
 
 
 # ── DER by reference speaker count (#5455) ────────────────────────────────────

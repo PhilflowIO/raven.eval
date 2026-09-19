@@ -97,7 +97,12 @@ def test_every_metric_module_is_registered() -> None:
     # flozi_wer.py is the published WER path, wer.py the diagnostic lens: two
     # modules, one declared metric. Map the module names onto metric names.
     module_to_metric = {"der": "der", "wer": "wer", "flozi_wer": "wer", "bleu": "bleu"}
-    unmapped = sorted(on_disk - {"__init__"} - set(module_to_metric))
+    # Not a metric of its own: the resampler behind `der.uncertainty` and
+    # `wer.uncertainty`, whose settings those blocks declare.
+    shared_by_metrics = {"bootstrap"}
+    unmapped = sorted(
+        on_disk - {"__init__"} - set(module_to_metric) - shared_by_metrics
+    )
     assert not unmapped, (
         f"scorer module(s) {unmapped} exist under raven_eval_core/ but map to no "
         f"metric — add them to module_to_metric here (and to SCORED_METRICS + "
