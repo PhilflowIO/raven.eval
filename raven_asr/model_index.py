@@ -26,8 +26,14 @@ class ResultEntry:
     subset_arg: str  # value of the `from` column / subset selector
     wer_pct: float
     cer_pct: float
-    n_samples: int
+    n_samples: int  # utterances scored — the ones that got a transcription
     wer_filler_tolerant_pct: float = 0.0
+    # Requests that failed and are therefore NOT in the WER above. Non-zero
+    # makes the row unpublishable (raven_asr.promote refuses it).
+    n_failed: int = 0
+    # The fixed set of references this row was scored against.
+    dataset_revision: str | None = None
+    dataset_sha256: str | None = None
 
 
 def build_model_index(
@@ -48,6 +54,7 @@ def build_model_index(
                 "type": r.dataset_id,
                 "name": r.dataset_name,
                 "args": r.subset_arg,
+                **({"revision": r.dataset_revision} if r.dataset_revision else {}),
             },
             "metrics": [
                 {

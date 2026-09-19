@@ -1,6 +1,9 @@
 {
   "Demo-DE": {
     "wer_pct": 7.5758,
-    "cer_pct": 9.4595
+    "cer_pct": 9.4595,
+    "n_samples": 8,
+    "wer_ci_lo": 1.5152,
+    "wer_ci_hi": 13.8462
   }
 }

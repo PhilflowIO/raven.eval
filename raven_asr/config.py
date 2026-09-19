@@ -50,13 +50,23 @@ FLOZI_SUBSETS: Final[tuple[str, ...]] = (
 # Tier-3 (not portable) and lives only in the internal harness.
 SUBSETS: Final[tuple[str, ...]] = FLOZI_SUBSETS
 
-# Pin the dataset revision for byte-reproducible references. ``None`` = the HF
-# ``main`` HEAD at run time (documented caveat — set this to the commit hash of
-# your local snapshot for a fully reproducible Tier-2 run). Threaded through to
-# the loader + recorded in summary.json / model-index.yaml.
-FLOZI_DATASET_REVISION: Final[str | None] = None
+# The flozi dataset revision every german-mixed number is scored against. This
+# is the `main` HEAD the 2026-07-30 artifacts were measured at: the repo's last
+# commit (2026-01-06) predates that run, and the published per-subset counts
+# (Tuda-De 414, MLS 3996, CV 5389) equal the row counts of this revision's 25
+# data shards exactly (recounted 2026-09-19). Threaded through to the loader and
+# recorded per result in summary.json / model-index.yaml.
+FLOZI_DATASET_REVISION: Final[str] = "9c34cbcc0e75b841f6abc4d4e452eeb61dcab156"
 
 DRIFT_TOLERANCE_PCT: Final[float] = 15.0
+
+# Bootstrap settings for every published WER interval — mirrored from
+# ``benchmark.config.yaml`` → ``wer.uncertainty`` and asserted equal by
+# ``tests/test_metric_contract.py``. An interval is a published quantity, so its
+# settings are contract, not a CLI default.
+BOOTSTRAP_RESAMPLES: Final[int] = 10_000
+BOOTSTRAP_SEED: Final[int] = 20260903
+BOOTSTRAP_CONFIDENCE: Final[float] = 0.95
 
 
 @dataclass(frozen=True)
@@ -117,10 +127,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         loader="flozi_mixed_evals",
         license="Tuda-De CC-BY-4.0; MLS CC-BY-4.0; Common Voice CC0-1.0",
         source="flozi00/asr-german-mixed-evals",
-        # Deliberately unpinned: the committed 2026-07-30 numbers were measured
-        # against `main` HEAD, so naming a hash here would claim a pin the
-        # published artifacts do not actually carry. Pass DATASET_REV=<sha> for a
-        # fully pinned re-run. Tracked as the one floating pin in this table.
         revision=FLOZI_DATASET_REVISION,
         subsets=FLOZI_SUBSETS,
         durability="hf",
@@ -352,6 +358,12 @@ class ModelSpec:
     # live in this public repo; the URLs/keys stay in the operator's env.
     base_url_env: str | None = None
     api_key_env: str | None = None
+    # What the client can attest about the weights it measured, recorded as
+    # ``model_revision`` in summary.json. For a hosted API that is the versioned
+    # model name the request pins; a floating alias ("-latest") is not one. For a
+    # self-hosted endpoint the client cannot see which weights are loaded, so it
+    # stays None rather than asserting a pin nobody checked.
+    revision: str | None = None
 
 
 KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
@@ -439,6 +451,7 @@ KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
         adapter="xai",
         label="xai-grok-voice-transcribe-2.0",
         api_key_env="XAI_API_KEY",
+        revision="grok-voice-transcribe-2.0",
     ),
     # The predecessor, and xAI's default when `model` is omitted — measured on the
     # same samples so the generation step is a number, not a release note.
@@ -447,6 +460,7 @@ KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
         adapter="xai",
         label="xai-grok-voice-transcribe-1.0",
         api_key_env="XAI_API_KEY",
+        revision="grok-voice-transcribe-1.0",
     ),
     # Modal-hosted STT apps. Each must expose a parameterized
     # `transcribe(audio_bytes, sr)` function.

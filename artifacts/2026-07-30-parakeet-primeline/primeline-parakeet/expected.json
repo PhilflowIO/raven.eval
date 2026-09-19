@@ -1,14 +1,23 @@
 {
   "Tuda-De": {
     "wer_pct": 4.0157,
-    "cer_pct": 2.7496
+    "cer_pct": 2.7496,
+    "n_samples": 414,
+    "wer_ci_lo": 2.7625,
+    "wer_ci_hi": 5.5523
   },
   "multilingual_librispeech": {
-    "wer_pct": 3.0421,
-    "cer_pct": 1.9041
+    "wer_pct": 3.043,
+    "cer_pct": 1.9041,
+    "n_samples": 3996,
+    "wer_ci_lo": 2.9124,
+    "wer_ci_hi": 3.1752
   },
   "common_voice_19_0": {
     "wer_pct": 2.5758,
-    "cer_pct": 0.8499
+    "cer_pct": 0.8499,
+    "n_samples": 5389,
+    "wer_ci_lo": 2.4095,
+    "wer_ci_hi": 2.7463
   }
 }

@@ -11,8 +11,14 @@ trusted. The DER half of the revision check lives beside the published table
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from test_published_table import REPO_ROOT, committed_der_artifacts
+from test_published_table import (
+    ARTIFACTS,
+    FIXTURE_PREFIXES,
+    REPO_ROOT,
+    committed_der_artifacts,
+)
 
 
 def test_every_configurable_diarizer_artifact_names_its_operating_point():
@@ -36,3 +42,53 @@ def test_every_configurable_diarizer_artifact_names_its_operating_point():
         f"configuration they were measured under: {offenders}"
     )
 
+
+def committed_wer_artifacts() -> list[Path]:
+    """Every committed WER artifact that is a product number, not a fixture."""
+    return sorted({
+        p.parent
+        for p in ARTIFACTS.rglob("predictions_*.jsonl")
+        if not p.relative_to(ARTIFACTS).parts[0].startswith(FIXTURE_PREFIXES)
+    })
+
+
+#: Adapters that talk to an endpoint someone else loaded weights into. The client
+#: sees a model name, not which weights answer, so a ``model_revision`` here
+#: would be an assertion nobody checked; it is recorded as null instead. What
+#: the endpoint reports about itself belongs in the run manifest (#27).
+_UNATTESTABLE_MODEL_ADAPTERS = frozenset({"vllm_openai", "modal_app"})
+
+_FLOATING = {"", "none", "latest", "main", "master", "head"}
+
+
+def test_every_committed_wer_artifact_is_traceable_to_its_references():
+    """The WER twin of the DER provenance guard above.
+
+    Every result names the reference set it was scored against — a revision, or
+    the archive digest where upstream has no version history — and every hosted
+    model names the versioned model it was asked for.
+    """
+    offenders = []
+    for artifact in committed_wer_artifacts():
+        rel = artifact.relative_to(REPO_ROOT)
+        summary_path = artifact / "summary.json"
+        if not summary_path.exists():
+            offenders.append(f"{rel}: no summary.json")
+            continue
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        if "model_revision" not in summary:
+            offenders.append(f"{rel}: no model_revision field")
+        elif summary["adapter"] not in _UNATTESTABLE_MODEL_ADAPTERS and (
+            str(summary["model_revision"]).lower() in _FLOATING
+            or str(summary["model_revision"]).endswith("-latest")
+        ):
+            offenders.append(f"{rel}: model_revision={summary['model_revision']!r}")
+        for r in summary["results"]:
+            rev = r.get("dataset_revision")
+            pinned = rev and str(rev).lower() not in _FLOATING
+            if not (pinned or r.get("dataset_sha256")):
+                offenders.append(f"{rel} [{r['subset']}]: dataset_revision={rev!r}")
+    assert committed_wer_artifacts(), "a guard that matches nothing guards nothing"
+    assert not offenders, (
+        "committed WER artifacts whose provenance is not pinned: " + str(offenders)
+    )

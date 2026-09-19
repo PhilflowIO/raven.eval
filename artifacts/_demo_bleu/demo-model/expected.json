@@ -3,6 +3,9 @@
     "wer_pct": 14.2857,
     "cer_pct": 10.1313,
     "bleu": 72.2394,
-    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0"
+    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0",
+    "n_samples": 8,
+    "wer_ci_lo": 7.6923,
+    "wer_ci_hi": 20.4082
   }
 }

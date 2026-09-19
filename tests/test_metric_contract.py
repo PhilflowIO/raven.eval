@@ -164,3 +164,17 @@ def test_bleu_signature_reflects_the_declared_conventions() -> None:
     assert ("case:mixed" if not variant["lowercase"] else "case:lc") in sig
     assert ("eff:no" if not variant["effective_order"] else "eff:yes") in sig
     assert "version:" in sig, "the signature must carry the sacrebleu version"
+
+
+def test_wer_uncertainty_matches_the_public_contract() -> None:
+    """Every published WER interval is computed under the declared settings."""
+    from raven_asr.config import (
+        BOOTSTRAP_CONFIDENCE,
+        BOOTSTRAP_RESAMPLES,
+        BOOTSTRAP_SEED,
+    )
+
+    unc = _config()["wer"]["uncertainty"]
+    assert unc["resamples"] == BOOTSTRAP_RESAMPLES
+    assert unc["seed"] == BOOTSTRAP_SEED
+    assert unc["confidence"] == BOOTSTRAP_CONFIDENCE

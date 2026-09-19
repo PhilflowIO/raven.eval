@@ -2,6 +2,9 @@
   "mls-de": {
     "wer_pct": 8.2212,
     "cer_pct": 10.4521,
-    "wer_strict_de_pct": 8.5544
+    "wer_strict_de_pct": 8.5544,
+    "n_samples": 100,
+    "wer_ci_lo": 7.0381,
+    "wer_ci_hi": 9.4705
   }
 }

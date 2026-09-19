@@ -11,6 +11,7 @@ import sys
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import cast
 
 from tqdm import tqdm
 
@@ -45,18 +46,37 @@ DEFAULT_CONCURRENCY: dict[str, int] = {
 
 
 @dataclass(frozen=True)
+class _Outcome:
+    """One attempted utterance — a transcription or the reason there is none.
+
+    ``prediction`` is None exactly when the request failed, and ``error`` then
+    says why. A failure is recorded, never dropped: dropping it would score the
+    model only on the clips it managed, and a model that times out on the
+    hardest clips would read *better* than one that transcribes them badly.
+    """
+
+    sample_id: str
+    reference: str
+    # Audio length is a property of the input, not of the model: it is what
+    # turns latency into RTFx and a per-minute price into a cost.
+    duration_s: float
+    prediction: str | None = None
+    latency_s: float | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class _RunResult:
     subset: str
-    references: list[str]
-    predictions: list[str]
-    latencies: list[float]
-    # Per-sample identity and audio length, parallel to the lists above. The id
-    # ties a prediction line to one utterance of the upstream split (so a reader
-    # can see which samples failed, and a downstream table can join on it); the
-    # duration is what turns latency into RTFx and a per-minute price into a
-    # cost. Both are properties of the input, not of the model.
-    sample_ids: list[str] = field(default_factory=list)
-    durations_s: list[float] = field(default_factory=list)
+    outcomes: list[_Outcome] = field(default_factory=list)
+
+    @property
+    def succeeded(self) -> list[_Outcome]:
+        return [o for o in self.outcomes if o.error is None]
+
+    @property
+    def n_failed(self) -> int:
+        return sum(1 for o in self.outcomes if o.error is not None)
 
 
 def _make_adapter(spec: ModelSpec) -> ASRAdapter:
@@ -104,6 +124,18 @@ def _make_adapter(spec: ModelSpec) -> ASRAdapter:
     raise ValueError(f"unknown adapter: {spec.adapter}")
 
 
+def _dataset_pin(subset: str, revision: str | None = None) -> tuple[str | None, str | None]:
+    """``(revision, sha256)`` the run actually reads ``subset`` at.
+
+    An explicit ``revision`` (``--dataset-revision``) wins over the registry pin.
+    Recorded beside every score, because a WER is a statement about one fixed
+    set of references and is meaningless without naming which.
+    """
+    dataset_id, _ = resolve_wer_dataset(subset)
+    spec = WER_DATASETS[dataset_id]
+    return (revision if revision is not None else spec.revision), spec.sha256
+
+
 def _iter_loader_for_subset(
     subset: str,
     *,
@@ -119,7 +151,7 @@ def _iter_loader_for_subset(
     """
     dataset_id, internal_subset = resolve_wer_dataset(subset)
     spec = WER_DATASETS[dataset_id]
-    rev = revision if revision is not None else spec.revision
+    rev, _ = _dataset_pin(subset, revision)
     loader_cls = load_loader_class(dataset_id)
     loader = loader_cls(
         streaming=streaming or spec.stream_by_default, revision=rev
@@ -132,6 +164,30 @@ def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name)
 
 
+async def _attempt(adapter: ASRAdapter, sample: Sample) -> _Outcome:
+    """Transcribe one sample; a failure becomes an outcome, not an absence."""
+    duration_s = len(sample.audio) / float(sample.sample_rate)
+    try:
+        r = await adapter.atranscribe(sample.audio, sample.sample_rate)
+    except Exception as exc:
+        logger.exception(
+            "[%s] transcribe failed on %s", adapter.provider_id, sample.sample_id
+        )
+        return _Outcome(
+            sample_id=sample.sample_id,
+            reference=sample.reference,
+            duration_s=duration_s,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+    return _Outcome(
+        sample_id=sample.sample_id,
+        reference=sample.reference,
+        duration_s=duration_s,
+        prediction=r.text,
+        latency_s=r.latency_s,
+    )
+
+
 async def run_subset_async(
     adapter: ASRAdapter,
     subset: str,
@@ -141,45 +197,27 @@ async def run_subset_async(
     streaming: bool = False,
     revision: str | None = None,
 ) -> _RunResult:
-    """Transcribe every sample in ``subset`` concurrently."""
+    """Transcribe every sample in ``subset`` concurrently, in split order."""
     loader, internal_subset = _iter_loader_for_subset(
         subset, streaming=streaming, revision=revision
     )
     samples: list[Sample] = list(loader.iter_samples(internal_subset, limit=limit))
     if not samples:
-        return _RunResult(subset=subset, references=[], predictions=[], latencies=[])
+        return _RunResult(subset=subset)
 
     semaphore = asyncio.Semaphore(concurrency)
     pbar = tqdm(total=len(samples), desc=f"{adapter.provider_id}/{subset}", unit="clip")
 
-    async def _one(sample: Sample) -> tuple[str, str, float, str, float] | None:
+    async def _one(sample: Sample) -> _Outcome:
         async with semaphore:
             try:
-                r = await adapter.atranscribe(sample.audio, sample.sample_rate)
-                duration_s = len(sample.audio) / float(sample.sample_rate)
-                return (sample.reference, r.text, r.latency_s, sample.sample_id, duration_s)
-            except Exception:
-                logger.exception("transcribe failed on sample %s", sample.sample_id)
-                return None
+                return await _attempt(adapter, sample)
             finally:
                 pbar.update(1)
 
-    tasks = [asyncio.create_task(_one(s)) for s in samples]
-    results = await asyncio.gather(*tasks)
+    outcomes = await asyncio.gather(*(_one(s) for s in samples))
     pbar.close()
-
-    pairs = [r for r in results if r is not None]
-    if not pairs:
-        return _RunResult(subset=subset, references=[], predictions=[], latencies=[])
-    refs_t, preds_t, lats_t, ids_t, durs_t = zip(*pairs, strict=False)
-    return _RunResult(
-        subset=subset,
-        references=list(refs_t),
-        predictions=list(preds_t),
-        latencies=list(lats_t),
-        sample_ids=list(ids_t),
-        durations_s=list(durs_t),
-    )
+    return _RunResult(subset=subset, outcomes=list(outcomes))
 
 
 # Back-compat sync wrapper (some tests + ad-hoc callers still expect it).
@@ -212,6 +250,14 @@ def _compare_against_flozi(
             {
                 "subset": entry.subset_arg,
                 "n_samples": entry.n_samples,
+                # Coverage: the WER above is over n_samples = n_ok utterances.
+                # n_failed > 0 means the number describes a subset of the split
+                # the model happened to finish, and promote refuses to publish it.
+                "n_attempted": entry.n_samples + entry.n_failed,
+                "n_ok": entry.n_samples,
+                "n_failed": entry.n_failed,
+                "dataset_revision": entry.dataset_revision,
+                "dataset_sha256": entry.dataset_sha256,
                 "wer_pct": round(entry.wer_pct, 4),
                 "wer_filler_tolerant_pct": round(
                     entry.wer_filler_tolerant_pct, 4
@@ -233,6 +279,7 @@ def _write_outputs(
         "model_id": spec.model_id,
         "label": spec.label,
         "adapter": spec.adapter,
+        "model_revision": spec.revision,
         "limit_per_subset": limit,
         "results": _compare_against_flozi(spec.model_id, entries),
     }
@@ -240,6 +287,92 @@ def _write_outputs(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     return yaml_path
+
+
+def _write_predictions(path: Path, outcomes: list[_Outcome]) -> None:
+    """One line per ATTEMPTED utterance, failures included.
+
+    Raw refs/preds make a methodology change re-scorable without re-running the
+    bench (ADR-KV-024 §3 "persistence gap"). A failed line carries
+    ``"prediction": null`` plus ``"error"``, so the artifact itself shows which
+    clips have no transcription — a reader of the file cannot mistake a failure
+    for a model that answered with silence.
+    """
+    with path.open("w", encoding="utf-8") as fh:
+        for o in outcomes:
+            line: dict[str, object] = {
+                "reference": o.reference,
+                "prediction": o.prediction,
+                "latency_s": o.latency_s,
+                "sample_id": o.sample_id,
+                "duration_s": round(o.duration_s, 6),
+            }
+            if o.error is not None:
+                line["error"] = o.error
+            fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+
+def _record_subset(
+    *,
+    out_dir: Path,
+    spec: ModelSpec,
+    result: _RunResult,
+    entries: list[ResultEntry],
+    limit: int | None,
+    revision: str | None = None,
+) -> None:
+    """Persist one finished subset: predictions, score, resume marker, outputs.
+
+    The single place a subset is recorded, for the one-model and the N-model
+    path alike, so the two cannot disagree about what an artifact contains.
+    """
+    subset = result.subset
+    if not result.outcomes:
+        logger.warning("subset %s produced no samples; skipping", subset)
+        return
+    _write_predictions(out_dir / f"predictions_{_safe(subset)}.jsonl", result.outcomes)
+    ok = result.succeeded
+    n_failed = result.n_failed
+    if not ok:
+        logger.error(
+            "[%s] subset %s: all %d requests failed; nothing to score",
+            spec.label, subset, n_failed,
+        )
+        return
+    metrics = evaluate([o.reference for o in ok], [cast(str, o.prediction) for o in ok])
+    dataset_revision, dataset_sha256 = _dataset_pin(subset, revision)
+    entry = ResultEntry(
+        dataset_id=_dataset_id_for_subset(subset),
+        dataset_name=subset,
+        subset_arg=subset,
+        wer_pct=metrics.wer_pct,
+        cer_pct=metrics.cer_pct,
+        n_samples=metrics.n_samples,
+        wer_filler_tolerant_pct=metrics.wer_filler_tolerant_pct,
+        n_failed=n_failed,
+        dataset_revision=dataset_revision,
+        dataset_sha256=dataset_sha256,
+    )
+    entries.append(entry)
+    if n_failed:
+        # No resume marker: the next invocation re-runs the subset instead of
+        # resuming into a number that silently leaves clips out.
+        logger.error(
+            "[%s] subset %s: %d of %d requests failed — WER %.4f%% covers only "
+            "the %d that succeeded and is NOT publishable; re-run the subset",
+            spec.label, subset, n_failed, len(result.outcomes),
+            metrics.wer_pct, metrics.n_samples,
+        )
+    else:
+        (out_dir / f".done_{_safe(subset)}.json").write_text(
+            json.dumps(asdict(entry)), encoding="utf-8"
+        )
+        logger.info(
+            "[%s] subset %s done: %d samples, WER %.4f%%",
+            spec.label, subset, metrics.n_samples, metrics.wer_pct,
+        )
+    # Roll outputs after every subset so a crash leaves usable artefacts.
+    _write_outputs(out_dir, spec, entries, limit)
 
 
 def _dataset_id_for_subset(subset: str) -> str:
@@ -292,46 +425,10 @@ async def run_async(
             adapter, subset, limit, effective_concurrency,
             streaming=streaming, revision=revision,
         )
-        if not run_result.references:
-            logger.warning("subset %s produced no samples; skipping", subset)
-            continue
-        metrics = evaluate(run_result.references, run_result.predictions)
-        entry = ResultEntry(
-            dataset_id=_dataset_id_for_subset(subset),
-            dataset_name=subset,
-            subset_arg=subset,
-            wer_pct=metrics.wer_pct,
-            cer_pct=metrics.cer_pct,
-            n_samples=metrics.n_samples,
-            wer_filler_tolerant_pct=metrics.wer_filler_tolerant_pct,
+        _record_subset(
+            out_dir=out_dir, spec=spec, result=run_result, entries=entries,
+            limit=limit, revision=revision,
         )
-        entries.append(entry)
-        # Persist raw refs/preds so future methodology changes are re-scorable
-        # without re-running the bench (ADR-KV-024 §3 "persistence gap").
-        predictions_path = out_dir / f"predictions_{_safe(subset)}.jsonl"
-        with predictions_path.open("w", encoding="utf-8") as fh:
-            n = len(run_result.references)
-            ids = run_result.sample_ids or [None] * n
-            durs = run_result.durations_s or [None] * n
-            for ref, pred, lat, sid, dur in zip(
-                run_result.references,
-                run_result.predictions,
-                run_result.latencies,
-                ids,
-                durs,
-                strict=True,
-            ):
-                line: dict[str, object] = {
-                    "reference": ref, "prediction": pred, "latency_s": lat,
-                }
-                if sid is not None:
-                    line["sample_id"] = sid
-                if dur is not None:
-                    line["duration_s"] = round(dur, 6)
-                fh.write(json.dumps(line, ensure_ascii=False) + "\n")
-        marker.write_text(json.dumps(asdict(entry)), encoding="utf-8")
-        # Roll outputs after every subset so a crash leaves usable artefacts.
-        _write_outputs(out_dir, spec, entries, limit)
 
     return _write_outputs(out_dir, spec, entries, limit)
 
@@ -436,10 +533,6 @@ async def run_multi_async(
             logger.warning("subset %s produced no samples; skipping", subset)
             continue
 
-        per_refs: dict[str, list[str]] = {k: [] for k in pending}
-        per_preds: dict[str, list[str]] = {k: [] for k in pending}
-        per_lats: dict[str, list[float]] = {k: [] for k in pending}
-        per_fails: dict[str, int] = {k: 0 for k in pending}
         pbars = {
             k: tqdm(
                 total=len(samples),
@@ -453,69 +546,29 @@ async def run_multi_async(
         async def _one(
             model_key: str,
             sample: Sample,
-            _refs: dict[str, list[str]] = per_refs,
-            _preds: dict[str, list[str]] = per_preds,
-            _lats: dict[str, list[float]] = per_lats,
-            _fails: dict[str, int] = per_fails,
             _pbars: dict[str, tqdm] = pbars,
-        ) -> None:
+        ) -> _Outcome:
             async with semaphores[model_key]:
                 try:
-                    r = await adapters[model_key].atranscribe(
-                        sample.audio, sample.sample_rate
-                    )
-                    _refs[model_key].append(sample.reference)
-                    _preds[model_key].append(r.text)
-                    _lats[model_key].append(r.latency_s)
-                except Exception:
-                    _fails[model_key] = _fails[model_key] + 1
-                    logger.exception(
-                        "[%s] transcribe failed on %s", model_key, sample.sample_id
-                    )
+                    return await _attempt(adapters[model_key], sample)
                 finally:
                     _pbars[model_key].update(1)
 
-        tasks = [
-            asyncio.create_task(_one(k, s))
-            for k in pending
-            for s in samples
-        ]
-        await asyncio.gather(*tasks)
+        # gather preserves argument order, so each model's outcomes come back in
+        # split order regardless of which request finished first.
+        per_model = await asyncio.gather(
+            *(asyncio.gather(*(_one(k, s) for s in samples)) for k in pending)
+        )
         for pb in pbars.values():
             pb.close()
         # Free the materialised sample list before moving on to the next subset.
         del samples
 
-        for k in pending:
-            if not per_refs[k]:
-                logger.warning(
-                    "[%s] subset %s produced no successful samples (failures: %d)",
-                    k,
-                    subset,
-                    per_fails[k],
-                )
-                continue
-            m = evaluate(per_refs[k], per_preds[k])
-            entry = ResultEntry(
-                dataset_id=_dataset_id_for_subset(subset),
-                dataset_name=subset,
-                subset_arg=subset,
-                wer_pct=m.wer_pct,
-                cer_pct=m.cer_pct,
-                n_samples=m.n_samples,
-            )
-            entries[k].append(entry)
-            (out_dirs[k] / f".done_{_safe(subset)}.json").write_text(
-                json.dumps(asdict(entry)), encoding="utf-8"
-            )
-            _write_outputs(out_dirs[k], specs[k], entries[k], limit)
-            logger.info(
-                "[%s] subset %s done: %d samples, WER %.4f%% (%d failures)",
-                k,
-                subset,
-                m.n_samples,
-                m.wer_pct,
-                per_fails[k],
+        for k, outcomes in zip(pending, per_model, strict=True):
+            _record_subset(
+                out_dir=out_dirs[k], spec=specs[k],
+                result=_RunResult(subset=subset, outcomes=list(outcomes)),
+                entries=entries[k], limit=limit,
             )
 
     yaml_paths: dict[str, Path] = {}

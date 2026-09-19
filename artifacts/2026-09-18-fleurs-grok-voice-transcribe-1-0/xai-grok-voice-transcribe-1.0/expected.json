@@ -2,6 +2,9 @@
   "fleurs": {
     "wer_pct": 6.7545,
     "cer_pct": 9.4877,
-    "wer_strict_de_pct": 7.5105
+    "wer_strict_de_pct": 7.5105,
+    "n_samples": 100,
+    "wer_ci_lo": 4.7384,
+    "wer_ci_hi": 9.5591
   }
 }

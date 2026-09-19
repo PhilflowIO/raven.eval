@@ -2,13 +2,19 @@
   "model_id": "grok-voice-transcribe-2.0",
   "label": "xai-grok-voice-transcribe-2.0",
   "adapter": "xai",
+  "model_revision": "grok-voice-transcribe-2.0",
   "limit_per_subset": 50,
   "results": [
     {
       "subset": "spc-test",
       "n_samples": 50,
-      "wer_pct": 41.0788,
-      "wer_filler_tolerant_pct": 40.8022,
+      "n_attempted": 50,
+      "n_ok": 50,
+      "n_failed": 0,
+      "dataset_revision": "48c389fb6b88c8e80f03273a677a422729183e06",
+      "dataset_sha256": null,
+      "wer_pct": 41.7704,
+      "wer_filler_tolerant_pct": 41.6321,
       "cer_pct": 23.8507,
       "flozi_reference_wer": null,
       "drift_pct_vs_flozi": null

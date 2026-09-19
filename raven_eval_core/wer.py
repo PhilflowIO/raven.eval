@@ -203,6 +203,25 @@ def compute_wer(
     )
 
 
+def utterance_strict_de_units(
+    references: Iterable[str], hypotheses: Iterable[str]
+) -> list[tuple[float, int]]:
+    """Per-utterance ``(wer_strict · ref_words, ref_words)`` — the decomposition of
+    :func:`corpus_wer_strict_de_pct`, so ``Σnum/Σden · 100`` is that number exactly.
+
+    An utterance whose strict-normalized reference is empty contributes
+    ``(0.0, 0)``: it carries no weight, exactly as the corpus aggregate skips it.
+    """
+    units: list[tuple[float, int]] = []
+    for ref, hyp in zip(references, hypotheses, strict=True):
+        r = compute_wer(ref, hyp)
+        if r.ref_word_count <= 0:
+            units.append((0.0, 0))
+        else:
+            units.append((r.wer_strict * r.ref_word_count, r.ref_word_count))
+    return units
+
+
 def corpus_wer_strict_de_pct(
     references: Iterable[str], hypotheses: Iterable[str]
 ) -> float:

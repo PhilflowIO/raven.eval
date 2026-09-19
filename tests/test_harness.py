@@ -143,6 +143,8 @@ def test_promote_then_verify_round_trips(
     # every prediction line names its utterance and carries its audio length
     lines = [json.loads(x) for x in (dest / "predictions_Tuda-De.jsonl").read_text().splitlines()]
     assert all("sample_id" in x and x["duration_s"] > 0 for x in lines)
+    # and expected.json commits to how many there are
+    assert expected["Tuda-De"]["n_samples"] == len(lines) == 2
 
     verify = _load_verify()
     all_ok, rows = verify.verify(artifacts)
@@ -155,6 +157,124 @@ def test_promote_then_verify_round_trips(
     tampered_ok, tampered_rows = verify.verify(artifacts)
     assert not tampered_ok
     assert any("wer_strict_de" in r.get("detail", "") for r in tampered_rows)
+
+
+class _FlakyAdapter(_PerfectAdapter):
+    """Perfect, except on the clips it was told to fail on."""
+
+    def __init__(self, registry: dict[float, str], fail_on: set[float]) -> None:
+        super().__init__(registry)
+        self._fail_on = fail_on
+
+    async def atranscribe(self, audio: np.ndarray, sample_rate: int) -> TranscribeResult:
+        if float(audio[0]) in self._fail_on:
+            raise TimeoutError("upstream timed out")
+        return await super().atranscribe(audio, sample_rate)
+
+
+def test_a_failed_request_is_recorded_and_blocks_promotion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The failure is counted, written down, retried next time, and never published.
+
+    Before this, the failed clip vanished: WER over the two that worked read 0.0
+    and nothing downstream could tell a subset of the split from all of it.
+    """
+    samples, registry = _make_samples("Tuda-De", ["hallo welt", "guten tag", "wie geht es"])
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_FakeLoader(samples), "Tuda-De"),
+    )
+    monkeypatch.setattr(
+        runner, "_make_adapter", lambda _spec: _FlakyAdapter(registry, fail_on={2.0})
+    )
+    results_dir = tmp_path / "results" / "primeline-whisper-large-v3-german"
+    runner.run(
+        model_key="primeline/whisper-large-v3-german", subsets=["Tuda-De"],
+        limit=None, out_dir=results_dir,
+    )
+
+    summary = json.loads((results_dir / "summary.json").read_text())
+    (row,) = summary["results"]
+    assert (row["n_attempted"], row["n_ok"], row["n_failed"]) == (3, 2, 1)
+    assert row["n_samples"] == 2
+
+    lines = [json.loads(x) for x in (results_dir / "predictions_Tuda-De.jsonl")
+             .read_text().splitlines()]
+    assert [x["sample_id"] for x in lines] == ["Tuda-De-0", "Tuda-De-1", "Tuda-De-2"]
+    failed = lines[1]
+    assert failed["prediction"] is None
+    assert failed["error"].startswith("TimeoutError")
+
+    # No resume marker: the next invocation re-runs the subset.
+    assert not (results_dir / ".done_Tuda-De.json").exists()
+
+    with pytest.raises(promote_mod.IncompleteRunError, match="1 of 3 requests failed"):
+        promote_mod.promote(results_dir, tmp_path / "artifacts", run_name="r")
+    assert not (tmp_path / "artifacts").exists()
+
+
+def test_multi_model_path_records_subsets_like_the_single_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both paths go through one recorder: predictions, coverage, revisions.
+
+    The N-model path used to score without writing predictions at all, so its
+    output could never become a Tier-1 artifact.
+    """
+    samples, registry = _make_samples("Tuda-De", ["hallo welt", "guten tag"])
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_FakeLoader(samples), "Tuda-De"),
+    )
+    monkeypatch.setattr(
+        runner, "_make_adapter",
+        lambda spec: _FlakyAdapter(
+            registry, fail_on={1.0} if spec.label.endswith("turbo-german") else set()
+        ),
+    )
+    import asyncio
+
+    asyncio.run(runner.run_multi_async(
+        model_keys=["primeline/whisper-large-v3-german",
+                    "primeline/whisper-large-v3-turbo-german"],
+        subsets=["Tuda-De"], limit=None, out_root=tmp_path,
+    ))
+    for label, n_failed in (("primeline-whisper-large-v3-german", 0),
+                            ("primeline-whisper-large-v3-turbo-german", 1)):
+        out = tmp_path / label
+        (row,) = json.loads((out / "summary.json").read_text())["results"]
+        assert row["n_failed"] == n_failed
+        assert row["dataset_revision"]
+        lines = (out / "predictions_Tuda-De.jsonl").read_text().splitlines()
+        assert len(lines) == 2
+
+
+def test_summary_names_the_revisions_it_was_measured_at(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The config comment promised this; now the summary actually carries it."""
+    from raven_asr.config import FLOZI_DATASET_REVISION
+
+    samples, registry = _make_samples("Tuda-De", ["hallo welt"])
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_FakeLoader(samples), "Tuda-De"),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    out = tmp_path / "xai-grok-voice-transcribe-2.0"
+    runner.run(model_key="xai/grok-voice-transcribe-2.0", subsets=["Tuda-De"],
+               limit=None, out_dir=out)
+    summary = json.loads((out / "summary.json").read_text())
+    assert summary["model_revision"] == "grok-voice-transcribe-2.0"
+    assert summary["results"][0]["dataset_revision"] == FLOZI_DATASET_REVISION
+
+    # an explicit --dataset-revision is what gets recorded, not the registry pin
+    out2 = tmp_path / "pinned"
+    runner.run(model_key="xai/grok-voice-transcribe-2.0", subsets=["Tuda-De"],
+               limit=None, out_dir=out2, revision="abc123")
+    assert json.loads((out2 / "summary.json").read_text())["results"][0][
+        "dataset_revision"] == "abc123"
 
 
 def _capture_vllm_adapter(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:

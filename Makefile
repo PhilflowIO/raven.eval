@@ -17,13 +17,17 @@ test:               ## Run the scorer + harness tests (the regression guard).
 verify:             ## Tier-1: re-score committed WER + DER artifacts → reproduce published numbers.
 	uv run python scripts/verify.py
 
-# Read a committed DER artifact past its corpus scalar: bootstrap confidence
-# interval, DER by reference speaker count, reference overlap fraction, and
-# speaker-aware boundary offsets. Same RTTMs, same scorer, no GPU — every number
-# quoted in the "how precise is it" paragraphs of BENCHMARKS.md comes from here.
-#   make analyse ARTIFACT=artifacts/2026-07-31-callhome-de/pyannote-community-1
-analyse:            ## Tier-1: intervals, speaker buckets, overlap, boundaries for one artifact.
-	uv run python -m raven_diar.analysis $(ARTIFACT) $(if $(COLLAR),--collar $(COLLAR),)
+# Read a committed artifact past its corpus scalar. Same data, same scorer, no GPU
+# — every interval and paired comparison quoted in BENCHMARKS.md comes from here.
+# The artifact decides the metric: predictions_*.jsonl -> WER, gold/ RTTMs -> DER.
+#   DER: bootstrap CI, DER by reference speaker count, overlap, boundary offsets
+#     make analyse ARTIFACT=artifacts/2026-07-31-callhome-de/pyannote-community-1
+#   WER: bootstrap CI per subset; COMPARE= adds the paired interval on the gap
+#     make analyse ARTIFACT=artifacts/<run>/<model> COMPARE=artifacts/<run>/<other> [LENS=strict-de]
+analyse:            ## Tier-1: intervals (and paired gaps) for one committed artifact.
+	$(if $(wildcard $(ARTIFACT)/predictions_*.jsonl),\
+	uv run python -m raven_asr.analysis $(ARTIFACT) $(if $(COMPARE),--compare $(COMPARE),) $(if $(LENS),--lens $(LENS),),\
+	uv run python -m raven_diar.analysis $(ARTIFACT) $(if $(COLLAR),--collar $(COLLAR),))
 
 # Backfill scalars the scorer only started reporting later into already-committed
 # expected.json files, recomputed from those artifacts' own RTTMs. Refuses to

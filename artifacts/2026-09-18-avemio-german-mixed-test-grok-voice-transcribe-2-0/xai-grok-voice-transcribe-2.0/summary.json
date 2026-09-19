@@ -2,11 +2,17 @@
   "model_id": "grok-voice-transcribe-2.0",
   "label": "xai-grok-voice-transcribe-2.0",
   "adapter": "xai",
+  "model_revision": "grok-voice-transcribe-2.0",
   "limit_per_subset": 100,
   "results": [
     {
       "subset": "avemio-german-mixed-test",
       "n_samples": 100,
+      "n_attempted": 100,
+      "n_ok": 100,
+      "n_failed": 0,
+      "dataset_revision": "17bcbc196567bca7eae3e94942588b5678fd748e",
+      "dataset_sha256": null,
       "wer_pct": 6.8715,
       "wer_filler_tolerant_pct": 6.8792,
       "cer_pct": 3.8475,

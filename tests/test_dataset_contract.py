@@ -169,3 +169,20 @@ def test_every_der_dataset_pins_a_revision() -> None:
             f"{dataset_id}: no pinned revision — a floating source lets a "
             f"published DER drift with an upstream branch."
         )
+
+
+def test_every_wer_dataset_pins_its_references() -> None:
+    """A WER is a statement about one fixed set of references.
+
+    Either an upstream revision names that set, or — for a source with no
+    version history, like a vendor share link — the archive digest does. Neither
+    means the published number drifts with whatever upstream serves next.
+    """
+    for dataset_id, spec in sorted(WER_DATASETS.items()):
+        pinned = spec.revision and spec.revision.lower() not in {
+            "main", "master", "head", "latest"
+        }
+        assert pinned or spec.sha256, (
+            f"{dataset_id}: neither a pinned revision nor an archive sha256 — "
+            f"its references can change underneath a published WER."
+        )
