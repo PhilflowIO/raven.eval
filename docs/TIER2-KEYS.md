@@ -28,9 +28,10 @@ declares, and dataset cards are wrong about this often enough to matter.
 
 Public HF dataset `flozi00/asr-german-mixed-evals`, subsets `Tuda-De`,
 `multilingual_librispeech`, `common_voice_19_0`. The loader prefers a local HF
-snapshot and falls back to streaming from huggingface.co. Pin a revision with
-`--dataset-revision <hash>` (or `FLOZI_DATASET_REVISION` in `raven_asr.config`)
-for a byte-reproducible reference set.
+snapshot and falls back to streaming from huggingface.co. The reference set is
+pinned (`FLOZI_DATASET_REVISION` in `raven_asr.config`, the revision the
+published rows were measured at); `--dataset-revision <hash>` overrides it, and
+the revision a run actually read is recorded per result in `summary.json`.
 
 ## Per-adapter requirements
 

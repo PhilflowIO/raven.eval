@@ -2,13 +2,19 @@
   "model_id": "grok-voice-transcribe-1.0",
   "label": "xai-grok-voice-transcribe-1.0",
   "adapter": "xai",
+  "model_revision": "grok-voice-transcribe-1.0",
   "limit_per_subset": 100,
   "results": [
     {
       "subset": "voxpopuli-de",
       "n_samples": 100,
-      "wer_pct": 11.0068,
-      "wer_filler_tolerant_pct": 10.9718,
+      "n_attempted": 100,
+      "n_ok": 100,
+      "n_failed": 0,
+      "dataset_revision": "42f01879c780b4a2e90ec0b4f616c2ece526e4f1",
+      "dataset_sha256": null,
+      "wer_pct": 11.2676,
+      "wer_filler_tolerant_pct": 11.233,
       "cer_pct": 7.1401,
       "flozi_reference_wer": null,
       "drift_pct_vs_flozi": null

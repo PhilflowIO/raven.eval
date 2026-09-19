@@ -55,8 +55,9 @@ _DER_COLUMNS = {
     10: "der_classic_filemean",
 }
 _DER_WIDTH, _DER_N = 14, 12          # model | dataset | 9 numbers | CI | n | run
-_WER_COLUMNS = {2: "wer_pct", 3: "cer_pct"}
-_WER_WIDTH, _WER_N = 7, 4            # model | subset | wer | cer | n | run | ref
+_WER_COLUMNS = {2: "wer_pct", 4: "cer_pct"}
+_WER_CI = 3
+_WER_WIDTH, _WER_N = 8, 5            # model | subset | wer | CI | cer | n | run | ref
 
 
 def _linked_rows() -> list[tuple[str, list[str], Path]]:
@@ -95,10 +96,15 @@ def published_rows(metric: str = "der") -> list[dict]:
                 f"{width} — the row format changed and this guard was not "
                 f"updated:\n  {line}"
             )
+        values = {field: _number(cells[i]) for i, field in columns.items()}
+        if not is_der:
+            # "[lo, hi]" — the interval is a published number like the point.
+            lo, hi = cells[_WER_CI].strip("[]").split(",")
+            values["wer_ci_lo"], values["wer_ci_hi"] = _number(lo), _number(hi)
         rows.append({
             "model_cell": cells[0],
             "dataset_cell": cells[1],
-            "values": {field: _number(cells[i]) for i, field in columns.items()},
+            "values": values,
             "n": int(cells[n_idx]),
             "artifact": artifact,
         })
@@ -253,3 +259,4 @@ def test_every_committed_artifact_is_traceable_to_a_pinned_revision():
     assert not offenders, (
         "committed DER artifacts whose provenance is not pinned: " + str(offenders)
     )
+

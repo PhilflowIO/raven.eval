@@ -104,12 +104,29 @@ wer:
   scorer: jiwer
   # The published WER numbers are produced by the flozi-strict method:
   #   unidecode transliteration + alpha2digit (number WORDS -> digits) +
-  #   jiwer wer_standardize_contiguous transforms, corpus aggregation, raw-text CER.
+  #   jiwer wer_standardize transforms, corpus aggregation, raw-text CER.
+  # Alignment is PER UTTERANCE — the one deliberate divergence from flozi's code,
+  # which concatenates the subset into a single sentence first and so lets an
+  # error at one clip's end cancel against one at the next clip's start. That read
+  # 0.26-0.85 pp low on VoxPopuli and the Swiss sets and identical on flozi's own
+  # subsets (raven_eval_core/flozi_wer.py docstring). Changed 2026-09-19.
   # This is NOT the strict-de lens (that one lowercases inline, runs num2words in the
   # opposite digits->words direction, and strips fillers) — see the reconciliation
   # note in the header of scripts/verify.py for why the two do not interchange.
   normalization: flozi-strict
+  alignment: per-utterance                # Σedits/Σref_words over per-utterance alignments; decomposes exactly for the interval below
   also_reported: [permissive, verbatim, cer, ier]   # diagnostic lenses in raven_eval_core.wer, not the published number
+  # Every published WER carries a 95 % interval, committed to expected.json and
+  # re-computed by `make verify`. The utterance is the sampling unit because it
+  # is the unit the test sets were drawn in; each resample re-aggregates
+  # Σedits/Σref_words, the published estimator, never a mean of utterance WERs.
+  # Same settings as der.uncertainty, same resampler (raven_eval_core.bootstrap).
+  uncertainty:
+    method: percentile bootstrap over utterances
+    resamples: 10000
+    seed: 20260903
+    confidence: 0.95
+    comparisons: paired                       # two models resampled on the SAME utterances, matched by sample_id
 
 bleu:
   scorer: sacrebleu                 # rejected: nltk.translate.bleu_score — no pinned tokenizer, so the single most score-moving convention would sit outside this contract

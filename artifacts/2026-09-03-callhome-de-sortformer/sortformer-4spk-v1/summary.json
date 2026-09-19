@@ -17,5 +17,9 @@
       "fa": 6.428426607824042,
       "conf": 2.640991685366325
     }
+  },
+  "diarizer_config": {
+    "latency_preset": null,
+    "streaming_config": null
   }
 }

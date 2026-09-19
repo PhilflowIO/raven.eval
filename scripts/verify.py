@@ -16,6 +16,12 @@ optional by design: it is present exactly for the translation-shaped corpora
 noise. ``sacrebleu`` is a base dependency precisely so this path stays GPU-free
 and network-free like the rest of Tier-1.
 
+Coverage is checked before any number: a subset fails if a line records a failed
+request (``"prediction": null`` plus ``"error"``), or if the file does not hold
+exactly the ``n_samples`` lines its expected.json commits to. A WER computed over
+only the clips a model finished is not the published quantity, however well it
+re-scores.
+
 Exit code is nonzero on any mismatch OR on an empty artifacts dir (so CI can't
 silently go green on a run that produced nothing).
 
@@ -37,15 +43,16 @@ the published number. The concrete divergences (each would move WER):
      strips äh/ähm/… unconditionally, deleting reference words -> different WER.
   3. Transliteration. flozi runs ``unidecode`` (umlauts preserved via an
      escape/restore dance). ``normalize_strict_de`` does not.
-  4. Case + dedup. flozi keeps case in ``normalize_text`` and defers
-     lowercasing + contiguous-dup collapse to jiwer's
-     ``wer_standardize_contiguous`` transforms at WER time.
+  4. Case. flozi keeps case in ``normalize_text`` and defers lowercasing to
+     jiwer's ``wer_standardize`` transforms at WER time.
      ``normalize_strict_de`` lowercases inline and calls plain ``jiwer.wer``.
 
-So the flozi pipeline (same ``unidecode``/``alpha2digit`` normalization, same
-``wer_standardize_contiguous`` transforms, same corpus aggregation, same
-raw-text CER) is what scores here. Goal, per the task contract: same
-``predictions_*.jsonl`` in -> same published ``wer_pct`` out.
+So the flozi normalization (``unidecode``/``alpha2digit``), per-utterance jiwer
+alignment, corpus aggregation and raw-text CER is what scores here. Goal, per
+the task contract: same ``predictions_*.jsonl`` in -> same published ``wer_pct``
+out. (Alignment is the one deliberate divergence from flozi's own code, which
+concatenates the subset into one sentence first — see
+``raven_eval_core.flozi_wer``.)
 
 Canonical implementation (imported, NOT copied): ``raven_eval_core.flozi_wer``.
 Etappe 3 mirrored the flozi pipeline inline here; Etappe 4 collapsed that copy
@@ -63,6 +70,7 @@ import re
 import sys
 from pathlib import Path
 
+from raven_asr.analysis import wer_interval
 from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
 from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
@@ -92,6 +100,7 @@ __all__ = [
     "corpus_bleu_score",
     "corpus_cer_pct",
     "corpus_wer_pct",
+    "count_lines",
     "find_der_model_dirs",
     "main",
     "normalize_text",
@@ -108,10 +117,8 @@ __all__ = [
 _PRED_RE = re.compile(r"^predictions_(?P<subset>.+)\.jsonl$")
 
 
-def read_pairs(path: Path) -> tuple[list[str], list[str]]:
-    """Read one predictions_*.jsonl -> (references, predictions), raw text."""
-    refs: list[str] = []
-    preds: list[str] = []
+def _read_rows(path: Path) -> list[dict]:
+    rows: list[dict] = []
     with path.open(encoding="utf-8") as fh:
         for lineno, raw in enumerate(fh, 1):
             raw = raw.strip()
@@ -119,11 +126,38 @@ def read_pairs(path: Path) -> tuple[list[str], list[str]]:
                 continue
             try:
                 row = json.loads(raw)
-                refs.append(row["reference"])
-                preds.append(row["prediction"])
+                row["reference"]
+                row["prediction"]
             except (json.JSONDecodeError, KeyError) as exc:
                 raise ValueError(f"{path}:{lineno}: bad record: {exc}") from exc
-    return refs, preds
+            rows.append(row)
+    return rows
+
+
+def _is_failed(row: dict) -> bool:
+    return row.get("error") is not None or row["prediction"] is None
+
+
+def count_lines(path: Path) -> tuple[int, int]:
+    """``(lines, failed lines)`` of one predictions_*.jsonl."""
+    rows = _read_rows(path)
+    return len(rows), sum(1 for r in rows if _is_failed(r))
+
+
+def read_pairs(path: Path) -> tuple[list[str], list[str]]:
+    """Read one predictions_*.jsonl -> (references, predictions), raw text.
+
+    Refuses a file with failed-request lines rather than scoring around them:
+    a caller that wants the coverage question answered asks :func:`count_lines`.
+    """
+    rows = _read_rows(path)
+    failed = [i for i, r in enumerate(rows, 1) if _is_failed(r)]
+    if failed:
+        raise ValueError(
+            f"{path}: {len(failed)} line(s) record a failed request "
+            f"(first: line {failed[0]}) — there is no transcription to score"
+        )
+    return [r["reference"] for r in rows], [r["prediction"] for r in rows]
 
 
 def score_jsonl(path: Path) -> tuple[float, float, int]:
@@ -142,6 +176,25 @@ def score_jsonl_bleu(path: Path) -> float:
     """
     refs, preds = read_pairs(path)
     return corpus_bleu_score(refs, preds)
+
+
+def _coverage_problem(n_lines: int, n_failed: int, exp: dict | None) -> str:
+    """Why a subset's predictions cannot stand for the whole subset, or ``""``."""
+    if exp is None:
+        return "no expected entry for subset"
+    if n_failed:
+        return (
+            f"{n_failed} of {n_lines} line(s) record a failed request — a run "
+            "with failures is not publishable"
+        )
+    if "n_samples" not in exp:
+        return "expected.json does not commit n_samples for this subset"
+    if n_lines != int(exp["n_samples"]):
+        return (
+            f"{n_lines} prediction line(s), expected.json commits "
+            f"n_samples={exp['n_samples']}"
+        )
+    return ""
 
 
 def find_model_dirs(artifacts_dir: Path) -> list[Path]:
@@ -191,16 +244,18 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
             m = _PRED_RE.match(pred_path.name)
             assert m  # glob guarantees the pattern
             subset = m.group("subset")
-            wer_pct, cer_pct, n = score_jsonl(pred_path)
+            n_lines, n_failed = count_lines(pred_path)
             exp = expected.get(subset)
-            if exp is None:
+            coverage = _coverage_problem(n_lines, n_failed, exp)
+            if coverage:
                 rows.append(
-                    {"model": str(rel), "subset": subset, "n": n,
-                     "wer": wer_pct, "cer": cer_pct, "status": "FAIL",
-                     "detail": "no expected entry for subset"}
+                    {"model": str(rel), "subset": subset, "n": n_lines,
+                     "status": "FAIL", "detail": coverage}
                 )
                 all_ok = False
                 continue
+            assert exp is not None  # _coverage_problem reports a missing entry
+            wer_pct, cer_pct, n = score_jsonl(pred_path)
             wer_ok = abs(wer_pct - float(exp["wer_pct"])) <= TOLERANCE_PCT
             cer_ok = abs(cer_pct - float(exp["cer_pct"])) <= TOLERANCE_PCT
             ok = wer_ok and cer_ok
@@ -257,6 +312,25 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
                             f"this environment {sig!r}"
                         )
                         ok = False
+
+            # The interval is a published quantity like the point: re-derived from
+            # the same predictions under the contract's seed and resample count.
+            if "wer_ci_lo" not in exp or "wer_ci_hi" not in exp:
+                detail = (detail + " " if detail else "") + (
+                    "expected.json does not commit the WER interval"
+                )
+                ok = False
+            else:
+                ci = wer_interval(pred_path)
+                row["wer_ci"] = (ci.lo, ci.hi)
+                off = max(abs(ci.lo - float(exp["wer_ci_lo"])),
+                          abs(ci.hi - float(exp["wer_ci_hi"])))
+                if off > TOLERANCE_PCT:
+                    detail = (detail + " " if detail else "") + (
+                        f"WER interval [{ci.lo:.3f}, {ci.hi:.3f}] vs committed "
+                        f"[{exp['wer_ci_lo']}, {exp['wer_ci_hi']}] (tol {TOLERANCE_PCT})"
+                    )
+                    ok = False
 
             all_ok = all_ok and ok
             row["status"] = "PASS" if ok else "FAIL"

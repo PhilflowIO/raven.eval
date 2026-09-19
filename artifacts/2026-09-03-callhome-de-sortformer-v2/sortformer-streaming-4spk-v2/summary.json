@@ -17,5 +17,15 @@
       "fa": 7.198159232683038,
       "conf": 1.6821382926205417
     }
+  },
+  "diarizer_config": {
+    "latency_preset": "very-high-latency",
+    "streaming_config": {
+      "chunk_len": 340,
+      "chunk_right_context": 40,
+      "fifo_len": 40,
+      "spkcache_update_period": 300,
+      "spkcache_len": 188
+    }
   }
 }

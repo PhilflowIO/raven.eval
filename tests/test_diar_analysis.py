@@ -26,6 +26,7 @@ from raven_diar.analysis import (
 )
 from raven_diar.rescore import backfill
 from raven_diar.score import DerScore, score_segment_pairs
+from raven_eval_core.bootstrap import UnpairedUnitsError
 from raven_eval_core.der import DerComponents, file_mean_der, to_rttm
 
 
@@ -137,16 +138,17 @@ def test_paired_delta_of_a_model_against_itself_is_zero():
     assert delta.lo <= 0.0 <= delta.hi
 
 
-def test_paired_delta_only_uses_files_both_models_scored():
-    """An unpaired file cannot inform a paired comparison and is dropped."""
+def test_paired_delta_refuses_files_only_one_model_scored():
+    """Dropping them would compare the models on a smaller corpus than either
+    published number, with an interval that looks just as confident."""
     a = _rows(3)
     b = list(score_segment_pairs(
         "t",
         [([(0.0, 10.0, "A")], [(0.0, 9.0, "A")])],
         file_ids=[a[0].file_id],
     ).per_file)
-    delta = paired_bootstrap_delta(a, b, "full", resamples=100)
-    assert delta.n == 1
+    with pytest.raises(UnpairedUnitsError, match="only in A"):
+        paired_bootstrap_delta(a, b, "full", resamples=100)
 
 
 # ── DER by reference speaker count ───────────────────────────────────────────

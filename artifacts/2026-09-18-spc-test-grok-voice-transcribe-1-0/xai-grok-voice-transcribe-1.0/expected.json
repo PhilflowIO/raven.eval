@@ -1,9 +1,12 @@
 {
   "spc-test": {
-    "wer_pct": 49.3776,
+    "wer_pct": 50.0692,
     "cer_pct": 27.0138,
     "wer_strict_de_pct": 49.863,
     "bleu": 34.1309,
-    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0"
+    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0",
+    "n_samples": 50,
+    "wer_ci_lo": 43.8187,
+    "wer_ci_hi": 55.979
   }
 }

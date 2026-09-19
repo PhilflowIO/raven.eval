@@ -2,6 +2,9 @@
   "avemio-german-mixed-test": {
     "wer_pct": 6.8715,
     "cer_pct": 3.8475,
-    "wer_strict_de_pct": 6.6185
+    "wer_strict_de_pct": 6.6185,
+    "n_samples": 100,
+    "wer_ci_lo": 5.2378,
+    "wer_ci_hi": 8.7587
   }
 }

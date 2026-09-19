@@ -2,13 +2,19 @@
   "model_id": "grok-voice-transcribe-2.0",
   "label": "xai-grok-voice-transcribe-2.0",
   "adapter": "xai",
+  "model_revision": "grok-voice-transcribe-2.0",
   "limit_per_subset": 50,
   "results": [
     {
       "subset": "fhnw-all-dialects",
       "n_samples": 50,
-      "wer_pct": 43.4968,
-      "wer_filler_tolerant_pct": 43.4968,
+      "n_attempted": 50,
+      "n_ok": 50,
+      "n_failed": 0,
+      "dataset_revision": null,
+      "dataset_sha256": "7ca2492143b6d418ca42d6407f939ce8d2c53f66999e05906931ccefe6ff3148",
+      "wer_pct": 43.9232,
+      "wer_filler_tolerant_pct": 43.9232,
       "cer_pct": 22.695,
       "flozi_reference_wer": null,
       "drift_pct_vs_flozi": null

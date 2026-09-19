@@ -1,9 +1,12 @@
 {
   "fhnw-all-dialects": {
-    "wer_pct": 38.806,
+    "wer_pct": 39.6588,
     "cer_pct": 22.1631,
     "wer_strict_de_pct": 40.2954,
     "bleu": 37.0951,
-    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0"
+    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0",
+    "n_samples": 50,
+    "wer_ci_lo": 32.7869,
+    "wer_ci_hi": 46.9388
   }
 }

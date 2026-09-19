@@ -1,7 +1,10 @@
 {
   "voxpopuli-de": {
-    "wer_pct": 11.0068,
+    "wer_pct": 11.2676,
     "cer_pct": 7.1401,
-    "wer_strict_de_pct": 11.1575
+    "wer_strict_de_pct": 11.1575,
+    "n_samples": 100,
+    "wer_ci_lo": 9.4286,
+    "wer_ci_hi": 13.2149
   }
 }

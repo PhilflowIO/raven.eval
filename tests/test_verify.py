@@ -60,13 +60,78 @@ def test_wrong_expected_fails(tmp_path: Path):
     )
     # Perfect transcript -> real WER 0.0; assert something absurd instead.
     (model / "expected.json").write_text(
-        json.dumps({"S": {"wer_pct": 42.0, "cer_pct": 42.0}}), encoding="utf-8"
+        json.dumps({"S": {"wer_pct": 42.0, "cer_pct": 42.0, "n_samples": 1}}), encoding="utf-8"
     )
     all_ok, rows = verify.verify(tmp_path)
     assert rows
     assert not all_ok
     assert any(r["status"] == "FAIL" for r in rows)
     assert verify.main(["--artifacts-dir", str(tmp_path)]) == 1
+
+
+# ── Coverage: the number must stand for the whole subset ─────────────────────
+
+
+def _artifact(tmp_path: Path, lines: list[dict], expected: dict) -> Path:
+    model = tmp_path / "run" / "model"
+    model.mkdir(parents=True)
+    (model / "predictions_S.jsonl").write_text(
+        "".join(json.dumps(x) + "\n" for x in lines), encoding="utf-8"
+    )
+    (model / "expected.json").write_text(json.dumps({"S": expected}), encoding="utf-8")
+    return model
+
+
+_OK = {"reference": "hallo welt", "prediction": "hallo welt", "latency_s": 0.1}
+_FAILED = {"reference": "guten tag", "prediction": None, "latency_s": None,
+           "error": "ReadTimeout: timed out"}
+
+
+def test_a_failed_request_line_fails_verify(tmp_path: Path):
+    """The published WER over the clips that worked is still 0.0 — and still wrong.
+
+    Scored around the failure, this artifact re-scores perfectly. That is exactly
+    why coverage is checked before the number.
+    """
+    _artifact(tmp_path, [_OK, _FAILED], {"wer_pct": 0.0, "cer_pct": 0.0, "n_samples": 2})
+    all_ok, rows = verify.verify(tmp_path)
+    assert not all_ok
+    assert any("failed request" in r["detail"] for r in rows)
+    assert verify.main(["--artifacts-dir", str(tmp_path)]) == 1
+
+
+def test_a_lost_prediction_line_fails_verify(tmp_path: Path):
+    """n_samples binds the file to its length; a dropped line cannot hide."""
+    _artifact(tmp_path, [_OK], {"wer_pct": 0.0, "cer_pct": 0.0, "n_samples": 2})
+    all_ok, rows = verify.verify(tmp_path)
+    assert not all_ok
+    assert any("n_samples=2" in r["detail"] for r in rows)
+
+
+def test_expected_without_n_samples_fails(tmp_path: Path):
+    _artifact(tmp_path, [_OK], {"wer_pct": 0.0, "cer_pct": 0.0})
+    all_ok, rows = verify.verify(tmp_path)
+    assert not all_ok
+    assert any("does not commit n_samples" in r["detail"] for r in rows)
+
+
+def test_a_hand_edited_interval_fails_verify(tmp_path: Path):
+    """The committed interval is re-derived like the point, not trusted."""
+    good = verify.verify(DEMO_ARTIFACTS)[1]
+    assert all("wer_ci" in r for r in good), "every demo row carries its interval"
+    other = {"reference": "guten tag", "prediction": "guten abend", "latency_s": 0.1}
+    _artifact(tmp_path, [_OK, other, _OK, other],
+              {"wer_pct": 25.0, "cer_pct": 0.0, "n_samples": 4,
+               "wer_ci_lo": 0.0, "wer_ci_hi": 1.0})
+    all_ok, rows = verify.verify(tmp_path)
+    assert not all_ok
+    assert any("WER interval" in r["detail"] for r in rows)
+
+
+def test_read_pairs_refuses_to_score_around_a_failure(tmp_path: Path):
+    model = _artifact(tmp_path, [_OK, _FAILED], {})
+    with pytest.raises(ValueError, match="failed request"):
+        verify.read_pairs(model / "predictions_S.jsonl")
 
 
 def test_empty_artifacts_fails(tmp_path: Path):
@@ -149,7 +214,7 @@ def test_wrong_expected_bleu_fails(tmp_path: Path):
     )
     # WER/CER are correct; only the BLEU is absurd -> the run must still fail.
     (model / "expected.json").write_text(
-        json.dumps({"S": {"wer_pct": 0.0, "cer_pct": 0.0, "bleu": 99.0}}),
+        json.dumps({"S": {"wer_pct": 0.0, "cer_pct": 0.0, "n_samples": 1, "bleu": 99.0}}),
         encoding="utf-8",
     )
     all_ok, rows = verify.verify(tmp_path)
@@ -168,7 +233,9 @@ def test_subset_without_bleu_key_is_not_scored_for_bleu(tmp_path: Path):
         encoding="utf-8",
     )
     (model / "expected.json").write_text(
-        json.dumps({"S": {"wer_pct": 0.0, "cer_pct": 0.0}}), encoding="utf-8"
+        json.dumps({"S": {"wer_pct": 0.0, "cer_pct": 0.0, "n_samples": 1,
+                          "wer_ci_lo": 0.0, "wer_ci_hi": 0.0}}),
+        encoding="utf-8",
     )
     all_ok, rows = verify.verify(tmp_path)
     assert all_ok

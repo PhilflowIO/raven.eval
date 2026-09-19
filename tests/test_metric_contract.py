@@ -97,7 +97,12 @@ def test_every_metric_module_is_registered() -> None:
     # flozi_wer.py is the published WER path, wer.py the diagnostic lens: two
     # modules, one declared metric. Map the module names onto metric names.
     module_to_metric = {"der": "der", "wer": "wer", "flozi_wer": "wer", "bleu": "bleu"}
-    unmapped = sorted(on_disk - {"__init__"} - set(module_to_metric))
+    # Not a metric of its own: the resampler behind `der.uncertainty` and
+    # `wer.uncertainty`, whose settings those blocks declare.
+    shared_by_metrics = {"bootstrap"}
+    unmapped = sorted(
+        on_disk - {"__init__"} - set(module_to_metric) - shared_by_metrics
+    )
     assert not unmapped, (
         f"scorer module(s) {unmapped} exist under raven_eval_core/ but map to no "
         f"metric — add them to module_to_metric here (and to SCORED_METRICS + "
@@ -159,3 +164,17 @@ def test_bleu_signature_reflects_the_declared_conventions() -> None:
     assert ("case:mixed" if not variant["lowercase"] else "case:lc") in sig
     assert ("eff:no" if not variant["effective_order"] else "eff:yes") in sig
     assert "version:" in sig, "the signature must carry the sacrebleu version"
+
+
+def test_wer_uncertainty_matches_the_public_contract() -> None:
+    """Every published WER interval is computed under the declared settings."""
+    from raven_asr.config import (
+        BOOTSTRAP_CONFIDENCE,
+        BOOTSTRAP_RESAMPLES,
+        BOOTSTRAP_SEED,
+    )
+
+    unc = _config()["wer"]["uncertainty"]
+    assert unc["resamples"] == BOOTSTRAP_RESAMPLES
+    assert unc["seed"] == BOOTSTRAP_SEED
+    assert unc["confidence"] == BOOTSTRAP_CONFIDENCE
