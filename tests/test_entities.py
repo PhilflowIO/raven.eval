@@ -10,15 +10,15 @@ import json
 from pathlib import Path
 
 import pytest
-
-from raven_asr.analysis import entity_interval, paired_entity_delta
-from raven_eval_core.bootstrap import ratio_pct
 from raven_eval_core.entities import (
     entity_hit_rate,
     entity_units,
     extract_numeric_entities,
     utterance_entity_hits,
 )
+
+from raven_asr.analysis import entity_interval, paired_entity_delta
+from raven_eval_core.bootstrap import ratio_pct
 from raven_eval_core.flozi_wer import (
     normalize_flozi,
     normalize_flozi_before_punctuation_strip,

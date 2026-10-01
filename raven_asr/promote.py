@@ -177,8 +177,9 @@ def _add_entities(expected: dict[str, dict], preds: list[Path]) -> None:
     references hold no number commits ``null`` for the rate and its interval —
     a 0 % there would claim every number was wrong.
     """
-    from raven_asr.analysis import entity_interval
     from raven_eval_core.entities import entity_hit_rate
+
+    from raven_asr.analysis import entity_interval
 
     for path in preds:
         subset = _subset_for(path, expected)

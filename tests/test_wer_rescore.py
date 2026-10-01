@@ -55,7 +55,7 @@ def test_refuses_to_overwrite_a_disagreeing_value(tmp_path: Path):
     model = _artifact(tmp_path, {"wer_pct": 14.2857, "cer_pct": 1.0, "n_samples": 2,
                                  "entity_hit_rate_pct": 100.0})
     before = (model / "expected.json").read_bytes()
-    added, conflicts = rescore.backfill(model)
+    _, conflicts = rescore.backfill(model)
     assert any("entity_hit_rate_pct" in c for c in conflicts)
     assert (model / "expected.json").read_bytes() == before
 

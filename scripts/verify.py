@@ -76,13 +76,14 @@ import re
 import sys
 from pathlib import Path
 
+from raven_eval_core.entities import entity_hit_rate
+
 from raven_asr.analysis import entity_interval, wer_interval
 from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
-from raven_eval_core.entities import entity_hit_rate
 from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
-from raven_eval_core.wer import corpus_wer_strict_de_pct
 from raven_eval_core.flozi_wer import normalize_flozi as normalize_text
+from raven_eval_core.wer import corpus_wer_strict_de_pct
 
 # Abs-diff tolerance on wer_pct / cer_pct. 0.05 pp absorbs float/lib jitter
 # (jiwer/text_to_num patch releases) without hiding a real regression: a single
@@ -115,9 +116,9 @@ __all__ = [
     "score_der_dir",
     "score_jsonl",
     "score_jsonl_bleu",
-    "verify_entities",
     "verify",
     "verify_der",
+    "verify_entities",
 ]
 
 # --- artifact scanning + comparison -------------------------------------------

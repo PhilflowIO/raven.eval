@@ -13,9 +13,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import cast
 
+from raven_eval_core.entities import entity_hit_rate
 from tqdm import tqdm
 
-from raven_eval_core.entities import entity_hit_rate
 from raven_eval_core.flozi_wer import evaluate
 
 from .adapters.base import ASRAdapter
