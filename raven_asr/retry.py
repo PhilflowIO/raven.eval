@@ -4,6 +4,10 @@ Wraps async functions with exponential backoff for:
 * httpx 429 / 5xx responses (honors ``Retry-After`` header when present)
 * httpx network errors (timeouts, connection resets)
 * Modal ``ResourceExhaustedError`` (queue full / GPU contention)
+* :class:`TransientStreamError` — a streaming adapter's verdict that its
+  WebSocket session died for a reason a fresh session can fix (rate-limited
+  handshake, server restart). Only the adapter can read its vendor's close codes,
+  so it classifies; this module only schedules the retry.
 
 Logs every retry at WARNING with attempt number + sleep time, re-raises
 after ``max_retries`` exhaustion. Kept dependency-light (no tenacity) so
@@ -27,6 +31,15 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 RETRYABLE_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+
+
+class TransientStreamError(Exception):
+    """A streaming session failed in a way a new session can fix.
+
+    Raised by streaming adapters (no httpx response to inspect). A session is
+    re-run from its first chunk, so a retry repeats the whole utterance — the
+    same unit of work an HTTP retry repeats.
+    """
 
 
 def _is_modal_exhaustion(exc: BaseException) -> bool:
@@ -109,6 +122,20 @@ def with_retry(
                         attempt + 1,
                         max_retries,
                         type(exc).__name__,
+                        wait,
+                        getattr(fn, "__qualname__", fn.__name__),
+                    )
+                    await asyncio.sleep(wait)
+                except TransientStreamError as exc:
+                    if attempt >= max_retries:
+                        raise
+                    wait = min(max_backoff, base_backoff * (2 ** attempt))
+                    wait = wait * (1.0 + random.uniform(-jitter, jitter))
+                    logger.warning(
+                        "retry %d/%d after stream failure %s: sleeping %.2fs (%s)",
+                        attempt + 1,
+                        max_retries,
+                        exc,
                         wait,
                         getattr(fn, "__qualname__", fn.__name__),
                     )
