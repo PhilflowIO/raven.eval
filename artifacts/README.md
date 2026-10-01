@@ -20,6 +20,19 @@ artifacts/<run>/<model>/
 `make verify` re-scores every `predictions_<subset>.jsonl` and asserts the
 recomputed corpus WER + CER match `expected.json` within ±0.05 pp.
 
+Every WER entry also carries the numeric entity score
+(`raven_eval_core.entities`) — required, re-derived the same way:
+
+```
+"entity_hit_rate_pct": <float|null>,          # Σ exact number hits / Σ reference numbers
+"entity_ci_lo": <float|null>, "entity_ci_hi": <float|null>,   # 95 % bootstrap interval
+"n_entities": <int>, "n_utterances_with_entities": <int>      # what the rate rests on, matched exactly
+```
+
+`null` means the references hold no number — no hit rate, not 0 %. An artifact
+committed before a required field existed gets it from `make rescore`, derived
+from its own predictions; the tool never changes a value already committed.
+
 ### BLEU rides the same artifact
 
 A translation-shaped subset (dialect spoken, standard German transcribed) adds

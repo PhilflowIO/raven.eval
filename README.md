@@ -33,6 +33,7 @@ download a dataset, load a model, or need a license.
 | DER | VoxConverse dev (EN) | 7.17 % @ collar 0.0 | easier split |
 | **DER** | CALLHOME-de (DE, telephone) | **16.08 %** @ collar 0.25 | between pyannote 3.1 (19.0) & pyannoteAI (8.3) |
 | **WER** | Tuda-De / CommonVoice / MLS (DE) | 2.6–4.0 % | flozi dataset-card anchors |
+| Numbers hit | Tuda-De / CommonVoice / MLS (DE) | 94.5–98.3 % | dates, amounts, counts exactly right — the error WER hides; 91–339 numbers per set |
 
 Every row is re-scored on every push by CI. Full tables with per-file provenance
 and pinned model/dataset commits: [**`BENCHMARKS.md`**](./BENCHMARKS.md).
