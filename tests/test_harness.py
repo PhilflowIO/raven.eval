@@ -139,6 +139,9 @@ def test_promote_then_verify_round_trips(
     assert expected["Tuda-De"]["wer_pct"] == 0.0
     # the page lens is committed next to the published one, scored from the predictions
     assert expected["Tuda-De"]["wer_strict_de_pct"] == 0.0
+    # and so is the numeric entity score — here: no number, so no hit rate
+    assert expected["Tuda-De"]["n_entities"] == 0
+    assert expected["Tuda-De"]["entity_hit_rate_pct"] is None
 
     # every prediction line names its utterance and carries its audio length
     lines = [json.loads(x) for x in (dest / "predictions_Tuda-De.jsonl").read_text().splitlines()]
@@ -399,3 +402,25 @@ def test_promote_leaves_bleu_off_a_dictation_dataset(
                limit=None, out_dir=results_dir)
     dest = promote_mod.promote(results_dir, tmp_path / "artifacts", run_name="r")
     assert "bleu" not in json.loads((dest / "expected.json").read_text())["fleurs"]
+
+
+def test_summary_records_the_entity_score_beside_the_wer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run summary carries the hit rate and the count it rests on."""
+    samples, registry = _make_samples(
+        "Tuda-De", ["es kamen dreiundzwanzig Leute", "hallo welt", "um 10 Uhr"]
+    )
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_FakeLoader(samples), "Tuda-De"),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    results_dir = tmp_path / "results" / "primeline-whisper-large-v3-german"
+    runner.run(
+        model_key="primeline/whisper-large-v3-german", subsets=["Tuda-De"],
+        limit=None, out_dir=results_dir,
+    )
+    (row,) = json.loads((results_dir / "summary.json").read_text())["results"]
+    assert row["entity_hit_rate_pct"] == 100.0
+    assert (row["n_entities"], row["n_utterances_with_entities"]) == (2, 2)

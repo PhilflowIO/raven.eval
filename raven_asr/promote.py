@@ -7,8 +7,9 @@ layout ``scripts/verify.py`` re-scores:
     artifacts/<run-name>/<label>/
         predictions_<subset>.jsonl   (copied verbatim — the per-utterance model output)
         expected.json                ({subset: {wer_pct, cer_pct, n_samples}} from
-                                      summary.json, plus wer_strict_de_pct and the
-                                      95 % WER interval scored from the predictions)
+                                      summary.json, plus wer_strict_de_pct, the
+                                      95 % WER interval and the numeric entity hit
+                                      rate scored from the predictions)
 
 Once committed, ``make verify`` re-computes the corpus WER/CER from the copied
 predictions with the SAME core scorer that produced ``summary.json`` and asserts
@@ -168,6 +169,47 @@ def _add_interval(expected: dict[str, dict], preds: list[Path]) -> None:
         expected[subset]["wer_ci_hi"] = round(ci.hi, 4)
 
 
+def _add_entities(expected: dict[str, dict], preds: list[Path]) -> None:
+    """Attach the numeric entity hit rate, its counts and its 95 % interval.
+
+    The counts are part of the published number: a hit rate over 4 entities and
+    one over 400 read the same and mean very different things. A subset whose
+    references hold no number commits ``null`` for the rate and its interval —
+    a 0 % there would claim every number was wrong.
+    """
+    from raven_asr.analysis import entity_interval
+    from raven_eval_core.entities import entity_hit_rate
+
+    for path in preds:
+        subset = _subset_for(path, expected)
+        if subset is None:
+            continue
+        refs, hyps = _read_pairs(path)
+        result = entity_hit_rate(refs, hyps)
+        ci = entity_interval(path)
+        expected[subset].update({
+            "entity_hit_rate_pct": (
+                None if result.hit_rate_pct is None else round(result.hit_rate_pct, 4)
+            ),
+            "n_entities": result.n_entities,
+            "n_utterances_with_entities": result.n_utterances_with_entities,
+            "entity_ci_lo": None if ci is None else round(ci.lo, 4),
+            "entity_ci_hi": None if ci is None else round(ci.hi, 4),
+        })
+
+
+def add_required_fields(expected: dict[str, dict], preds: list[Path]) -> None:
+    """Attach every derived field ``make verify`` requires of a WER subset.
+
+    The WER interval and the numeric entity score: both are functions of the
+    committed predictions alone. One function for both callers — promotion of a
+    new run, and ``raven_asr.rescore`` backfilling an artifact committed before
+    a field existed — so the two can never derive a field differently.
+    """
+    _add_interval(expected, preds)
+    _add_entities(expected, preds)
+
+
 def _add_strict_de(expected: dict[str, dict[str, float]], preds: list[Path]) -> None:
     """Attach the strict-de corpus WER to every subset that has predictions.
 
@@ -216,7 +258,7 @@ def promote(
     expected = _expected_from_summary(summary)
     _add_strict_de(expected, preds)
     _add_bleu(expected, preds)
-    _add_interval(expected, preds)
+    add_required_fields(expected, preds)
     if not expected:
         raise ValueError(f"summary.json in {results_dir} has no results to promote")
 
