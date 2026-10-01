@@ -188,6 +188,27 @@ real-world telephone or meeting audio, 15–25 % is typical. The collar (a forgi
 window around speaker boundaries, usually 0.0 or 0.25 s) and the overlap rule change
 the number substantially — never compare DER across different rules.
 
+## Citing a result
+
+A number re-scores green against whatever `artifacts/` holds today, so a citation
+needs a version that cannot move. Each published result round gets a dated git
+tag, `results-YYYY-MM-DD`, on the commit that publishes it. That commit carries
+[`artifacts/SHA256SUMS`](./artifacts/SHA256SUMS) — the sha256 of every file under
+`artifacts/`, sorted, in plain `sha256sum` format — so the tag names exact bytes,
+including the provenance files no scorer reads. Cite the tag, not a branch.
+
+```bash
+git checkout results-YYYY-MM-DD
+make verify                                   # manifest first, then every number
+(cd artifacts && sha256sum -c SHA256SUMS)     # the same check, without this repo's code
+```
+
+`make verify` and CI fail if any artifact file is modified, missing or not in the
+manifest. An intended change is re-sealed with one command, `make manifest`, and
+committed together with the manifest it produces; the tag of an earlier round
+keeps the manifest it shipped with. What changed in the protocol between rounds
+is in [`CHANGELOG.md`](./CHANGELOG.md).
+
 ## Repository layout
 
 - **`raven_eval_core/`** — the standalone, secret-free metric core. `der.py`
@@ -204,7 +225,10 @@ the number substantially — never compare DER across different rules.
   against `nryant/dscore`.
 - **`artifacts/`** — the committed proof: per-file references + hypotheses +
   `expected.json` for every published number, re-scored by `make verify`.
-- **`scripts/verify.py`** — the Tier-1 re-scorer.
+- **`scripts/verify.py`** — the Tier-1 re-scorer. Checks `artifacts/SHA256SUMS`
+  before it scores anything.
+- **`scripts/manifest.py`** — writes (`make manifest`) and checks the artifact
+  manifest.
 
 ## What these numbers are not
 
