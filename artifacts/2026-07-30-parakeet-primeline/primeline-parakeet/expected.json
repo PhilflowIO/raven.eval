@@ -4,20 +4,35 @@
     "cer_pct": 2.7496,
     "n_samples": 414,
     "wer_ci_lo": 2.7625,
-    "wer_ci_hi": 5.5523
+    "wer_ci_hi": 5.5523,
+    "entity_hit_rate_pct": 94.5055,
+    "n_entities": 91,
+    "n_utterances_with_entities": 59,
+    "entity_ci_lo": 87.5,
+    "entity_ci_hi": 100.0
   },
   "multilingual_librispeech": {
     "wer_pct": 3.043,
     "cer_pct": 1.9041,
     "n_samples": 3996,
     "wer_ci_lo": 2.9124,
-    "wer_ci_hi": 3.1752
+    "wer_ci_hi": 3.1752,
+    "entity_hit_rate_pct": 97.0501,
+    "n_entities": 339,
+    "n_utterances_with_entities": 279,
+    "entity_ci_lo": 95.1009,
+    "entity_ci_hi": 98.5955
   },
   "common_voice_19_0": {
     "wer_pct": 2.5758,
     "cer_pct": 0.8499,
     "n_samples": 5389,
     "wer_ci_lo": 2.4095,
-    "wer_ci_hi": 2.7463
+    "wer_ci_hi": 2.7463,
+    "entity_hit_rate_pct": 98.3051,
+    "n_entities": 295,
+    "n_utterances_with_entities": 267,
+    "entity_ci_lo": 96.6216,
+    "entity_ci_hi": 99.6599
   }
 }

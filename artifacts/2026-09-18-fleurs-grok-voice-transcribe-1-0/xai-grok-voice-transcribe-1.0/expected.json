@@ -5,6 +5,11 @@
     "wer_strict_de_pct": 7.5105,
     "n_samples": 100,
     "wer_ci_lo": 4.7384,
-    "wer_ci_hi": 9.5591
+    "wer_ci_hi": 9.5591,
+    "entity_hit_rate_pct": 90.9091,
+    "n_entities": 44,
+    "n_utterances_with_entities": 30,
+    "entity_ci_lo": 80.4878,
+    "entity_ci_hi": 98.0392
   }
 }
