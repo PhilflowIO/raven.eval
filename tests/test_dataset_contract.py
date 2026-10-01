@@ -21,6 +21,7 @@ loader module (so they run without the ``asr`` extra installed).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -186,3 +187,103 @@ def test_every_wer_dataset_pins_its_references() -> None:
             f"{dataset_id}: neither a pinned revision nor an archive sha256 — "
             f"its references can change underneath a published WER."
         )
+
+
+# ── what is spoken: language_tag / variety_label / locality ─────────────────
+#
+# A deliberately small allowlist rather than a full BCP 47 parser. Every tag
+# here is a plain ``language[-REGION]``; anything richer would be a new kind of
+# claim and should be a deliberate edit to this list. The region allowlist is
+# what actually stops pseudo tags: "de-BY" and "gsw-BE" are WELL-FORMED BCP 47
+# (Belarus, Belgium), so no syntax check can catch a state or canton smuggled
+# into the region slot — only a list of the countries we mean can.
+
+#: ISO 639 language subtags in use: German, Swiss German, Bavarian, English.
+ALLOWED_LANGUAGES = frozenset({"de", "gsw", "bar", "en"})
+#: ISO 3166-1 alpha-2 countries a German-variety corpus here may name.
+ALLOWED_REGIONS = frozenset({"DE", "AT", "CH"})
+LANGUAGE_TAG_RE = re.compile(r"^(?P<language>[a-z]{2,3})(?:-(?P<region>[A-Z]{2}))?$")
+
+
+def language_tag_problem(tag: object) -> str:
+    """Why ``tag`` is not an acceptable language_tag, or ``""``."""
+    if not isinstance(tag, str):
+        return f"{tag!r} is not a string"
+    m = LANGUAGE_TAG_RE.match(tag)
+    if not m:
+        return f"{tag!r} is not of the form language[-REGION]"
+    if m.group("language") not in ALLOWED_LANGUAGES:
+        return f"language subtag {m.group('language')!r} not in {sorted(ALLOWED_LANGUAGES)}"
+    region = m.group("region")
+    if region is not None and region not in ALLOWED_REGIONS:
+        return (
+            f"region subtag {region!r} is not one of the countries "
+            f"{sorted(ALLOWED_REGIONS)} — a region subtag names a country, never "
+            f"a federal state or canton"
+        )
+    return ""
+
+
+def _all_config_entries() -> list[tuple[str, dict]]:
+    doc = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    return [(f"{metric}/{entry['id']}", entry)
+            for metric, entries in doc["datasets"].items() for entry in entries]
+
+
+@pytest.mark.parametrize(
+    "tag", ["de", "de-DE", "de-AT", "de-CH", "gsw-CH", "gsw", "bar", "en"]
+)
+def test_valid_language_tags_pass(tag: str) -> None:
+    assert language_tag_problem(tag) == ""
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "de-BY",      # Bavaria as a region subtag — is Belarus
+        "gsw-BE",     # Bern as a region subtag — is Belgium
+        "de-BAY",     # three-letter pseudo region
+        "de-ba",      # xSID's own variety label, lower-case region
+        "de_DE",      # POSIX locale, not BCP 47
+        "Swiss German",
+        "",
+        None,
+    ],
+)
+def test_pseudo_and_malformed_tags_are_rejected(tag: object) -> None:
+    assert language_tag_problem(tag) != ""
+
+
+def test_every_dataset_declares_language_variety_and_locality() -> None:
+    problems: list[str] = []
+    for where, entry in _all_config_entries():
+        missing = [k for k in ("language_tag", "variety_label", "locality")
+                   if k not in entry]
+        if missing:
+            problems.append(f"{where}: missing {missing}")
+            continue
+        if why := language_tag_problem(entry["language_tag"]):
+            problems.append(f"{where}: {why}")
+        label = entry["variety_label"]
+        if not isinstance(label, str) or not label.strip():
+            problems.append(f"{where}: variety_label must be a non-empty string")
+        locality = entry["locality"]
+        if locality is not None and (not isinstance(locality, str)
+                                     or not locality.strip()):
+            problems.append(f"{where}: locality must be null or a non-empty string")
+    assert not problems, "\n".join(problems)
+
+
+def test_dialect_corpora_carry_a_dialect_language_tag() -> None:
+    """A dialect corpus tagged plain ``de`` would read as Standard German."""
+    from raven_asr.config import DIALECT_DATASET_IDS
+
+    tags = {entry["id"]: entry["language_tag"]
+            for where, entry in _all_config_entries() if where.startswith("wer/")}
+    # The control spur is in DIALECT_DATASET_IDS (barred from aggregates) but
+    # its variety IS Standard German; it is the one dialect-set id tagged de.
+    for dataset_id in sorted(DIALECT_DATASET_IDS - {"xsid-de-control"}):
+        assert tags[dataset_id].split("-")[0] in {"gsw", "bar"}, (
+            f"{dataset_id}: dialect corpus tagged {tags[dataset_id]!r}"
+        )
+    assert tags["xsid-de-control"] == "de"
