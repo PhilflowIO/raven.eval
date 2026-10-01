@@ -140,6 +140,13 @@ implemented (`raven_eval_core/bleu.py`, signature pinned in
 `benchmark.config.yaml`), so where a run reports both, BLEU is the figure to
 compare on and the WER beside it is a floor.
 
+Every dataset entry in `benchmark.config.yaml` also states what is spoken, in
+three fields: a BCP 47 `language_tag` (`gsw-CH` for both Swiss sets, `bar` for
+the Bavarian xSID probe, `de` or `en` elsewhere), a `variety_label` in words, and
+a `locality` as the source documents it, or null. A region subtag is always a
+country — `de-BY` would be German as spoken in Belarus — and the contract test
+rejects a state or canton in that slot.
+
 They are also the two datasets that are *not* acquired through a pinned Hugging
 Face revision. They are loose files behind a URL, so the pin is an explicit
 sha256 verified on every acquisition
@@ -227,6 +234,29 @@ VoxPopuli, where its interval ends at exactly zero ([+0.00, +2.52]) — a lead
 for 1.0 there, not a settled one. BLEU carries no interval yet, so the Swiss
 BLEU gap (43.42 against 34.13 on `spc-test`, 40.65 against 37.10 on
 `fhnw-all-dialects`) is a point comparison and ranks nothing on its own.
+
+**Per dialect region.** "Swiss German" is not one evaluation category —
+KugelAudio's open dialect TTS benchmark protocol reports per locality before
+aggregating, and this page follows it. `fhnw-all-dialects` writes each
+speaker's canton into the sample id, and `make analyse` splits the corpus by it:
+n, WER with its interval, and BLEU with n only (no interval, as above). A canton
+with fewer than 30 utterances (`benchmark.config.yaml` →
+`dialect_region_breakdown.min_n`) shows its n and a note, not a number. The 50
+utterances behind both rows above spread over 14 cantons, and none reaches the
+floor:
+
+| canton | ZH | SG | AG | BL¹ | BE | SO | TG | ZG | GL | GR | LU | SZ | UR | VS |
+|--------|---:|---:|---:|----:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| n | 9 | 7 | 6 | 6 | 5 | 4 | 4 | 3 | 1 | 1 | 1 | 1 | 1 | 1 |
+
+¹ Basel-Landschaft and Basel-Stadt: the corpus README labels BS speakers BL.
+
+So these runs say nothing about any single region yet. The public half of the
+corpus has 2,875 utterances, of which 13 of its 17 cantons hold at least 30;
+per-canton numbers appear here with the first run over it. Region rows never
+carry a winner mark and are never averaged — the corpus row pools utterances, it
+is not a mean of regions. Canton names follow ISO 3166-2:CH; a code the corpus
+README does not explain stays a code.
 
 Re-score any row with `make verify` (Tier-1, no GPU) — it recomputes these from
 the committed `predictions_*.jsonl` and asserts they match within ±0.05 pp,

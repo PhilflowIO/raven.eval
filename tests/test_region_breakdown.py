@@ -113,3 +113,14 @@ def test_only_dialect_corpora_are_split() -> None:
     from raven_asr.config import DIALECT_DATASET_IDS
 
     assert set(REGION_PARSERS) <= DIALECT_DATASET_IDS
+
+
+def test_published_canton_counts_equal_the_artifacts() -> None:
+    """The n row in BENCHMARKS.md is read off the committed artifacts, not typed."""
+    text = (REPO_ROOT / "BENCHMARKS.md").read_text(encoding="utf-8").splitlines()
+    header_at = next(i for i, line in enumerate(text) if line.startswith("| canton |"))
+    codes = [c.strip().rstrip("¹") for c in text[header_at].strip("|").split("|")][1:]
+    counts = [int(c) for c in text[header_at + 2].strip("|").split("|")[1:]]
+    published = dict(zip(codes, counts, strict=True))
+    for path in FHNW_ARTIFACTS:
+        assert {r.region: r.n for r in by_region(path, resamples=10)} == published
