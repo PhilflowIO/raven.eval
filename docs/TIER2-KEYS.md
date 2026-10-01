@@ -47,6 +47,7 @@ environment variable's value: no key and no endpoint URL is written to it.
 | `deepgram-nova-2`                    | `deepgram`       | `DEEPGRAM_API_KEY` |
 | `voxtral-mini-latest`                | `voxtral_mistral`| `MISTRAL_API_KEY` |
 | `xai/grok-voice-transcribe-2.0`, `xai/grok-voice-transcribe-1.0` | `xai`            | `XAI_API_KEY` (hosted, us-east-1, **billed per hour of audio**) |
+| `assemblyai/universal-3-6-pro-realtime` | `assemblyai_realtime` | `ASSEMBLYAI_API_KEY` (hosted streaming, **billed per hour of audio**, 0.45 $/h; clips are fed at real-time pace, so a run takes audio length ÷ concurrency) |
 | `primeline/*` (whisper/parakeet)     | `vllm_openai`    | a running vLLM OpenAI-compatible endpoint (self-host GPU); base URL in `VLLM_PRIMELINE_URL`, optional key in `VLLM_PRIMELINE_API_KEY` |
 | `nvidia/parakeet-tdt-0.6b-v3`, `nvidia/canary-1b-v2` | `vllm_openai` | a running OpenAI-compatible ASR endpoint (self-host GPU, e.g. a NeMo server exposing `/audio/transcriptions`); base URL in `NEMO_BENCH_URL`, optional key in `NEMO_BENCH_API_KEY` |
 | `ibm-granite/granite-speech-4.1-2b-plus`, `CohereLabs/cohere-transcribe-03-2026`, `OpenMOSS-Team/MOSS-Transcribe-Diarize`, `microsoft/Phi-4-multimodal-instruct` | `vllm_openai` | a running OpenAI-compatible ASR endpoint (self-host GPU; any server exposing `/audio/transcriptions` works, e.g. vLLM); base URL in `VLLM_BENCH_URL`, optional key in `VLLM_BENCH_API_KEY` |
@@ -54,9 +55,10 @@ environment variable's value: no key and no endpoint URL is written to it.
 The `*_URL` / `*_API_KEY` variables name **your** endpoints — this repo never
 ships URLs or key values, only the env-var names the runner reads.
 
-DER adapters keep their own key table in `docs/TIER2-DER-KEYS.md` — the only
-key-bearing one today is `assemblyai-universal-3-5-pro`
-(`ASSEMBLYAI_API_KEY`, hosted, **billed per hour of audio**). Same rule: names
+DER adapters keep their own key table in `docs/TIER2-DER-KEYS.md`; the
+key-bearing ones there (`assemblyai-universal-3-5-pro`, `deepgram-nova-3`) are
+hosted and **billed per hour of audio**. `ASSEMBLYAI_API_KEY` serves both the
+DER lane and the streaming WER lane above. Same rule: names
 here, values only in your environment.
 
 Set the key in your environment before `make reproduce`. Missing-key failures

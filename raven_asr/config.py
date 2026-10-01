@@ -468,6 +468,17 @@ KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
         api_key_env="XAI_API_KEY",
         revision="grok-voice-transcribe-1.0",
     ),
+    # AssemblyAI Universal-3.6 Pro Realtime — hosted streaming over the v3
+    # WebSocket, fed at real-time pace; USD 0.45 per audio hour (assemblyai.com
+    # blog, 2026-09-29). The only streaming model in this table: its latency_s is
+    # finalisation latency, not request wall-clock (see the adapter docstring).
+    "assemblyai/universal-3-6-pro-realtime": ModelSpec(
+        model_id="universal-3-6-pro",
+        adapter="assemblyai_realtime",
+        label="assemblyai-universal-3-6-pro-realtime",
+        api_key_env="ASSEMBLYAI_API_KEY",
+        revision="universal-3-6-pro",
+    ),
     # Modal-hosted STT apps. Each must expose a parameterized
     # `transcribe(audio_bytes, sr)` function.
     "modal/parakeet": ModelSpec(
