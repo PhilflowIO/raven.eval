@@ -155,37 +155,78 @@ bleu:
 # redistribute restricted audio. Every id below resolves to a loader in this
 # repo, and every loader in this repo appears below — tests/test_dataset_contract.py
 # fails the build in both directions, so this list cannot drift from the code.
+#
+# Every entry says WHAT is spoken in three separate fields, because one label
+# cannot carry all three without lying about one of them:
+#   language_tag   a valid BCP 47 tag. A region subtag is an ISO 3166-1 COUNTRY,
+#                  never a federal state or canton: "de-BY" is German as spoken
+#                  in Belarus, not Bavarian, and "gsw-BE" is Belgium, not Bern.
+#                  Bavarian is its own language subtag (bar), Swiss German gsw.
+#   variety_label  the variety and register in words, for a human reader.
+#   locality       where the variety is from, as the SOURCE documents it; null
+#                  where the source documents nothing or the question does not
+#                  apply. "Swiss German" is not one evaluation category — a
+#                  corpus spanning localities is reported per locality before
+#                  anything is aggregated.
+# tests/test_dataset_contract.py validates the three fields on every entry.
 datasets:
   der:
     - id: callhome-de        # talkbank/callhome, deu config — free, gold, German (2-spk telephone)
       hf: talkbank/callhome
       config: deu
       license: TalkBank (cite-to-use)
+      language_tag: de
+      variety_label: "German (telephone conversation)"
+      locality: null          # no locality claim: the gold labels carry none
     - id: ami                # CC BY 4.0 — 4-speaker meetings
       license: CC-BY-4.0
+      language_tag: en
+      variety_label: "English (meetings)"
+      locality: null          # no locality claim: the gold labels carry none
     - id: voxconverse        # dev split; labels CC BY 4.0; audio = YouTube owners
       license: CC-BY-4.0 (labels)
+      language_tag: en
+      variety_label: "English (multi-speaker YouTube video)"
+      locality: null
     - id: voxconverse-test   # same corpus, TEST split — the split pyannote publishes its DER on
       license: CC-BY-4.0 (labels)
+      language_tag: en
+      variety_label: "English (multi-speaker YouTube video)"
+      locality: null
   wer:
     - id: avemio-german-mixed-test   # avemio re-upload of the flozi00/asr-german-mixed TEST split (CV + MLS German)
       hf: avemio/ASR-GERMAN-MIXED-TEST
       license: CC-BY-4.0 (strictest component; CV CC0 + MLS CC-BY-4.0)
+      language_tag: de
+      variety_label: "Standard German (read: Common Voice + MLS)"
+      locality: null
     - id: fleurs             # google/fleurs config de_de, split test — read parallel sentences
       hf: google/fleurs
       config: de_de
       license: CC-BY-4.0
+      language_tag: de
+      variety_label: "Standard German (read)"
+      locality: null          # de_de is FLEURS' locale label, not a documented speaker origin
     - id: mls-de             # facebook/multilingual_librispeech config german, split test — LibriVox audiobooks
       hf: facebook/multilingual_librispeech
       config: german
       license: CC-BY-4.0
+      language_tag: de
+      variety_label: "Standard German (read audiobooks)"
+      locality: null
     - id: voxpopuli-de       # facebook/voxpopuli config de, split test — EU-Parliament plenary speech
       hf: facebook/voxpopuli
       config: de
       license: CC0-1.0
+      language_tag: de
+      variety_label: "Standard German (EU Parliament speech)"
+      locality: null
     - id: german-mixed       # avemio / flozi00 asr-german-mixed-evals (Tuda-De CC-BY-4.0, MLS CC-BY-4.0, CV CC0)
       hf: flozi00/asr-german-mixed-evals
       license: CC-BY-4.0 / CC0-1.0 (per subset)
+      language_tag: de
+      variety_label: "Standard German (read: Tuda-De, MLS, Common Voice)"
+      locality: null
     # Swiss German dialect corpora. Translation-shaped — Swiss German spoken,
     # Standard German written — so `metric: bleu+wer`. Each is reported on its
     # own: there is no aggregate spanning dialects and no dialect contribution to
@@ -193,10 +234,16 @@ datasets:
     - id: spc-test           # Swiss Parliaments Corpus test, Bernese cantonal parliament
       hf: i4ds/SPC_test
       license: MIT (inferred from upstream FHNW SPC; the HF card carries no license tag)
+      language_tag: gsw-CH
+      variety_label: "Swiss German (Bernese)"
+      locality: "Canton of Bern"   # Bernese cantonal parliament
       metric: bleu+wer
       acquisition: two test parquet shards by URL, sha256-verified (raven_asr/datasets/spc_test.py)
     - id: fhnw-all-dialects  # FHNW All Swiss German Dialects Test Set, SwissText 2021 task 3
       license: MIT
+      language_tag: gsw-CH
+      variety_label: "Swiss German (all dialect regions)"
+      locality: "per utterance: canton of dialect origin"   # README.txt `accent`, one canton per utterance, carried in the sample_id
       metric: bleu+wer
       acquisition: Dropbox zip by URL, sha256-verified; durability vendor — a durable mirror is outstanding
     # ── Dialect probe + its control spur — read the publication rules below ──
@@ -205,6 +252,9 @@ datasets:
       doi: 10.5281/zenodo.21605015
       version: "0.2"
       license: CC-BY-SA-4.0 (+ authors' no-speech-synthesis condition — see /NOTICE)
+      language_tag: bar
+      variety_label: "Bavarian"
+      locality: "rural Upper Bavaria"   # xSID-audio README; xSID's own label de-ba is not BCP 47
       representativeness: low
       eligible_for_aggregate: false
     - id: xsid-de-control    # SAME speaker, SAME sentences, Standard German
@@ -212,6 +262,9 @@ datasets:
       doi: 10.5281/zenodo.21605015
       version: "0.2"
       license: CC-BY-SA-4.0 (+ authors' no-speech-synthesis condition — see /NOTICE)
+      language_tag: de
+      variety_label: "Standard German (read by the xsid-bar speaker)"
+      locality: null          # the variety is Standard German, not local; the speaker's origin is xsid-bar's
       representativeness: low
       eligible_for_aggregate: false
 
@@ -228,3 +281,24 @@ dialect_publication_rules:
   - never form an aggregate that spans two dialect areas.
   # eligible_for_aggregate=false in raven_asr.config carries this in code.
   - dialect datasets stay out of any cross-dataset or `overall` average.
+  # A region row is a slice of one corpus, not a corpus: too few speakers to
+  # rank anything, and a mean of region rows is a different estimator from the
+  # corpus number (which pools utterances), weighted by nothing that exists.
+  - a per-region row never carries a winner mark and is never averaged.
+
+# Per-locality rows INSIDE a dialect corpus. "Swiss German" is not one
+# evaluation category: a corpus that spans dialect regions is also reported per
+# region, next to — never instead of — its corpus number. Read out of committed
+# artifacts by `make analyse` (raven_asr.analysis.by_region), no re-run needed.
+dialect_region_breakdown:
+  datasets: [fhnw-all-dialects]       # every utterance carries its region; spc-test is one region (Bern), xSID one speaker
+  region: canton of dialect origin    # FHNW README.txt `accent`; BS speakers are labelled BL. Names per ISO 3166-2:CH
+  source_of_region: sample_id         # fhnw-all-dialects-<canton>-<clip>, parsed by raven_asr.datasets.fhnw_all_dialects.region_of
+  # Below this many utterances a region shows its n and a note, not a number.
+  # 30 is a floor, not a precision target: the whole 50-utterance FHNW sample
+  # already carries a ±7 pp WER interval, and a percentile bootstrap over a
+  # handful of utterances mostly reports which few clips it drew.
+  min_n: 30
+  wer: corpus WER over the region's utterances + percentile bootstrap CI (wer.uncertainty settings)
+  bleu: corpus BLEU over the region's utterances + n — NO interval, BLEU has none yet
+  coverage: every utterance lands in exactly one region; Σ region n == corpus n, or the breakdown refuses to print

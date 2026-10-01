@@ -17,6 +17,7 @@ read their pins costs nothing.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -29,7 +30,13 @@ from raven_asr.config import (
     resolve_wer_dataset,
 )
 from raven_asr.datasets import WER_LOADERS
-from raven_asr.datasets.fhnw_all_dialects import ARCHIVE, sample_id_for
+from raven_asr.datasets.fhnw_all_dialects import (
+    ARCHIVE,
+    REGION_NAMES,
+    region_name,
+    region_of,
+    sample_id_for,
+)
 from raven_asr.datasets.local_archive import (
     ChecksumMismatch,
     RemoteArtifact,
@@ -226,3 +233,51 @@ def test_sample_id_keeps_the_dialect_region() -> None:
         == "fhnw-all-dialects-ZH-abc-123"
     )
     assert sample_id_for({"path": "abc.flac"}) == "fhnw-all-dialects-xx-abc"
+
+
+# ── the region in the id, read back ──────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"accent": "ZH", "path": "55cf5814-a2b7-4379-876f-135822a5529e.flac"},
+        {"accent": "BL", "path": "0dcbea22-2141-40ba-a442-72227626257d.flac"},
+        {"accent": " SG ", "path": "abc.flac"},
+        {"path": "no-accent.flac"},
+    ],
+)
+def test_region_of_inverts_sample_id_for(row: dict[str, str]) -> None:
+    """The parser reads back exactly what the loader wrote, uuid hyphens included."""
+    expected = (row.get("accent") or "xx").strip()
+    assert region_of(sample_id_for(row)) == expected
+
+
+def test_region_of_reads_the_committed_artifact_ids() -> None:
+    """Real ids, as promoted: every committed FHNW line parses to a mapped canton."""
+    paths = sorted((REPO_ROOT / "artifacts").glob(
+        "*/*/predictions_fhnw-all-dialects.jsonl"))
+    assert paths, "no committed fhnw-all-dialects artifact to read ids from"
+    for path in paths:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                assert region_of(json.loads(line)["sample_id"]) in REGION_NAMES
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["spc-test-ZH-abc", "fhnw-all-dialects-ZH", "fhnw-all-dialects--abc", "ZH-abc"],
+)
+def test_region_of_refuses_an_id_it_cannot_read(bad: str) -> None:
+    with pytest.raises(ValueError):
+        region_of(bad)
+
+
+def test_region_names_are_canton_codes_and_unknown_codes_stay_raw() -> None:
+    assert all(re.fullmatch(r"[A-Z]{2}", code) for code in REGION_NAMES)
+    assert region_name("ZH") == "Zürich"
+    # BS speakers were labelled BL (archive README) — the name must say so.
+    assert "Basel-Stadt" in region_name("BL")
+    # Not mapped -> reported as the code, never a guessed name.
+    assert region_name("xx") == "xx"
+    assert region_name("JU") == "JU"
