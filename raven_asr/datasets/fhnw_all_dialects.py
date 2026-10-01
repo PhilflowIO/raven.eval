@@ -58,10 +58,22 @@ convenient 16 kHz — the adapters build a WAV header from what the loader repor
 so a wrong number here is transcribed noise, not a rounding difference.
 
 The dialect region travels in the ``sample_id`` (``fhnw-all-dialects-ZH-<clip>``)
-because :class:`~raven_asr.datasets.base.Sample` is a fixed five-field contract
-shared by every loader in this repo and must not grow a sixth field for one
-corpus. Per-region scoring columns therefore parse the id; a richer sample
-contract is a separate change with a separate blast radius.
+because the id is the one per-utterance field every committed
+``predictions_*.jsonl`` carries. A region read from anywhere else would be lost
+the moment a run is promoted, and a committed artifact could no longer be broken
+down by region without re-running it. :func:`region_of` is the inverse of
+:func:`sample_id_for`; ``raven_asr.analysis`` uses it for the per-region rows.
+
+Region names
+    The ``accent`` value is "the canton of origin of the dialect" (archive
+    ``README.txt``), written as the two-letter canton abbreviation — the same
+    letters as the ISO 3166-2:CH subdivision code after ``CH-``. The names in
+    :data:`REGION_NAMES` are the ISO 3166-2:CH subdivision names, German form
+    where ISO lists several (``FR`` Freiburg, ``VS`` Wallis), because the
+    speakers are Swiss German. ``BL`` stands for both Basel cantons: the README
+    says BS speakers were labelled BL. Only the codes ``public.tsv`` actually
+    carries are mapped (17, counted 2026-10-02); any other code is reported raw
+    rather than guessed.
 """
 
 from __future__ import annotations
@@ -105,6 +117,9 @@ TAR: Final[str] = "clips.tar"
 TEXT_COLUMN: Final[str] = "sentence"
 
 ALL_SUBSETS: Final[str] = "All"
+
+#: What :func:`sample_id_for` writes when a row records no ``accent``.
+UNKNOWN_REGION: Final[str] = "xx"
 
 
 class FhnwAllDialectsLoader:
@@ -212,6 +227,55 @@ def sample_id_for(row: dict[str, str]) -> str:
     Kept a module-level function so a per-region scorer can parse ids with the
     same code that produced them instead of re-deriving the convention.
     """
-    region = (row.get("accent") or "xx").strip() or "xx"
+    region = (row.get("accent") or UNKNOWN_REGION).strip() or UNKNOWN_REGION
     clip = Path(row.get("path") or "").stem or "unknown"
     return f"{DATASET_ID}-{region}-{clip}"
+
+
+#: Canton code → name, for exactly the codes ``public.tsv`` carries. Codes per
+#: the archive README ("canton of origin of the dialect"); names per ISO
+#: 3166-2:CH, German form. See the module docstring.
+REGION_NAMES: Final[dict[str, str]] = {
+    "AG": "Aargau",
+    "BE": "Bern",
+    "BL": "Basel-Landschaft + Basel-Stadt",  # README: BS speakers labelled BL
+    "FR": "Freiburg",
+    "GL": "Glarus",
+    "GR": "Graubünden",
+    "LU": "Luzern",
+    "NW": "Nidwalden",
+    "SG": "Sankt Gallen",
+    "SH": "Schaffhausen",
+    "SO": "Solothurn",
+    "SZ": "Schwyz",
+    "TG": "Thurgau",
+    "UR": "Uri",
+    "VS": "Wallis",
+    "ZG": "Zug",
+    "ZH": "Zürich",
+}
+
+_ID_PREFIX: Final[str] = f"{DATASET_ID}-"
+
+
+def region_of(sample_id: str) -> str:
+    """The canton code a :func:`sample_id_for` id carries, e.g. ``"ZH"``.
+
+    Raises on an id this loader did not produce: a per-region table built over
+    ids it cannot read would put those utterances in no region, and the region
+    counts would quietly stop adding up to the corpus.
+    """
+    if not sample_id.startswith(_ID_PREFIX):
+        raise ValueError(f"{sample_id!r} is not a {DATASET_ID} sample id")
+    region, sep, clip = sample_id[len(_ID_PREFIX):].partition("-")
+    if not region or not sep or not clip:
+        raise ValueError(
+            f"{sample_id!r} carries no region: expected "
+            f"{DATASET_ID}-<region>-<clip>"
+        )
+    return region
+
+
+def region_name(code: str) -> str:
+    """Human-readable name for a region code; the raw code when unmapped."""
+    return REGION_NAMES.get(code, code)
