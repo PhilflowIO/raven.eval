@@ -66,6 +66,7 @@ def test_wrong_expected_fails(tmp_path: Path):
     assert rows
     assert not all_ok
     assert any(r["status"] == "FAIL" for r in rows)
+    verify.manifest.write_manifest(tmp_path)  # seal, so the exit code is the scorer's
     assert verify.main(["--artifacts-dir", str(tmp_path)]) == 1
 
 
@@ -100,6 +101,7 @@ def test_a_failed_request_line_fails_verify(tmp_path: Path):
     all_ok, rows = verify.verify(tmp_path)
     assert not all_ok
     assert any("failed request" in r["detail"] for r in rows)
+    verify.manifest.write_manifest(tmp_path)  # seal, so the exit code is the scorer's
     assert verify.main(["--artifacts-dir", str(tmp_path)]) == 1
 
 
@@ -142,6 +144,7 @@ def test_empty_artifacts_fails(tmp_path: Path):
     all_ok, rows = verify.verify(tmp_path)
     assert not all_ok
     assert rows == []
+    verify.manifest.write_manifest(tmp_path)  # seal, so the exit code is the scorer's
     assert verify.main(["--artifacts-dir", str(tmp_path)]) == 2
 
 
@@ -223,6 +226,7 @@ def test_wrong_expected_bleu_fails(tmp_path: Path):
     all_ok, rows = verify.verify(tmp_path)
     assert not all_ok
     assert any("Δbleu=" in r.get("detail", "") for r in rows)
+    verify.manifest.write_manifest(tmp_path)  # seal, so the exit code is the scorer's
     assert verify.main(["--artifacts-dir", str(tmp_path)]) == 1
 
 
