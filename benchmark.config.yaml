@@ -281,3 +281,24 @@ dialect_publication_rules:
   - never form an aggregate that spans two dialect areas.
   # eligible_for_aggregate=false in raven_asr.config carries this in code.
   - dialect datasets stay out of any cross-dataset or `overall` average.
+  # A region row is a slice of one corpus, not a corpus: too few speakers to
+  # rank anything, and a mean of region rows is a different estimator from the
+  # corpus number (which pools utterances), weighted by nothing that exists.
+  - a per-region row never carries a winner mark and is never averaged.
+
+# Per-locality rows INSIDE a dialect corpus. "Swiss German" is not one
+# evaluation category: a corpus that spans dialect regions is also reported per
+# region, next to — never instead of — its corpus number. Read out of committed
+# artifacts by `make analyse` (raven_asr.analysis.by_region), no re-run needed.
+dialect_region_breakdown:
+  datasets: [fhnw-all-dialects]       # every utterance carries its region; spc-test is one region (Bern), xSID one speaker
+  region: canton of dialect origin    # FHNW README.txt `accent`; BS speakers are labelled BL. Names per ISO 3166-2:CH
+  source_of_region: sample_id         # fhnw-all-dialects-<canton>-<clip>, parsed by raven_asr.datasets.fhnw_all_dialects.region_of
+  # Below this many utterances a region shows its n and a note, not a number.
+  # 30 is a floor, not a precision target: the whole 50-utterance FHNW sample
+  # already carries a ±7 pp WER interval, and a percentile bootstrap over a
+  # handful of utterances mostly reports which few clips it drew.
+  min_n: 30
+  wer: corpus WER over the region's utterances + percentile bootstrap CI (wer.uncertainty settings)
+  bleu: corpus BLEU over the region's utterances + n — NO interval, BLEU has none yet
+  coverage: every utterance lands in exactly one region; Σ region n == corpus n, or the breakdown refuses to print

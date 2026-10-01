@@ -23,6 +23,7 @@ verify:             ## Tier-1: re-score committed WER + DER artifacts → reprod
 #   DER: bootstrap CI, DER by reference speaker count, overlap, boundary offsets
 #     make analyse ARTIFACT=artifacts/2026-07-31-callhome-de/pyannote-community-1
 #   WER: bootstrap CI per subset; COMPARE= adds the paired interval on the gap
+#        fhnw-all-dialects also prints WER/BLEU per dialect region (canton)
 #     make analyse ARTIFACT=artifacts/<run>/<model> COMPARE=artifacts/<run>/<other> [LENS=strict-de]
 analyse:            ## Tier-1: intervals (and paired gaps) for one committed artifact.
 	$(if $(wildcard $(ARTIFACT)/predictions_*.jsonl),\

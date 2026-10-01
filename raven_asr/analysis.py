@@ -14,6 +14,16 @@ The WER counterpart of ``raven_diar.analysis``, on the same resampler
     utterances, matched by ``sample_id``, so utterance difficulty cancels. An
     interval that spans zero means the two numbers do not rank the models.
 
+``by_region``
+    Where inside a dialect corpus does it fail? "Swiss German" is not one
+    evaluation category: FHNW spans every Swiss dialect region and writes each
+    utterance's canton into its ``sample_id``. Per region: n, corpus WER with the
+    same bootstrap interval, corpus BLEU with n and no interval (BLEU has none
+    yet). A region under ``REGION_MIN_N`` utterances shows its n and a note,
+    never a number. Region rows sit next to the corpus number and are never
+    averaged into one — the corpus figure pools utterances, it is not a mean of
+    regions.
+
 Two lenses, because the page makes claims in both: ``flozi-strict`` (the
 published table, ``raven_eval_core.flozi_wer``) and ``strict-de`` (the benchmark
 page's length-weighted lens, ``raven_eval_core.corpus_wer_strict_de_pct``). Each
@@ -35,6 +45,9 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from dataclasses import dataclass
+
+from raven_eval_core.bleu import corpus_bleu_score
 from raven_eval_core.bootstrap import (
     Interval,
     Unit,
@@ -45,7 +58,13 @@ from raven_eval_core.bootstrap import (
 from raven_eval_core.flozi_wer import utterance_word_errors
 from raven_eval_core.wer import utterance_strict_de_units
 
-from .config import BOOTSTRAP_CONFIDENCE, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED
+from .config import (
+    BOOTSTRAP_CONFIDENCE,
+    BOOTSTRAP_RESAMPLES,
+    BOOTSTRAP_SEED,
+    REGION_MIN_N,
+)
+from .datasets import fhnw_all_dialects
 
 #: Lens name → per-utterance decomposition of that lens's corpus WER.
 LENSES: dict[str, Callable[[list[str], list[str]], list[tuple[float, float]]]] = {
@@ -129,6 +148,103 @@ def paired_wer_delta(
     )
 
 
+# ── per region, inside one dialect corpus (#32) ─────────────────────────────
+
+#: subset → (region parser over sample_id, code → display name). Mirrors
+#: ``benchmark.config.yaml`` → ``dialect_region_breakdown.datasets``; the
+#: contract test asserts the two name the same corpora.
+REGION_PARSERS: dict[str, tuple[Callable[[str], str], Callable[[str], str]]] = {
+    fhnw_all_dialects.DATASET_ID: (fhnw_all_dialects.region_of,
+                                   fhnw_all_dialects.region_name),
+}
+
+
+@dataclass(frozen=True)
+class RegionRow:
+    """One region of one dialect corpus.
+
+    ``wer`` and ``bleu`` are None exactly when ``n`` is under the minimum; then
+    ``note`` says why and the row carries its n only. ``bleu`` is a point
+    estimate: BLEU has no interval in this repo yet, so none is invented here.
+    """
+
+    region: str          # code as it stands in the sample_id
+    name: str            # display name, or the code itself when unmapped
+    n: int
+    wer: Interval | None
+    bleu: float | None
+    note: str = ""
+
+
+def by_region(
+    path: Path,
+    lens: str = PUBLISHED_LENS,
+    *,
+    min_n: int = REGION_MIN_N,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = BOOTSTRAP_SEED,
+    confidence: float = BOOTSTRAP_CONFIDENCE,
+) -> list[RegionRow]:
+    """WER (with interval) and BLEU per dialect region of one predictions file.
+
+    Regions come from each line's ``sample_id`` via the corpus's own parser, so
+    the split is the one the loader wrote. Rows are ordered by n, largest first.
+    Raises if the subset has no region parser, if a line has no ``sample_id``,
+    or if an id carries no readable region (the parser raises) — so every
+    utterance lands in exactly one region and the region n sum to the corpus n.
+    A breakdown that lost utterances would look exactly as authoritative as one
+    that did not.
+    """
+    subset = _subset_of(path)
+    if subset not in REGION_PARSERS:
+        raise KeyError(f"{subset!r} has no region parser; have {sorted(REGION_PARSERS)}")
+    parse, name = REGION_PARSERS[subset]
+    rows = _rows(path)
+    if any("sample_id" not in r for r in rows):
+        raise ValueError(f"{path}: lines without sample_id cannot be split by region")
+
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(parse(r["sample_id"]), []).append(r)
+
+    out: list[RegionRow] = []
+    for code, members in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        n = len(members)
+        if n < min_n:
+            out.append(RegionRow(
+                region=code, name=name(code), n=n, wer=None, bleu=None,
+                note=f"n < {min_n}: too few utterances for a number",
+            ))
+            continue
+        out.append(RegionRow(
+            region=code, name=name(code), n=n,
+            wer=bootstrap_ratio_ci(_units(members, lens), resamples=resamples,
+                                   seed=seed, confidence=confidence),
+            bleu=corpus_bleu_score([r["reference"] for r in members],
+                                   [r["prediction"] for r in members]),
+        ))
+    return out
+
+
+def _subset_of(path: Path) -> str:
+    m = _PRED_RE.match(path.name)
+    if not m:
+        raise ValueError(f"{path.name} is not a predictions_<subset>.jsonl file")
+    return m.group("subset")
+
+
+def _print_regions(regions: list[RegionRow], min_n: int) -> None:
+    print(f"  by region (min n {min_n}; no winner marks, never averaged; "
+          f"BLEU has no interval):")
+    for row in regions:
+        label = f"{row.region} {row.name}" if row.name != row.region else row.region
+        if row.wer is None or row.bleu is None:
+            print(f"    {label:<36} n={row.n:<5} {row.note}")
+        else:
+            print(f"    {label:<36} n={row.n:<5} WER {row.wer.point:.3f} % "
+                  f"[{row.wer.lo:.3f}, {row.wer.hi:.3f}]   BLEU {row.bleu:.2f}")
+
+
 def artifact_subsets(model_dir: Path) -> dict[str, Path]:
     """``{subset: predictions path}`` of one artifact dir."""
     out: dict[str, Path] = {}
@@ -160,6 +276,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.model_dir.name} · {subset} · {args.lens}")
         print(f"  WER {ci.point:.3f} %   95 % CI [{ci.lo:.3f}, {ci.hi:.3f}] "
               f"(±{ci.half_width:.3f}, n={ci.n}, {ci.resamples} resamples, seed {ci.seed})")
+        if subset in REGION_PARSERS:
+            _print_regions(by_region(path, args.lens, resamples=args.resamples,
+                                     seed=args.seed), REGION_MIN_N)
         if args.compare:
             if subset not in other:
                 print(f"  vs {args.compare.name}: no {subset} predictions there")

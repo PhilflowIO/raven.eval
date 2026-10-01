@@ -178,3 +178,14 @@ def test_wer_uncertainty_matches_the_public_contract() -> None:
     assert unc["resamples"] == BOOTSTRAP_RESAMPLES
     assert unc["seed"] == BOOTSTRAP_SEED
     assert unc["confidence"] == BOOTSTRAP_CONFIDENCE
+
+
+def test_region_breakdown_matches_the_public_contract() -> None:
+    """``dialect_region_breakdown`` names the corpora and the floor the code applies."""
+    from raven_asr.analysis import REGION_PARSERS
+    from raven_asr.config import REGION_MIN_N
+
+    block = _config()["dialect_region_breakdown"]
+    assert block["min_n"] == REGION_MIN_N
+    assert set(block["datasets"]) == set(REGION_PARSERS)
+    assert "dialect_region_breakdown" not in _declared_metrics()
