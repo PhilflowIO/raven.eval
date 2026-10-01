@@ -27,6 +27,18 @@ download a dataset, load a model, or need a license.
 
 ## Numbers you can re-score right now
 
+**Raven has a stake in some of these rows.** Raven sells meeting transcription,
+and two models on this page are inside it: `primeline/parakeet-primeline`
+transcribes every standard tier (it produced the WER row below), and
+`pyannote/speaker-diarization-community-1` is the diarizer built into the
+product (the DER rows). A benchmark run by an interested party has to say so
+where the numbers are. What bounds the interest is the protocol, not our
+intentions: scoring rules, bootstrap seeds and every model and dataset revision
+are pinned in this repository; a failed request or a missing hypothesis fails the
+check instead of shrinking the corpus; training-data overlap is named beside the
+rows it affects; the page awards no winner marks; and `make verify` re-scores
+every number from the committed outputs, for anyone.
+
 | metric | dataset | number | comparison |
 |--------|---------|--------|------------|
 | **DER** | VoxConverse test (EN, in-the-wild) | **11.15 %** @ collar 0.0 | pyannote card **11.2 %** ✓ (Δ 0.05 pp) |
