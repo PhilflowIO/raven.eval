@@ -4,6 +4,11 @@
     "cer_pct": 9.4595,
     "n_samples": 8,
     "wer_ci_lo": 1.5152,
-    "wer_ci_hi": 13.8462
+    "wer_ci_hi": 13.8462,
+    "entity_hit_rate_pct": 100.0,
+    "n_entities": 1,
+    "n_utterances_with_entities": 1,
+    "entity_ci_lo": 100.0,
+    "entity_ci_hi": 100.0
   }
 }

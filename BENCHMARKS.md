@@ -91,7 +91,9 @@ was computed from, committed under `artifacts/<run>/<model>/`:
   `{"reference","prediction","latency_s"}` (the format Raven's eval runner
   writes, `german_asr/runner.py`).
 - `expected.json` — `{"<subset>": {"wer_pct": <float>, "cer_pct": <float>}}`,
-  plus an optional `"bleu"` + `"bleu_signature"` on translation-shaped subsets.
+  plus an optional `"bleu"` + `"bleu_signature"` on translation-shaped subsets,
+  and the [numeric entity score](#numbers--the-error-wer-hides-numeric-entity-hit-rate)
+  (`entity_hit_rate_pct`, its interval, `n_entities`, `n_utterances_with_entities`).
 
 `make verify` (→ `scripts/verify.py`) re-scores every `predictions_*.jsonl`
 with our own scorer and asserts each subset matches `expected.json` within
@@ -173,23 +175,23 @@ edits / total reference words after flozi-canonical normalization — comparable
 the `flozi00/asr-german-mixed-evals` published table, not to a mean-of-utterance
 WER. CER is on raw text.
 
-| model | dataset | WER strict % | 95 % CI | CER % | n | run | flozi ref WER |
-|-------|---------|------------:|--------:|------:|--:|-----|--------------:|
-| primeline/parakeet-primeline | Tuda-De | 4.02 | [2.76, 5.55] | 2.75 | 414 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 |
-| primeline/parakeet-primeline | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 |
-| primeline/parakeet-primeline | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 |
-| xai/grok-voice-transcribe-2.0 | avemio-german-mixed-test | 6.87 | [5.24, 8.76] | 3.85 | 100 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | fleurs | 4.59 | [3.43, 5.90] | 2.57 | 100 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | mls-de | 8.37 | [6.87, 9.95] | 10.53 | 100 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | voxpopuli-de | 12.99 | [10.88, 15.32] | 8.39 | 100 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | spc-test | 41.77 | [35.69, 47.99] | 23.85 | 50 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | fhnw-all-dialects | 43.92 | [35.98, 52.24] | 22.70 | 50 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-1.0 | avemio-german-mixed-test | 7.21 | [5.45, 9.29] | 4.41 | 100 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | fleurs | 6.75 | [4.74, 9.56] | 9.49 | 100 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | mls-de | 8.22 | [7.04, 9.47] | 10.45 | 100 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | voxpopuli-de | 11.27 | [9.43, 13.21] | 7.14 | 100 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | spc-test | 50.07 | [43.82, 55.98] | 27.01 | 50 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | fhnw-all-dialects | 39.66 | [32.79, 46.94] | 22.16 | 50 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| model | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | run | flozi ref WER |
+|-------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|-----|--------------:|
+| primeline/parakeet-primeline | Tuda-De | 4.02 | [2.76, 5.55] | 2.75 | 414 | 94.51 | [87.50, 100.00] | 91 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 |
+| primeline/parakeet-primeline | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | 97.05 | [95.10, 98.60] | 339 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 |
+| primeline/parakeet-primeline | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | 98.31 | [96.62, 99.66] | 295 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 |
+| xai/grok-voice-transcribe-2.0 | avemio-german-mixed-test | 6.87 | [5.24, 8.76] | 3.85 | 100 | 100.00 | [100.00, 100.00] | 3 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | fleurs | 4.59 | [3.43, 5.90] | 2.57 | 100 | 93.18 | [83.78, 100.00] | 44 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | mls-de | 8.37 | [6.87, 9.95] | 10.53 | 100 | 90.00 | [66.67, 100.00] | 10 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | voxpopuli-de | 12.99 | [10.88, 15.32] | 8.39 | 100 | 75.00 | [50.00, 94.44] | 16 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | spc-test | 41.77 | [35.69, 47.99] | 23.85 | 50 | 60.00 | [20.00, 100.00] | 5 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | fhnw-all-dialects | 43.92 | [35.98, 52.24] | 22.70 | 50 | 75.00 | [50.00, 100.00] | 4 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-1.0 | avemio-german-mixed-test | 7.21 | [5.45, 9.29] | 4.41 | 100 | 66.67 | [0.00, 100.00] | 3 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | fleurs | 6.75 | [4.74, 9.56] | 9.49 | 100 | 90.91 | [80.49, 98.04] | 44 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | mls-de | 8.22 | [7.04, 9.47] | 10.45 | 100 | 90.00 | [66.67, 100.00] | 10 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | voxpopuli-de | 11.27 | [9.43, 13.21] | 7.14 | 100 | 75.00 | [50.00, 94.44] | 16 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | spc-test | 50.07 | [43.82, 55.98] | 27.01 | 50 | 80.00 | [40.00, 100.00] | 5 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | fhnw-all-dialects | 39.66 | [32.79, 46.94] | 22.16 | 50 | 75.00 | [50.00, 100.00] | 4 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
 
 **xAI Grok Voice Transcribe 2.0** (hosted, us-east-1, `language=de`, `format=true`,
 2026-09-18) was run on exactly the samples the Raven benchmark page compares every
@@ -260,7 +262,7 @@ README does not explain stays a code.
 
 Re-score any row with `make verify` (Tier-1, no GPU) — it recomputes these from
 the committed `predictions_*.jsonl` and asserts they match within ±0.05 pp,
-interval included. It also fails a row whose predictions file records a failed
+intervals and the `numbers` columns included. It also fails a row whose predictions file records a failed
 request or holds a different number of lines than `expected.json` commits to: a
 WER over only the clips a model finished is not the published quantity.
 
@@ -285,6 +287,47 @@ tabled here.
 > Raven's internal private-meeting WER/DER numbers are measured on a corpus that
 > cannot be published (consent) and are reported separately (Tier 3) — the rows
 > here are the public-dataset numbers anyone can re-score.
+
+### Numbers — the error WER hides (numeric entity hit rate)
+
+A wrong digit in a date, an amount or a count is the costliest error a meeting
+transcript can make, and to WER it is one substitution among hundreds of words.
+So the table scores the numbers on their own, the way KugelAudio's open German
+TTS benchmark protocol separates entity correctness from CER: **numbers hit %**
+is the share of the reference's numbers the transcript reproduces exactly, and
+**numbers** is how many there are. Definition in `raven_eval_core/entities.py`,
+rules in `benchmark.config.yaml` → `entity`.
+
+- An entity is a digit run with its decimal comma, date dots or time colon kept
+  inside it ("3,5", "12.03.2024", "10:30"). Number words count once flozi's
+  `alpha2digit` has made them digits ("dreiundzwanzig" → "23"). It is read
+  *before* flozi's final punctuation strip, which would fuse "3,5" into "35" and
+  so credit a transcript that said thirty-five.
+- Reference and transcript are normalized independently, and a hit is exact
+  equality, matched as a multiset per utterance. A contract test pins that every
+  German number word from 3 to 2999 maps onto its own digits and no other, so a
+  misrecognized number cannot score.
+- It is a floor. A formatting difference can cost a hit (flozi leaves "eins" and
+  "zwei" as words; "20er Jahre" against "zwanziger Jahre" is a miss). A wrong
+  number can never earn one.
+
+**Read the `numbers` column before the percentage.** On the three flozi subsets
+the rate rests on 91–339 numbers and its interval is a few points wide: 94.51 /
+97.05 / 98.31 % on Tuda-De / MLS / Common Voice. On the Grok samples it rests on
+3 to 44, and the intervals say what that is worth: avemio's 100.00 (2.0) and
+66.67 (1.0) are three numbers each, and 1.0's interval is [0.00, 100.00]. No set
+ranks Grok 2.0 against 1.0 on numbers; every paired interval spans or touches
+zero (FLEURS +2.27 pp [−5.26, +10.64] over the 30 utterances that hold one,
+`make analyse ARTIFACT=<2.0 dir> COMPARE=<1.0 dir>`). Below about 50 numbers,
+treat a row as a list of cases, not as a rate.
+
+The cases are what the metric is for. 2.0 writes the dam's "1963" as "163" and
+"GM 35" as "530". Both versions write FLEURS's "2007" as "2017", the "175 Meter"
+of `spc-test` as "275 m", and VoxPopuli's "60 Soldaten" as "60.000". Each of
+these is one or two word errors to WER. Two more VoxPopuli misses, shared by
+both versions, are references that open on a number ("21. Februar", "19.
+Mitglied") the transcript does not contain: the clip edge, where the WER count
+below finds the same corpus effect.
 
 ### How WER is counted (per utterance, since 2026-09-19)
 

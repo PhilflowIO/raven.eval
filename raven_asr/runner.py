@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import cast
 
+from raven_eval_core.entities import entity_hit_rate
 from tqdm import tqdm
 
 from raven_eval_core.flozi_wer import evaluate
@@ -263,6 +264,14 @@ def _compare_against_flozi(
                     entry.wer_filler_tolerant_pct, 4
                 ),
                 "cer_pct": round(entry.cer_pct, 4),
+                # Did the transcript get the numbers right — the error WER
+                # hides. Rests on n_entities numbers, not on n_samples.
+                "entity_hit_rate_pct": (
+                    None if entry.entity_hit_rate_pct is None
+                    else round(entry.entity_hit_rate_pct, 4)
+                ),
+                "n_entities": entry.n_entities,
+                "n_utterances_with_entities": entry.n_utterances_with_entities,
                 "flozi_reference_wer": ref_wer,
                 "drift_pct_vs_flozi": drift_pct,
             }
@@ -339,7 +348,10 @@ def _record_subset(
             spec.label, subset, n_failed,
         )
         return
-    metrics = evaluate([o.reference for o in ok], [cast(str, o.prediction) for o in ok])
+    refs = [o.reference for o in ok]
+    preds = [cast(str, o.prediction) for o in ok]
+    metrics = evaluate(refs, preds)
+    entities = entity_hit_rate(refs, preds)
     dataset_revision, dataset_sha256 = _dataset_pin(subset, revision)
     entry = ResultEntry(
         dataset_id=_dataset_id_for_subset(subset),
@@ -352,6 +364,9 @@ def _record_subset(
         n_failed=n_failed,
         dataset_revision=dataset_revision,
         dataset_sha256=dataset_sha256,
+        entity_hit_rate_pct=entities.hit_rate_pct,
+        n_entities=entities.n_entities,
+        n_utterances_with_entities=entities.n_utterances_with_entities,
     )
     entries.append(entry)
     if n_failed:

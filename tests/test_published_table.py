@@ -55,9 +55,12 @@ _DER_COLUMNS = {
     10: "der_classic_filemean",
 }
 _DER_WIDTH, _DER_N = 14, 12          # model | dataset | 9 numbers | CI | n | run
-_WER_COLUMNS = {2: "wer_pct", 4: "cer_pct"}
-_WER_CI = 3
-_WER_WIDTH, _WER_N = 8, 5            # model | subset | wer | CI | cer | n | run | ref
+_WER_COLUMNS = {2: "wer_pct", 4: "cer_pct", 6: "entity_hit_rate_pct"}
+#: "[lo, hi]" cells, each bound to its two expected.json fields.
+_WER_INTERVALS = {3: ("wer_ci_lo", "wer_ci_hi"), 7: ("entity_ci_lo", "entity_ci_hi")}
+_WER_N_ENTITIES = 8
+_WER_WIDTH, _WER_N = 11, 5
+# model | subset | wer | CI | cer | n | numbers hit | CI | numbers | run | ref
 
 
 def _linked_rows() -> list[tuple[str, list[str], Path]]:
@@ -98,14 +101,16 @@ def published_rows(metric: str = "der") -> list[dict]:
             )
         values = {field: _number(cells[i]) for i, field in columns.items()}
         if not is_der:
-            # "[lo, hi]" — the interval is a published number like the point.
-            lo, hi = cells[_WER_CI].strip("[]").split(",")
-            values["wer_ci_lo"], values["wer_ci_hi"] = _number(lo), _number(hi)
+            # "[lo, hi]" — an interval is a published number like the point.
+            for i, (lo_field, hi_field) in _WER_INTERVALS.items():
+                lo, hi = cells[i].strip("[]").split(",")
+                values[lo_field], values[hi_field] = _number(lo), _number(hi)
         rows.append({
             "model_cell": cells[0],
             "dataset_cell": cells[1],
             "values": values,
             "n": int(cells[n_idx]),
+            "n_entities": None if is_der else int(cells[_WER_N_ENTITIES]),
             "artifact": artifact,
         })
     return rows
@@ -213,6 +218,11 @@ def test_every_published_wer_row_matches_its_artifact(row: dict):
     assert row["n"] == n_lines, (
         f"{row['artifact'].relative_to(REPO_ROOT)} [{subset}] publishes n="
         f"{row['n']} but {n_lines} predictions are committed."
+    )
+    # The count a hit rate rests on is a claim like n, and matched exactly.
+    assert row["n_entities"] == committed["n_entities"], (
+        f"{row['artifact'].relative_to(REPO_ROOT)} [{subset}] publishes "
+        f"{row['n_entities']} numbers, expected.json commits {committed['n_entities']}."
     )
 
 

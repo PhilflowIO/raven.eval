@@ -7,6 +7,11 @@
     "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0",
     "n_samples": 50,
     "wer_ci_lo": 35.9823,
-    "wer_ci_hi": 52.2353
+    "wer_ci_hi": 52.2353,
+    "entity_hit_rate_pct": 75.0,
+    "n_entities": 4,
+    "n_utterances_with_entities": 2,
+    "entity_ci_lo": 50.0,
+    "entity_ci_hi": 100.0
   }
 }

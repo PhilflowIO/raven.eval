@@ -16,6 +16,12 @@ optional by design: it is present exactly for the translation-shaped corpora
 noise. ``sacrebleu`` is a base dependency precisely so this path stays GPU-free
 and network-free like the rest of Tier-1.
 
+The numeric entity hit rate rides it too, and is required like the WER
+interval: ``entity_hit_rate_pct`` with its 95 % interval re-derived within the
+same ±0.05 pp, and the two counts it rests on (``n_entities``,
+``n_utterances_with_entities``) matched exactly. A subset whose references hold
+no number commits ``null`` for the rate and must re-score to ``null``.
+
 Coverage is checked before any number: a subset fails if a line records a failed
 request (``"prediction": null`` plus ``"error"``), or if the file does not hold
 exactly the ``n_samples`` lines its expected.json commits to. A WER computed over
@@ -70,12 +76,14 @@ import re
 import sys
 from pathlib import Path
 
-from raven_asr.analysis import wer_interval
+from raven_eval_core.entities import entity_hit_rate
+
+from raven_asr.analysis import entity_interval, wer_interval
 from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
 from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
-from raven_eval_core.wer import corpus_wer_strict_de_pct
 from raven_eval_core.flozi_wer import normalize_flozi as normalize_text
+from raven_eval_core.wer import corpus_wer_strict_de_pct
 
 # Abs-diff tolerance on wer_pct / cer_pct. 0.05 pp absorbs float/lib jitter
 # (jiwer/text_to_num patch releases) without hiding a real regression: a single
@@ -110,6 +118,7 @@ __all__ = [
     "score_jsonl_bleu",
     "verify",
     "verify_der",
+    "verify_entities",
 ]
 
 # --- artifact scanning + comparison -------------------------------------------
@@ -176,6 +185,49 @@ def score_jsonl_bleu(path: Path) -> float:
     """
     refs, preds = read_pairs(path)
     return corpus_bleu_score(refs, preds)
+
+
+#: What expected.json must commit for the numeric entity score of a subset.
+ENTITY_FIELDS = (
+    "entity_hit_rate_pct", "entity_ci_lo", "entity_ci_hi",
+    "n_entities", "n_utterances_with_entities",
+)
+
+
+def _within(got: float | None, committed: object) -> bool:
+    """Equal within tolerance, where ``None`` (no entity in the subset) only equals ``None``."""
+    if got is None or committed is None:
+        return got is None and committed is None
+    return abs(got - float(committed)) <= TOLERANCE_PCT  # type: ignore[arg-type]
+
+
+def verify_entities(pred_path: Path, exp: dict) -> tuple[dict, str]:
+    """Re-derive one subset's numeric entity score; ``(row fields, problem or "")``."""
+    missing = [f for f in ENTITY_FIELDS if f not in exp]
+    if missing:
+        return {}, f"expected.json does not commit the entity score ({', '.join(missing)})"
+    refs, hyps = read_pairs(pred_path)
+    result = entity_hit_rate(refs, hyps)
+    ci = entity_interval(pred_path)
+    fields = {"entity": result.hit_rate_pct, "exp_entity": exp["entity_hit_rate_pct"],
+              "n_entities": result.n_entities}
+    problems = []
+    counts = (result.n_entities, result.n_utterances_with_entities)
+    committed = (exp["n_entities"], exp["n_utterances_with_entities"])
+    if counts != tuple(int(c) for c in committed):
+        problems.append(f"entity counts {counts} vs committed {committed}")
+    if not _within(result.hit_rate_pct, exp["entity_hit_rate_pct"]):
+        problems.append(
+            f"entity hit rate {result.hit_rate_pct} vs committed "
+            f"{exp['entity_hit_rate_pct']} (tol {TOLERANCE_PCT})"
+        )
+    lo, hi = (None, None) if ci is None else (ci.lo, ci.hi)
+    if not (_within(lo, exp["entity_ci_lo"]) and _within(hi, exp["entity_ci_hi"])):
+        problems.append(
+            f"entity interval [{lo}, {hi}] vs committed "
+            f"[{exp['entity_ci_lo']}, {exp['entity_ci_hi']}] (tol {TOLERANCE_PCT})"
+        )
+    return fields, " ".join(problems)
 
 
 def _coverage_problem(n_lines: int, n_failed: int, exp: dict | None) -> str:
@@ -331,6 +383,14 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
                         f"[{exp['wer_ci_lo']}, {exp['wer_ci_hi']}] (tol {TOLERANCE_PCT})"
                     )
                     ok = False
+
+            # The numeric entity score is published beside the WER, so it is
+            # re-derived like it — point, interval and the counts it rests on.
+            entity_row, entity_problem = verify_entities(pred_path, exp)
+            row.update(entity_row)
+            if entity_problem:
+                detail = (detail + " " if detail else "") + entity_problem
+                ok = False
 
             all_ok = all_ok and ok
             row["status"] = "PASS" if ok else "FAIL"
@@ -488,7 +548,7 @@ def _print_table(rows: list[dict]) -> None:
     # transcription-only artifacts dir prints exactly the table it always did.
     with_bleu = any("bleu" in r for r in rows)
     hdr = (f"{'model':<28} {'subset':<14} {'n':>4} {'wer%':>8} {'exp%':>8} "
-           f"{'cer%':>8}")
+           f"{'cer%':>8} {'entity%':>8} {'n_ent':>5}")
     if with_bleu:
         hdr += f" {'bleu':>8} {'expbleu':>8}"
     hdr += f" {'status':>6}"
@@ -500,7 +560,10 @@ def _print_table(rows: list[dict]) -> None:
             f"{r.get('n',''):>4} "
             f"{r.get('wer',float('nan')):>8.3f} "
             f"{r.get('exp_wer',float('nan')):>8.3f} "
-            f"{r.get('cer',float('nan')):>8.3f}"
+            f"{r.get('cer',float('nan')):>8.3f} "
+            # A subset without numbers has no hit rate: blank, not a fake 0.
+            + (f"{r['entity']:>8.3f}" if r.get("entity") is not None else f"{'':>8}")
+            + f" {r.get('n_entities', ''):>5}"
         )
         if with_bleu:
             # A subset without a declared BLEU prints blank, not a fake 0/nan.
@@ -565,7 +628,7 @@ def main(argv: list[str] | None = None) -> int:
         # a mixed count states a tolerance that half the rows were not held to.
         tolerances = []
         if wer_rows:
-            tolerances.append(f"WER/CER ±{TOLERANCE_PCT} pp")
+            tolerances.append(f"WER/CER/entity ±{TOLERANCE_PCT} pp")
             if any("bleu" in r for r in wer_rows):
                 tolerances.append(f"BLEU ±{BLEU_TOLERANCE}")
         if der_rows:

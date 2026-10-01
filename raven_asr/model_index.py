@@ -34,6 +34,11 @@ class ResultEntry:
     # The fixed set of references this row was scored against.
     dataset_revision: str | None = None
     dataset_sha256: str | None = None
+    # Numeric entity hit rate (raven_eval_core.entities) over the same
+    # utterances; None when the references hold no number at all.
+    entity_hit_rate_pct: float | None = None
+    n_entities: int = 0
+    n_utterances_with_entities: int = 0
 
 
 def build_model_index(

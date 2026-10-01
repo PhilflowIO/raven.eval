@@ -8,7 +8,7 @@
 # top-level key — publication rules, provenance notes — into a metric that the
 # contract test then demands an implementation for. The list is checked in both
 # directions against raven_eval_core.SCORED_METRICS.
-metrics: [der, wer, bleu]
+metrics: [der, wer, bleu, entity]
 
 der:
   scorer_primary: pyannote.metrics
@@ -149,6 +149,34 @@ bleu:
   aggregation: corpus               # Σ n-gram stats over the subset, NEVER a mean of per-sentence BLEUs
   signature: sacrebleu              # every published BLEU carries its sacrebleu signature (e.g. nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0) — that string, not the word "BLEU", is what makes it comparable
   also_reported: [sentence]         # raven_eval_core.bleu.sentence_bleu_diagnostic — per-row diagnostic under effective_order=True, not the published number
+
+entity:
+  # Numeric entity hit rate: the share of the reference's numbers — counts,
+  # amounts, percentages, dates, times — that the transcript reproduces exactly.
+  # A wrong digit is the costliest error in a meeting transcript and one
+  # substitution among hundreds to WER, so it is scored on its own (as
+  # KugelAudio's open German TTS benchmark protocol separates entity correctness
+  # from CER). Scored on the same predictions_*.jsonl as WER; committed to the
+  # same expected.json and re-derived by `make verify`.
+  # Definition in full: raven_eval_core/entities.py docstring.
+  scorer: raven_eval_core.entities
+  # flozi-strict (alpha2digit turns number words into digits) read BEFORE its
+  # final punctuation strip, which would fuse "3,5" into "35" and "2-3" into
+  # "23" and so credit a wrong number. Reference and hypothesis are normalized
+  # independently; a hit is exact string equality.
+  normalization: flozi-strict-before-punctuation-strip
+  entity: "[0-9]+([.,:][0-9]+)*, German thousands dots dropped"
+  matching: multiset-per-utterance          # an entity twice in the reference must appear twice in the hypothesis
+  aggregation: corpus                       # Σhits / Σreference entities; utterances without an entity contribute nothing
+  # Same resampler and settings as wer.uncertainty, but the unit is an utterance
+  # that HOLDS an entity: resampling entity-free utterances would let a resample
+  # draw none of the few that matter and score it 0 %.
+  uncertainty:
+    method: percentile bootstrap over utterances with at least one reference entity
+    resamples: 10000
+    seed: 20260903
+    confidence: 0.95
+    comparisons: paired                       # two models resampled on the SAME utterances, matched by sample_id
 
 # Public datasets the Tier-2 full-rerun scores against. Audio is fetched by the
 # harness itself (HF at a pinned revision / the official mirror); we never

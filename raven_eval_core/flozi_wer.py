@@ -91,6 +91,23 @@ def normalize_flozi(text: str, lang: str = "de") -> str:
     transforms at WER-computation time, matching flozi's upstream pipeline. Umlauts survive ``unidecode`` via an escape/restore
     dance so "Müller" stays "Müller" (not "Muller"), keeping the umlaut signal.
     """
+    text = normalize_flozi_before_punctuation_strip(text, lang)
+    text = _NON_WORD_RE.sub("", text)
+    text = _WHITESPACE_RE.sub(" ", text.strip())
+    return text.strip()
+
+
+def normalize_flozi_before_punctuation_strip(text: str, lang: str = "de") -> str:
+    """:func:`normalize_flozi` up to, and not including, its punctuation strip.
+
+    The last point in the flozi pipeline where a number still has its shape:
+    number words are already digits ("drei komma fünf" -> "3,5"), but "3,5",
+    "12.03.2024", "10:30" and "2-3" have not yet been fused into "35",
+    "12032024", "1030" and "23". The numeric-entity score reads here
+    (``raven_eval_core.entities``) because after the strip two different numbers
+    can become one string. Not a second normalization: :func:`normalize_flozi`
+    is this function followed by the strip.
+    """
     for umlaut, ascii_form in _UMLAUT_COUPLES:
         text = text.replace(umlaut, f"__{ascii_form}__")
     text = text.replace("ß", "ss")
@@ -104,10 +121,7 @@ def normalize_flozi(text: str, lang: str = "de") -> str:
     with contextlib.suppress(Exception):
         text = alpha2digit(text, lang)
     text = _BRACKET_RE.sub("", text)
-    text = _QUOTE_RE.sub("", text)
-    text = _NON_WORD_RE.sub("", text)
-    text = _WHITESPACE_RE.sub(" ", text.strip())
-    return text.strip()
+    return _QUOTE_RE.sub("", text)
 
 
 # Default filler stop-list for the filler-tolerant WER variant. Matched

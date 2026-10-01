@@ -83,6 +83,9 @@ def _artifact(tmp_path: Path, lines: list[dict], expected: dict) -> Path:
 
 
 _OK = {"reference": "hallo welt", "prediction": "hallo welt", "latency_s": 0.1}
+#: The committed entity score of a subset whose references hold no number.
+_NO_ENTITIES = {"entity_hit_rate_pct": None, "entity_ci_lo": None, "entity_ci_hi": None,
+                "n_entities": 0, "n_utterances_with_entities": 0}
 _FAILED = {"reference": "guten tag", "prediction": None, "latency_s": None,
            "error": "ReadTimeout: timed out"}
 
@@ -234,7 +237,7 @@ def test_subset_without_bleu_key_is_not_scored_for_bleu(tmp_path: Path):
     )
     (model / "expected.json").write_text(
         json.dumps({"S": {"wer_pct": 0.0, "cer_pct": 0.0, "n_samples": 1,
-                          "wer_ci_lo": 0.0, "wer_ci_hi": 0.0}}),
+                          "wer_ci_lo": 0.0, "wer_ci_hi": 0.0, **_NO_ENTITIES}}),
         encoding="utf-8",
     )
     all_ok, rows = verify.verify(tmp_path)
@@ -261,3 +264,64 @@ def test_bleu_scoring_is_offline():
         verify.score_jsonl_bleu(model / "predictions_Demo-CH-DE.jsonl")
     finally:
         socket.socket = real  # type: ignore[assignment]
+
+
+# ── Numeric entities: committed beside the WER, re-derived like it ────────────
+
+
+_NUMBERS = [
+    {"reference": "es kamen 23 Leute", "prediction": "es kamen 22 Leute", "latency_s": 0.1},
+    {"reference": "um 10 Uhr", "prediction": "um zehn Uhr", "latency_s": 0.1},
+]
+_NUMBERS_EXPECTED = {
+    "wer_pct": 1 / 7 * 100, "cer_pct": 0.0, "n_samples": 2,
+    "entity_hit_rate_pct": 50.0, "n_entities": 2, "n_utterances_with_entities": 2,
+    "entity_ci_lo": 0.0, "entity_ci_hi": 100.0,
+}
+
+
+def _entity_rows(tmp_path: Path, **override) -> list[dict]:
+    model = _artifact(tmp_path, _NUMBERS, {**_NUMBERS_EXPECTED, **override})
+    ci = verify.wer_interval(model / "predictions_S.jsonl")
+    exp = json.loads((model / "expected.json").read_text())
+    exp["S"].update({"wer_ci_lo": ci.lo, "wer_ci_hi": ci.hi,
+                     "cer_pct": verify.score_jsonl(model / "predictions_S.jsonl")[1]})
+    (model / "expected.json").write_text(json.dumps(exp))
+    return verify.verify(tmp_path)[1]
+
+
+def test_a_truthful_entity_score_passes(tmp_path: Path):
+    (row,) = _entity_rows(tmp_path)
+    assert row["status"] == "PASS", row["detail"]
+    assert row["entity"] == 50.0 and row["n_entities"] == 2
+
+
+def test_a_hand_edited_entity_hit_rate_fails(tmp_path: Path):
+    (row,) = _entity_rows(tmp_path, entity_hit_rate_pct=100.0)
+    assert row["status"] == "FAIL"
+    assert "entity hit rate" in row["detail"]
+
+
+def test_a_hand_edited_entity_count_fails(tmp_path: Path):
+    """The count is what the rate rests on; it is matched exactly."""
+    (row,) = _entity_rows(tmp_path, n_entities=200)
+    assert row["status"] == "FAIL"
+    assert "entity counts" in row["detail"]
+
+
+def test_a_zero_where_there_are_no_numbers_fails(tmp_path: Path):
+    """No number in the references is no hit rate, not 0 %."""
+    _artifact(tmp_path, [_OK], {"wer_pct": 0.0, "cer_pct": 0.0, "n_samples": 1,
+                                "wer_ci_lo": 0.0, "wer_ci_hi": 0.0,
+                                **_NO_ENTITIES, "entity_hit_rate_pct": 0.0})
+    all_ok, rows = verify.verify(tmp_path)
+    assert not all_ok
+    assert any("entity hit rate None" in r["detail"] for r in rows)
+
+
+def test_expected_without_the_entity_score_fails(tmp_path: Path):
+    _artifact(tmp_path, [_OK], {"wer_pct": 0.0, "cer_pct": 0.0, "n_samples": 1,
+                                "wer_ci_lo": 0.0, "wer_ci_hi": 0.0})
+    all_ok, rows = verify.verify(tmp_path)
+    assert not all_ok
+    assert any("does not commit the entity score" in r["detail"] for r in rows)

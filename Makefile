@@ -31,10 +31,13 @@ analyse:            ## Tier-1: intervals (and paired gaps) for one committed art
 	uv run python -m raven_diar.analysis $(ARTIFACT) $(if $(COLLAR),--collar $(COLLAR),))
 
 # Backfill scalars the scorer only started reporting later into already-committed
-# expected.json files, recomputed from those artifacts' own RTTMs. Refuses to
-# change any value that is already there — see raven_diar/rescore.py.
+# expected.json files, recomputed from those artifacts' own data — RTTMs for DER,
+# predictions_*.jsonl for WER (e.g. the numeric entity hit rate). Refuses to
+# change any value that is already there — see raven_diar/rescore.py and
+# raven_asr/rescore.py.
 rescore:            ## Maintenance: add newly published fields to committed expected.json.
 	uv run python -m raven_diar.rescore $(if $(DRY),--dry-run,)
+	uv run python -m raven_asr.rescore $(if $(DRY),--dry-run,)
 
 # --- Tier 2: full re-run on public datasets (your own keys / GPU) ------------
 # Downloads the public dataset, runs inference with the pinned model, scores.

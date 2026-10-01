@@ -24,6 +24,11 @@ The WER counterpart of ``raven_diar.analysis``, on the same resampler
     averaged into one — the corpus figure pools utterances, it is not a mean of
     regions.
 
+``entity_interval`` / ``paired_entity_delta``
+    The same two questions for the numeric entity hit rate
+    (``raven_eval_core.entities``), resampling the utterances that hold a
+    reference entity — the ones the hit rate is made of.
+
 Two lenses, because the page makes claims in both: ``flozi-strict`` (the
 published table, ``raven_eval_core.flozi_wer``) and ``strict-de`` (the benchmark
 page's length-weighted lens, ``raven_eval_core.corpus_wer_strict_de_pct``). Each
@@ -55,6 +60,7 @@ from raven_eval_core.bootstrap import (
     pair_by_id,
     paired_bootstrap_ratio_delta,
 )
+from raven_eval_core.entities import entity_units
 from raven_eval_core.flozi_wer import utterance_word_errors
 from raven_eval_core.wer import utterance_strict_de_units
 
@@ -122,10 +128,23 @@ def paired_wer_delta(
 ) -> Interval:
     """Interval on ``WER(a) - WER(b)`` over the same utterances.
 
-    Utterances are matched by ``sample_id``; a file without ids cannot be paired
-    and raises. The same id must carry the same reference on both sides —
-    otherwise the two runs read different data under one name, and the
-    difference would be about the data.
+    Utterances are matched by ``sample_id`` (:func:`_matched_rows`).
+    """
+    matched = _matched_rows(path_a, path_b)
+    units_a = _units([a for a, _ in matched], lens)
+    units_b = _units([b for _, b in matched], lens)
+    return paired_bootstrap_ratio_delta(
+        list(zip(units_a, units_b, strict=True)),
+        resamples=resamples, seed=seed, confidence=confidence,
+    )
+
+
+def _matched_rows(path_a: Path, path_b: Path) -> list[tuple[dict, dict]]:
+    """Both runs' lines, paired by ``sample_id``; refuses anything not the same data.
+
+    A file without ids cannot be paired and raises. The same id must carry the
+    same reference on both sides — otherwise the two runs read different data
+    under one name, and the difference would be about the data.
     """
     rows_a, rows_b = _rows(path_a), _rows(path_b)
     for path, rows in ((path_a, rows_a), (path_b, rows_b)):
@@ -140,8 +159,53 @@ def paired_wer_delta(
             f"{len(differing)} sample_id(s) carry different references in the two "
             f"runs (first: {differing[0]}) — they did not read the same data"
         )
-    units_a = _units([a for a, _ in matched], lens)
-    units_b = _units([b for _, b in matched], lens)
+    return matched
+
+
+def _entity_units(rows: list[dict]) -> list[Unit]:
+    return [(float(h), float(n)) for h, n in entity_units(
+        [r["reference"] for r in rows], [r["prediction"] for r in rows]
+    )]
+
+
+def entity_interval(
+    path: Path,
+    *,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = BOOTSTRAP_SEED,
+    confidence: float = BOOTSTRAP_CONFIDENCE,
+) -> Interval | None:
+    """Bootstrap interval around the numeric entity hit rate of one predictions file.
+
+    ``None`` when the references hold no entity: there is no hit rate to put an
+    interval around. ``n`` counts utterances with at least one entity.
+    """
+    units = _entity_units(_rows(path))
+    if not units:
+        return None
+    return bootstrap_ratio_ci(units, resamples=resamples, seed=seed,
+                              confidence=confidence)
+
+
+def paired_entity_delta(
+    path_a: Path,
+    path_b: Path,
+    *,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = BOOTSTRAP_SEED,
+    confidence: float = BOOTSTRAP_CONFIDENCE,
+) -> Interval | None:
+    """Interval on ``hit rate(a) - hit rate(b)`` over the same entity utterances.
+
+    Both runs carry the same references (enforced), so they hold their entities
+    in the same utterances and the units pair one to one.
+    """
+    matched = [(a, b) for a, b in _matched_rows(path_a, path_b)
+               if _entity_units([a])]
+    if not matched:
+        return None
+    units_a = _entity_units([a for a, _ in matched])
+    units_b = _entity_units([b for _, b in matched])
     return paired_bootstrap_ratio_delta(
         list(zip(units_a, units_b, strict=True)),
         resamples=resamples, seed=seed, confidence=confidence,
@@ -279,17 +343,32 @@ def main(argv: list[str] | None = None) -> int:
         if subset in REGION_PARSERS:
             _print_regions(by_region(path, args.lens, resamples=args.resamples,
                                      seed=args.seed), REGION_MIN_N)
-        if args.compare:
-            if subset not in other:
-                print(f"  vs {args.compare.name}: no {subset} predictions there")
-                continue
+        paired = args.compare is not None and subset in other
+        if args.compare and not paired:
+            print(f"  vs {args.compare.name}: no {subset} predictions there")
+        if paired:
             d = paired_wer_delta(path, other[subset], args.lens,
                                  resamples=args.resamples, seed=args.seed)
-            verdict = ("spans zero — no ranking" if d.lo <= 0.0 <= d.hi
-                       else "excludes zero")
             print(f"  minus {args.compare.name}: {d.point:+.3f} pp   "
-                  f"95 % CI [{d.lo:+.3f}, {d.hi:+.3f}] (n={d.n}) — {verdict}")
+                  f"95 % CI [{d.lo:+.3f}, {d.hi:+.3f}] (n={d.n}) — {_verdict(d)}")
+        # The entity score has one normalization, whatever --lens says.
+        e = entity_interval(path, resamples=args.resamples, seed=args.seed)
+        if e is None:
+            print("  numeric entities: none in the references — no hit rate")
+            continue
+        print(f"  numeric entity hit rate {e.point:.3f} %   95 % CI "
+              f"[{e.lo:.3f}, {e.hi:.3f}] (n={e.n} utterances with an entity)")
+        if paired:
+            ed = paired_entity_delta(path, other[subset],
+                                     resamples=args.resamples, seed=args.seed)
+            assert ed is not None  # same references -> same entity utterances
+            print(f"  entity hit rate minus {args.compare.name}: {ed.point:+.3f} pp   "
+                  f"95 % CI [{ed.lo:+.3f}, {ed.hi:+.3f}] (n={ed.n}) — {_verdict(ed)}")
     return 0
+
+
+def _verdict(d: Interval) -> str:
+    return "spans zero — no ranking" if d.lo <= 0.0 <= d.hi else "excludes zero"
 
 
 if __name__ == "__main__":
