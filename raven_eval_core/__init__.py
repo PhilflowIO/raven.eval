@@ -1,4 +1,4 @@
-"""raven-eval-core — standalone DER + WER + BLEU scoring.
+"""raven-eval-core — standalone DER + WER + BLEU + numeric-entity scoring.
 
 The secret-free metric core of the raven.eval public benchmark. Everything here
 is a pure ``(reference, hypothesis) -> number`` function built on the standard
@@ -40,6 +40,15 @@ from .der import (
     parse_rttm,
     to_rttm,
 )
+from .entities import (
+    ENTITY_MATCHING,
+    ENTITY_NORMALIZATION,
+    EntityResult,
+    entity_hit_rate,
+    entity_units,
+    extract_numeric_entities,
+    utterance_entity_hits,
+)
 from .flozi_wer import (
     FloziWerResult,
     corpus_cer_pct,
@@ -47,6 +56,7 @@ from .flozi_wer import (
     corpus_wer_pct,
     evaluate,
     normalize_flozi,
+    normalize_flozi_before_punctuation_strip,
     strip_fillers,
 )
 from .wer import (
@@ -60,7 +70,7 @@ from .wer import (
 
 #: Metrics implemented by this core. Mirrored by the top-level metric blocks in
 #: benchmark.config.yaml; the pairing is enforced by tests/test_metric_contract.py.
-SCORED_METRICS: frozenset[str] = frozenset({"der", "wer", "bleu"})
+SCORED_METRICS: frozenset[str] = frozenset({"der", "wer", "bleu", "entity"})
 
 __all__ = [
     "SCORED_METRICS",
@@ -85,6 +95,15 @@ __all__ = [
     "corpus_wer_strict_de_pct",
     "evaluate",
     "FloziWerResult",
+    # numeric-entity hit rate (dates, amounts, counts — what WER hides)
+    "extract_numeric_entities",
+    "utterance_entity_hits",
+    "entity_units",
+    "entity_hit_rate",
+    "EntityResult",
+    "ENTITY_NORMALIZATION",
+    "ENTITY_MATCHING",
+    "normalize_flozi_before_punctuation_strip",
     # DER
     "compute_der",
     "compute_der_components",

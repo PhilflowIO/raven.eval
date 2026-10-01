@@ -96,7 +96,10 @@ def test_every_metric_module_is_registered() -> None:
     on_disk = {p.stem for p in (REPO_ROOT / "raven_eval_core").glob("*.py")}
     # flozi_wer.py is the published WER path, wer.py the diagnostic lens: two
     # modules, one declared metric. Map the module names onto metric names.
-    module_to_metric = {"der": "der", "wer": "wer", "flozi_wer": "wer", "bleu": "bleu"}
+    module_to_metric = {
+        "der": "der", "wer": "wer", "flozi_wer": "wer", "bleu": "bleu",
+        "entities": "entity",
+    }
     # Not a metric of its own: the resampler behind `der.uncertainty` and
     # `wer.uncertainty`, whose settings those blocks declare.
     shared_by_metrics = {"bootstrap"}
@@ -189,3 +192,102 @@ def test_region_breakdown_matches_the_public_contract() -> None:
     assert block["min_n"] == REGION_MIN_N
     assert set(block["datasets"]) == set(REGION_PARSERS)
     assert "dialect_region_breakdown" not in _declared_metrics()
+
+
+# ── Numeric entities: a wrong number must never be scored as the right one ────
+
+
+def test_entity_conventions_match_the_implementation() -> None:
+    from raven_eval_core import entities
+
+    block = _config()["entity"]
+    assert block["normalization"] == entities.ENTITY_NORMALIZATION
+    assert block["matching"] == entities.ENTITY_MATCHING
+    assert block["aggregation"] == "corpus"
+
+
+def test_entity_uncertainty_matches_the_public_contract() -> None:
+    from raven_asr.config import (
+        BOOTSTRAP_CONFIDENCE,
+        BOOTSTRAP_RESAMPLES,
+        BOOTSTRAP_SEED,
+    )
+
+    unc = _config()["entity"]["uncertainty"]
+    assert unc["resamples"] == BOOTSTRAP_RESAMPLES
+    assert unc["seed"] == BOOTSTRAP_SEED
+    assert unc["confidence"] == BOOTSTRAP_CONFIDENCE
+
+
+def _hit_rate(reference: str, prediction: str) -> float | None:
+    from raven_eval_core.entities import entity_hit_rate
+
+    return entity_hit_rate([reference], [prediction]).hit_rate_pct
+
+
+@pytest.mark.parametrize(
+    ("reference", "prediction"),
+    [
+        # The misrecognition the score exists to catch: one digit off.
+        ("es kamen dreiundzwanzig Leute", "es kamen zweiundzwanzig Leute"),
+        ("es kamen 23 Leute", "es kamen zweiundzwanzig Leute"),
+        ("die Rate liegt bei 3,5 Prozent", "die Rate liegt bei 3,6 Prozent"),
+        # flozi's punctuation strip would make each of these pairs one string:
+        # "3,5" and "35", "2-3" and "23", "12.03." and "1203", "1:0" and "10".
+        ("die Rate liegt bei 3,5 Prozent", "die Rate liegt bei 35 Prozent"),
+        ("die Rate liegt bei 35 Prozent", "die Rate liegt bei 3,5 Prozent"),
+        ("es waren 23 Leute", "es waren 2-3 Leute"),
+        ("am 1203 eingereicht", "am 12.03. eingereicht"),
+        ("das Spiel endete 10", "das Spiel endete 1:0"),
+        ("um 1030 Uhr", "um 10:30 Uhr"),
+        ("am 12.03.2024", "am 12.03.2023"),
+    ],
+)
+def test_a_different_number_is_a_miss(reference: str, prediction: str) -> None:
+    """No normalization step may map a misrecognized number onto the reference's."""
+    assert _hit_rate(reference, prediction) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("reference", "prediction"),
+    [
+        ("es kamen 23 Leute", "es kamen dreiundzwanzig Leute"),
+        ("es kamen dreiundzwanzig Leute", "es kamen 23 Leute"),
+        ("die Rate liegt bei 3,5 %", "die Rate liegt bei drei komma fünf Prozent"),
+        ("es kostet 1.000 Euro", "es kostet tausend Euro"),
+        ("im Jahr 1990", "im Jahr neunzehnhundertneunzig"),
+    ],
+)
+def test_the_same_number_in_another_form_is_a_hit(reference: str, prediction: str) -> None:
+    assert _hit_rate(reference, prediction) == 100.0
+
+
+def test_spoken_numbers_map_onto_their_own_digits_and_no_other() -> None:
+    """The guarantee behind every miss above, over the whole everyday range.
+
+    A hit is exact string equality of independently normalized texts, so a
+    wrong number could only score if two different spoken numbers normalized to
+    the same digits. ``alpha2digit`` is the one step that maps words onto
+    digits; this pins it as injective, number by number. 0, 1 and 2 stay words
+    in flozi's normalization (``alpha2digit``'s threshold) and so carry no
+    entity — a miss against a digit, never a false hit.
+    """
+    from num2words import num2words
+    from raven_eval_core.entities import extract_numeric_entities
+
+    for n in range(3, 3000):
+        spoken = num2words(n, lang="de")
+        assert extract_numeric_entities(f"es waren {spoken} Leute") == [str(n)], spoken
+    for n in range(3):
+        assert extract_numeric_entities(num2words(n, lang="de")) == []
+
+
+def test_reference_and_hypothesis_are_normalized_independently() -> None:
+    """The hypothesis is never read in the light of the reference, or vice versa."""
+    from raven_eval_core.entities import extract_numeric_entities, utterance_entity_hits
+
+    ref, hyp = "zweiundzwanzig und 3,5", "dreiundzwanzig und 35"
+    (hits, n), = utterance_entity_hits([ref], [hyp])
+    assert (hits, n) == (0, 2)
+    assert extract_numeric_entities(ref) == ["22", "3,5"]
+    assert extract_numeric_entities(hyp) == ["23", "35"]
