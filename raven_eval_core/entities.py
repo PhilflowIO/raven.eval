@@ -43,8 +43,13 @@ Some formatting differences cost a hit although the number was right: flozi
 leaves "null", "eins" and "zwei" standing alone as words (``alpha2digit``'s
 threshold), so a reference "2" against a spoken "zwei" is a miss; "10:30"
 against "zehn Uhr dreißig" ("10 Uhr 30") is a miss; "fünf Millionen" becomes
-"5000000" while "5 Mio." stays "5". The asymmetry is deliberate: a formatting
-choice can only lower the hit rate, a wrong number can never raise it.
+"5000000" while "5 Mio." stays "5"; a misspelled number word
+("dreihundzwanzig") stays a word and is a miss. The asymmetry is deliberate: a
+formatting choice can only lower the hit rate, a wrong number can never raise
+it. One quirk adds entities rather than losing them: ``alpha2digit`` reads the
+article "ein" as 1 when it directly follows a number word ("eins ein kühnes …"
+-> "1 1 kühnes …"). That can inflate the count, on whichever side says it; it
+cannot turn a wrong number into a right one.
 
 Matching and aggregation
 ------------------------
