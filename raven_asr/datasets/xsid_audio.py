@@ -75,7 +75,14 @@ from typing import Final
 
 import numpy as np
 
-from .base import Sample
+from .base import (
+    DECODE_ERRORS,
+    DROP_CLIP_MISSING,
+    DROP_REFERENCE_MISSING,
+    DROP_UNDECODABLE,
+    RowTally,
+    Sample,
+)
 
 # ── Provenance pins ──────────────────────────────────────────────────────────
 
@@ -313,6 +320,7 @@ class _XsidAudioLoader:
                 f"another version needs its own checksums."
             )
         self._revision = revision or ZENODO_VERSION
+        self.tally = RowTally()
 
     # ----- acquisition -------------------------------------------------------
 
@@ -343,51 +351,68 @@ class _XsidAudioLoader:
                 f"{self.subset!r} or 'All'"
             )
         root = self.prepare()
-        emitted = 0
-        with zipfile.ZipFile(root / f"{self.variety}.zip") as zf:
-            members = {
-                _member_key(n): n
-                for n in zf.namelist()
-                # __MACOSX/ AppleDouble side-files shadow the real members.
-                if n.endswith(".wav") and not n.startswith("__MACOSX/")
-            }
-            for split in SPLITS:
-                rows = _tsv_rows(root / f"xsid_{self.variety}_{split}.tsv")
-                german = {
-                    r["ID"]: r
-                    for r in _tsv_rows(root / f"xsid_{REFERENCE_VARIETY}_{split}.tsv")
+        # Skipped rows are counted, not just skipped — see RowTally.
+        tally = self.tally = RowTally()
+        try:
+            with zipfile.ZipFile(root / f"{self.variety}.zip") as zf:
+                members = {
+                    _member_key(n): n
+                    for n in zf.namelist()
+                    # __MACOSX/ AppleDouble side-files shadow the real members.
+                    if n.endswith(".wav") and not n.startswith("__MACOSX/")
                 }
-                for row in rows:
-                    ref_row = german.get(row["ID"])
-                    if ref_row is None:
-                        # No parallel Standard German sentence → no WER reference.
-                        # Skip rather than score against the dialect text, which
-                        # would silently turn a translation into a dictation.
-                        continue
-                    member = members.get(_member_key(row["Audio"]))
-                    if member is None:
-                        continue
-                    audio, sr = _decode(zf.read(member))
-                    yield Sample(
-                        audio=audio,
-                        sample_rate=sr,
-                        reference=str(ref_row["Text"]),
-                        sample_id=f"{self.name}#{emitted}",
-                        subset=self.subset,
-                        metadata={
-                            "clip": member,
-                            "split": split,
-                            "xsid_id": row["ID"],
-                            "intent": row.get("Intent", ""),
-                            "dialect_region": self.dialect_region,
-                            # Dialectal transcription of the same utterance — a
-                            # dialect-faithful score can use this without refetching.
-                            "reference_dialect": str(row["Text"]),
-                        },
-                    )
-                    emitted += 1
-                    if limit is not None and emitted >= limit:
-                        return
+                for split in SPLITS:
+                    rows = _tsv_rows(root / f"xsid_{self.variety}_{split}.tsv")
+                    german = {
+                        r["ID"]: r
+                        for r in _tsv_rows(
+                            root / f"xsid_{REFERENCE_VARIETY}_{split}.tsv"
+                        )
+                    }
+                    for row in rows:
+                        tally.rows_read += 1
+                        ref_row = german.get(row["ID"])
+                        if ref_row is None:
+                            # No parallel Standard German sentence → no WER
+                            # reference. Skip rather than score against the
+                            # dialect text, which would silently turn a
+                            # translation into a dictation.
+                            tally.drop(DROP_REFERENCE_MISSING)
+                            continue
+                        member = members.get(_member_key(row["Audio"]))
+                        if member is None:
+                            tally.drop(DROP_CLIP_MISSING)
+                            continue
+                        try:
+                            audio, sr = _decode(zf.read(member))
+                        except DECODE_ERRORS:
+                            tally.drop(DROP_UNDECODABLE)
+                            continue
+                        # The id counts yielded samples, as it always did.
+                        sample_id = f"{self.name}#{tally.yielded}"
+                        tally.yielded += 1
+                        yield Sample(
+                            audio=audio,
+                            sample_rate=sr,
+                            reference=str(ref_row["Text"]),
+                            sample_id=sample_id,
+                            subset=self.subset,
+                            metadata={
+                                "clip": member,
+                                "split": split,
+                                "xsid_id": row["ID"],
+                                "intent": row.get("Intent", ""),
+                                "dialect_region": self.dialect_region,
+                                # Dialectal transcription of the same utterance —
+                                # a dialect-faithful score can use this without
+                                # refetching.
+                                "reference_dialect": str(row["Text"]),
+                            },
+                        )
+                        if limit is not None and tally.yielded >= limit:
+                            return
+        finally:
+            tally.log(self.name)
 
 
 class XsidBavarianLoader(_XsidAudioLoader):

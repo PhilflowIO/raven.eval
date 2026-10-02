@@ -7,7 +7,9 @@ layout ``scripts/verify.py`` re-scores:
     artifacts/<run-name>/<label>/
         predictions_<subset>.jsonl   (copied verbatim — the per-utterance model output)
         expected.json                ({subset: {wer_pct, cer_pct, n_samples}} from
-                                      summary.json, plus wer_strict_de_pct, the
+                                      summary.json, with n_dropped and
+                                      dropped_by_reason when the run counted
+                                      them, plus wer_strict_de_pct, the
                                       95 % WER interval and the numeric entity hit
                                       rate scored from the predictions)
 
@@ -69,6 +71,15 @@ def _expected_from_summary(summary: dict) -> dict[str, dict[str, float]]:
             "cer_pct": round(float(r["cer_pct"]), 4),
             "n_samples": int(r["n_samples"]),
         }
+        # Corpus rows the loader could not yield: n_samples does not cover
+        # them, so the published artifact has to say how many there were. Not a
+        # reason to refuse — a corpus can legitimately hold an empty row. Left
+        # out when the run did not count (a summary from before the counters).
+        if r.get("n_dropped") is not None:
+            expected[subset]["n_dropped"] = int(r["n_dropped"])
+            expected[subset]["dropped_by_reason"] = dict(
+                r.get("dropped_by_reason") or {}
+            )
     return expected
 
 

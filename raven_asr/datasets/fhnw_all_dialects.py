@@ -85,7 +85,14 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 
-from .base import Sample
+from .base import (
+    DECODE_ERRORS,
+    DROP_CLIP_MISSING,
+    DROP_EMPTY_REFERENCE,
+    DROP_UNDECODABLE,
+    RowTally,
+    Sample,
+)
 from .local_archive import RemoteArtifact, ensure_artifact, swiss_corpora_dir
 from .local_archive import decode_audio_bytes as _decode
 
@@ -146,6 +153,7 @@ class FhnwAllDialectsLoader:
                 f"(got {revision!r}); it is pinned by the archive sha256 "
                 f"{ARCHIVE.sha256}."
             )
+        self.tally = RowTally()
 
     # ----- acquisition -------------------------------------------------------
 
@@ -192,33 +200,45 @@ class FhnwAllDialectsLoader:
         with (root / TSV).open(newline="", encoding="utf-8") as fh:
             rows = list(csv.DictReader(fh, delimiter="\t", quoting=csv.QUOTE_NONE))
 
-        emitted = 0
-        with tarfile.open(root / TAR) as tar:
-            for row in rows:
-                reference = str(row.get(TEXT_COLUMN) or "")
-                if not reference:
-                    continue
-                member_name = f"clips/{row['path']}"
-                try:
-                    member = tar.getmember(member_name)
-                except KeyError:
-                    # Listed in the TSV, absent from the tar: skip this clip
-                    # rather than abort a run over the other 5,749.
-                    continue
-                payload = tar.extractfile(member)
-                if payload is None:
-                    continue
-                audio, sample_rate = _decode(payload.read())
-                yield Sample(
-                    audio=audio,
-                    sample_rate=sample_rate,
-                    reference=reference,
-                    sample_id=sample_id_for(row),
-                    subset=self.subset,
-                )
-                emitted += 1
-                if limit is not None and emitted >= limit:
-                    return
+        # Rows that cannot be yielded are skipped rather than aborting a run
+        # over the rest — and counted, so the skip shows up in the run summary
+        # instead of quietly shrinking the corpus the score is quoted for.
+        tally = self.tally = RowTally()
+        try:
+            with tarfile.open(root / TAR) as tar:
+                for row in rows:
+                    tally.rows_read += 1
+                    reference = str(row.get(TEXT_COLUMN) or "")
+                    if not reference:
+                        tally.drop(DROP_EMPTY_REFERENCE)
+                        continue
+                    member_name = f"clips/{row['path']}"
+                    try:
+                        payload = tar.extractfile(tar.getmember(member_name))
+                    except KeyError:
+                        payload = None
+                    if payload is None:
+                        # Listed in the TSV, absent from the tar (or present
+                        # only as a directory entry).
+                        tally.drop(DROP_CLIP_MISSING)
+                        continue
+                    try:
+                        audio, sample_rate = _decode(payload.read())
+                    except DECODE_ERRORS:
+                        tally.drop(DROP_UNDECODABLE)
+                        continue
+                    tally.yielded += 1
+                    yield Sample(
+                        audio=audio,
+                        sample_rate=sample_rate,
+                        reference=reference,
+                        sample_id=sample_id_for(row),
+                        subset=self.subset,
+                    )
+                    if limit is not None and tally.yielded >= limit:
+                        return
+        finally:
+            tally.log(DATASET_ID)
 
 
 def sample_id_for(row: dict[str, str]) -> str:

@@ -350,6 +350,49 @@ def test_iter_samples_joins_across_the_padding_mismatch(
     assert len(list(xsid.XsidBavarianLoader().iter_samples("xsid-bar", limit=3))) == 3
 
 
+def test_iter_samples_counts_the_rows_it_cannot_pair(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """No German sentence, no clip, damaged clip: each skipped row is counted."""
+    pytest.importorskip("soundfile")
+    from raven_asr.datasets.base import RowTally
+
+    base = tmp_path / "bavarian"
+    root = base / xsid.SUBDIR
+    _write_fake_corpus(root)
+    monkeypatch.setattr(
+        xsid._XsidAudioLoader, "prepare", lambda self, *a, **k: root
+    )
+    clean = xsid.XsidBavarianLoader()
+    before = [s.sample_id for s in clean.iter_samples("xsid-bar")]
+    assert clean.tally == RowTally(rows_read=4, yielded=4, dropped={})
+
+    # test-1 loses its German sentence; three more Bavarian rows are appended:
+    # one with no clip, one whose clip is not audio, and one that is fine.
+    de_tsv = root / "xsid_de_test.tsv"
+    de_tsv.write_text(
+        "\n".join(
+            line for line in de_tsv.read_text(encoding="utf-8").splitlines()
+            if not line.startswith("test-1\t")
+        ) + "\n",
+        encoding="utf-8",
+    )
+    with zipfile.ZipFile(root / "de-ba.zip", "a") as zf:
+        zf.writestr("de-ba/valid/xsid_de-ba_valid_004.wav", b"not a wav")
+    with (root / "xsid_de-ba_valid.tsv").open("a", encoding="utf-8") as fh:
+        fh.write("valid-1\tkein clip\ti\tde-ba/valid/xsid_de-ba_valid_9.wav\to\n")
+        fh.write("valid-2\tkaputt\ti\tde-ba/valid/xsid_de-ba_valid_4.wav\to\n")
+
+    loader = xsid.XsidBavarianLoader()
+    samples = list(loader.iter_samples("xsid-bar"))
+    assert loader.tally == RowTally(
+        rows_read=6, yielded=3,
+        dropped={"reference_missing": 1, "clip_missing": 1, "undecodable": 1},
+    )
+    # Ids still number the yielded samples consecutively, as they always did.
+    assert [s.sample_id for s in samples] == before[:3]
+
+
 # ── Against the real bytes, when a mirror is present ─────────────────────────
 
 _REAL_ROOT = xsid.corpora_dir() / xsid.SUBDIR

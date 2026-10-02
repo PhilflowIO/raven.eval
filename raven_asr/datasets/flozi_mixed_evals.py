@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import soundfile as sf
 
-from .base import Sample
+from .base import DECODE_ERRORS, DROP_UNDECODABLE, RowTally, Sample
 
 if TYPE_CHECKING:  # pragma: no cover
     from datasets import Dataset, IterableDataset
@@ -95,6 +95,7 @@ class FloziMixedEvalsLoader:
         self._revision = revision
         self._cache: Dataset | IterableDataset | None = None
         self._source: str | None = None  # "local-parquet" | "hf-streaming" | "hf-download"
+        self.tally = RowTally()
 
     def _load(self) -> Dataset | IterableDataset:
         from datasets import load_dataset
@@ -150,19 +151,29 @@ class FloziMixedEvalsLoader:
                 f"{(*SUBSETS, *SUBSET_ALIASES.keys(), 'All')}"
             )
         ds: Any = self._load()
-        emitted = 0
-        for idx, row in enumerate(ds):
-            row_from = row.get("from")
-            if canonical_subset != "All" and row_from != canonical_subset:
-                continue
-            arr, sr = self._decode_audio(row["audio"])
-            yield Sample(
-                audio=arr,
-                sample_rate=sr,
-                reference=row["references"],
-                sample_id=f"{row_from or 'unknown'}-{idx}",
-                subset=row_from or canonical_subset,
-            )
-            emitted += 1
-            if limit is not None and emitted >= limit:
-                return
+        # Counts the rows of the requested subset only: a row belonging to
+        # another subset is filtered, not dropped. See RowTally.
+        tally = self.tally = RowTally()
+        try:
+            for idx, row in enumerate(ds):
+                row_from = row.get("from")
+                if canonical_subset != "All" and row_from != canonical_subset:
+                    continue
+                tally.rows_read += 1
+                try:
+                    arr, sr = self._decode_audio(row["audio"])
+                except DECODE_ERRORS:
+                    tally.drop(DROP_UNDECODABLE)
+                    continue
+                tally.yielded += 1
+                yield Sample(
+                    audio=arr,
+                    sample_rate=sr,
+                    reference=row["references"],
+                    sample_id=f"{row_from or 'unknown'}-{idx}",
+                    subset=row_from or canonical_subset,
+                )
+                if limit is not None and tally.yielded >= limit:
+                    return
+        finally:
+            tally.log(f"{self.name}/{canonical_subset}")

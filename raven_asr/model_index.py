@@ -31,6 +31,11 @@ class ResultEntry:
     # Requests that failed and are therefore NOT in the WER above. Non-zero
     # makes the row unpublishable (raven_asr.promote refuses it).
     n_failed: int = 0
+    # Corpus rows the loader could not turn into a sample (no reference, clip
+    # missing, undecodable) and which were therefore never attempted. None means
+    # the loader keeps no tally — unknown, which is not the same as zero.
+    n_dropped: int | None = None
+    dropped_by_reason: dict[str, int] | None = None
     # The fixed set of references this row was scored against.
     dataset_revision: str | None = None
     dataset_sha256: str | None = None

@@ -27,7 +27,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .base import Sample
+from .base import (
+    DECODE_ERRORS,
+    DROP_EMPTY_REFERENCE,
+    DROP_UNDECODABLE,
+    RowTally,
+    Sample,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from datasets import Dataset, IterableDataset
@@ -66,6 +72,7 @@ class HFSingleConfigLoader:
         self._revision = revision
         self._cache: Dataset | IterableDataset | None = None
         self._source: str | None = None  # "hf-streaming" | "hf-download"
+        self.tally = RowTally()
 
     # ----- loading -----------------------------------------------------------
 
@@ -164,22 +171,32 @@ class HFSingleConfigLoader:
                 f"expected one of {(self.subset, ALL_SUBSETS)}"
             )
         ds: Any = self._load()
-        emitted = 0
-        for idx, row in enumerate(ds):
-            arr, sr = self._decode_audio(row[self.audio_column])
-            reference = self._reference_from_row(row)
-            if not reference:
-                # An empty reference makes WER undefined (division by zero on
-                # that utterance's word count) — drop it loudly rather than
-                # letting it silently deflate the corpus denominator.
-                continue
-            yield Sample(
-                audio=arr,
-                sample_rate=sr,
-                reference=reference,
-                sample_id=self._sample_id(idx, row),
-                subset=self.subset,
-            )
-            emitted += 1
-            if limit is not None and emitted >= limit:
-                return
+        tally = self.tally = RowTally()
+        try:
+            for idx, row in enumerate(ds):
+                tally.rows_read += 1
+                try:
+                    arr, sr = self._decode_audio(row[self.audio_column])
+                except DECODE_ERRORS:
+                    tally.drop(DROP_UNDECODABLE)
+                    continue
+                reference = self._reference_from_row(row)
+                if not reference:
+                    # An empty reference makes WER undefined (division by zero
+                    # on that utterance's word count) — drop it, and count it,
+                    # rather than letting it silently deflate the corpus
+                    # denominator.
+                    tally.drop(DROP_EMPTY_REFERENCE)
+                    continue
+                tally.yielded += 1
+                yield Sample(
+                    audio=arr,
+                    sample_rate=sr,
+                    reference=reference,
+                    sample_id=self._sample_id(idx, row),
+                    subset=self.subset,
+                )
+                if limit is not None and tally.yielded >= limit:
+                    return
+        finally:
+            tally.log(self.subset)

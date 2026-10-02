@@ -26,7 +26,7 @@ from raven_asr import promote as promote_mod
 from raven_asr import runner
 from raven_asr.adapters.base import TranscribeResult
 from raven_asr.config import KNOWN_MODELS, ModelSpec
-from raven_asr.datasets.base import Sample
+from raven_asr.datasets.base import RowTally, Sample
 
 
 class _PerfectAdapter:
@@ -148,6 +148,9 @@ def test_promote_then_verify_round_trips(
     assert all("sample_id" in x and x["duration_s"] > 0 for x in lines)
     # and expected.json commits to how many there are
     assert expected["Tuda-De"]["n_samples"] == len(lines) == 2
+    # a run whose loader kept no drop count commits none — absent, not zero
+    assert "n_dropped" not in expected["Tuda-De"]
+    assert "dropped_by_reason" not in expected["Tuda-De"]
 
     verify = _load_verify()
     all_ok, rows = verify.verify(artifacts)
@@ -424,3 +427,115 @@ def test_summary_records_the_entity_score_beside_the_wer(
     (row,) = json.loads((results_dir / "summary.json").read_text())["results"]
     assert row["entity_hit_rate_pct"] == 100.0
     assert (row["n_entities"], row["n_utterances_with_entities"]) == (2, 2)
+
+
+class _DroppingLoader(_FakeLoader):
+    """A loader that, like the archive-backed ones, could not yield some rows."""
+
+    def __init__(self, samples: list[Sample], dropped: dict[str, int]) -> None:
+        super().__init__(samples)
+        self._dropped = dropped
+        self.tally = RowTally()
+
+    def iter_samples(self, subset: str, limit: int | None = None) -> list[Sample]:
+        out = super().iter_samples(subset, limit)
+        n = sum(self._dropped.values())
+        self.tally = RowTally(
+            rows_read=len(out) + n, yielded=len(out), dropped=dict(self._dropped))
+        return out
+
+
+def test_summary_shows_rows_the_loader_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A run over fewer rows than the corpus must say so in its own output."""
+    samples, registry = _make_samples("Tuda-De", ["hallo welt", "guten tag"])
+    dropped = {"clip_missing": 2, "empty_reference": 1}
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_DroppingLoader(samples, dropped), "Tuda-De"),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    out = tmp_path / "primeline-whisper-large-v3-german"
+    with caplog.at_level("WARNING", logger="raven_asr.runner"):
+        runner.run(model_key="primeline/whisper-large-v3-german",
+                   subsets=["Tuda-De"], limit=None, out_dir=out)
+
+    (row,) = json.loads((out / "summary.json").read_text())["results"]
+    assert row["n_dropped"] == 3
+    assert row["dropped_by_reason"] == dropped
+    # Dropped rows were never attempted; they are not hidden inside n_failed.
+    assert (row["n_attempted"], row["n_ok"], row["n_failed"]) == (2, 2, 0)
+    assert "dropped 3 row(s)" in caplog.text
+
+    # A resumed run still shows them: the marker carries the counts.
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: pytest.fail("subset should resume from its marker"),
+    )
+    # The summary stays in place: its manifest is what makes the run resumable.
+    # Blank the counts in it, so the assertion below can only pass if the
+    # rewritten summary took them from the marker.
+    summary = json.loads((out / "summary.json").read_text())
+    summary["results"][0].update(n_dropped=None, dropped_by_reason=None)
+    (out / "summary.json").write_text(json.dumps(summary))
+    runner.run(model_key="primeline/whisper-large-v3-german",
+               subsets=["Tuda-De"], limit=None, out_dir=out)
+    (row,) = json.loads((out / "summary.json").read_text())["results"]
+    assert (row["n_dropped"], row["dropped_by_reason"]) == (3, dropped)
+
+
+def test_summary_distinguishes_no_drops_from_a_loader_without_a_tally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``0`` is a claim the loader made; ``null`` means nobody counted."""
+    samples, registry = _make_samples("Tuda-De", ["hallo welt"])
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    for name, loader, expected in (
+        ("counted", _DroppingLoader(samples, {}), (0, {})),
+        ("uncounted", _FakeLoader(samples), (None, None)),
+    ):
+        monkeypatch.setattr(
+            runner, "_iter_loader_for_subset",
+            lambda _s, _l=loader, **_kw: (_l, "Tuda-De"),
+        )
+        out = tmp_path / name
+        runner.run(model_key="primeline/whisper-large-v3-german",
+                   subsets=["Tuda-De"], limit=None, out_dir=out)
+        (row,) = json.loads((out / "summary.json").read_text())["results"]
+        assert (row["n_dropped"], row["dropped_by_reason"]) == expected
+
+
+@pytest.mark.parametrize("dropped", [{}, {"empty_reference": 1, "clip_missing": 2}])
+def test_promote_publishes_dropped_rows_and_verify_holds_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dropped: dict[str, int]
+) -> None:
+    """Drops do not block promotion, but the published artifact has to show them."""
+    samples, registry = _make_samples("Tuda-De", ["hallo welt", "guten tag"])
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_DroppingLoader(samples, dropped), "Tuda-De"),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    results_dir = tmp_path / "results" / "primeline-whisper-large-v3-german"
+    runner.run(model_key="primeline/whisper-large-v3-german",
+               subsets=["Tuda-De"], limit=None, out_dir=results_dir)
+
+    artifacts = tmp_path / "artifacts"
+    dest = promote_mod.promote(results_dir, artifacts, run_name="r")
+    expected = json.loads((dest / "expected.json").read_text())
+    assert expected["Tuda-De"]["n_dropped"] == sum(dropped.values())
+    assert expected["Tuda-De"]["dropped_by_reason"] == dropped
+    assert expected["Tuda-De"]["n_samples"] == 2
+
+    verify = _load_verify()
+    all_ok, rows = verify.verify(artifacts)
+    assert all_ok, rows
+
+    # A count that no longer matches its own breakdown is a hand edit.
+    expected["Tuda-De"]["n_dropped"] += 1
+    (dest / "expected.json").write_text(json.dumps(expected))
+    tampered_ok, tampered_rows = verify.verify(artifacts)
+    assert not tampered_ok
+    assert "n_dropped" in tampered_rows[0]["detail"]

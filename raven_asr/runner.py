@@ -34,7 +34,7 @@ from .config import (
     resolve_wer_dataset,
 )
 from .datasets import load_loader_class
-from .datasets.base import DatasetLoader, Sample
+from .datasets.base import DatasetLoader, RowTally, Sample
 from .model_index import ResultEntry, build_model_index, write_yaml
 
 logger = logging.getLogger("raven_asr.runner")
@@ -85,6 +85,9 @@ class _Outcome:
 class _RunResult:
     subset: str
     outcomes: list[_Outcome] = field(default_factory=list)
+    # Rows the loader dropped before any request was made, by reason; None when
+    # the loader keeps no tally (see datasets.base.RowTally).
+    dropped: dict[str, int] | None = None
 
     @property
     def succeeded(self) -> list[_Outcome]:
@@ -182,6 +185,15 @@ def _iter_loader_for_subset(
     return loader, internal_subset
 
 
+def _dropped_rows(loader: DatasetLoader) -> dict[str, int] | None:
+    """The loader's per-reason drop counts after a pass, or None if it has none.
+
+    Read after ``iter_samples`` is exhausted — the tally is only final then.
+    """
+    tally = getattr(loader, "tally", None)
+    return dict(tally.dropped) if isinstance(tally, RowTally) else None
+
+
 def _safe(name: str) -> str:
     """Filesystem-safe subset-marker filename."""
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name)
@@ -225,8 +237,9 @@ async def run_subset_async(
         subset, streaming=streaming, revision=revision
     )
     samples: list[Sample] = list(loader.iter_samples(internal_subset, limit=limit))
+    dropped = _dropped_rows(loader)
     if not samples:
-        return _RunResult(subset=subset)
+        return _RunResult(subset=subset, dropped=dropped)
 
     semaphore = asyncio.Semaphore(concurrency)
     pbar = tqdm(total=len(samples), desc=f"{adapter.provider_id}/{subset}", unit="clip")
@@ -240,7 +253,7 @@ async def run_subset_async(
 
     outcomes = await asyncio.gather(*(_one(s) for s in samples))
     pbar.close()
-    return _RunResult(subset=subset, outcomes=list(outcomes))
+    return _RunResult(subset=subset, outcomes=list(outcomes), dropped=dropped)
 
 
 # Back-compat sync wrapper (some tests + ad-hoc callers still expect it).
@@ -279,6 +292,10 @@ def _compare_against_flozi(
                 "n_attempted": entry.n_samples + entry.n_failed,
                 "n_ok": entry.n_samples,
                 "n_failed": entry.n_failed,
+                # Rows the loader could not yield, so never attempted: the
+                # score does not cover them. null = the loader keeps no tally.
+                "n_dropped": entry.n_dropped,
+                "dropped_by_reason": entry.dropped_by_reason,
                 "dataset_revision": entry.dataset_revision,
                 "dataset_sha256": entry.dataset_sha256,
                 "wer_pct": round(entry.wer_pct, 4),
@@ -407,7 +424,10 @@ def _record_subset(
     """
     subset = result.subset
     if not result.outcomes:
-        logger.warning("subset %s produced no samples; skipping", subset)
+        logger.warning(
+            "subset %s produced no samples; skipping (rows dropped by the "
+            "loader: %s)", subset, result.dropped or "none reported",
+        )
         return
     _write_predictions(out_dir / f"predictions_{_safe(subset)}.jsonl", result.outcomes)
     ok = result.succeeded
@@ -432,6 +452,8 @@ def _record_subset(
         n_samples=metrics.n_samples,
         wer_filler_tolerant_pct=metrics.wer_filler_tolerant_pct,
         n_failed=n_failed,
+        n_dropped=None if result.dropped is None else sum(result.dropped.values()),
+        dropped_by_reason=result.dropped,
         dataset_revision=dataset_revision,
         dataset_sha256=dataset_sha256,
         entity_hit_rate_pct=entities.hit_rate_pct,
@@ -439,6 +461,13 @@ def _record_subset(
         n_utterances_with_entities=entities.n_utterances_with_entities,
     )
     entries.append(entry)
+    if entry.n_dropped:
+        logger.warning(
+            "[%s] subset %s: the loader dropped %d row(s) before any request "
+            "(%s) — the score covers %d utterances, not the whole corpus",
+            spec.label, subset, entry.n_dropped, entry.dropped_by_reason,
+            metrics.n_samples,
+        )
     if n_failed:
         # No resume marker: the next invocation re-runs the subset instead of
         # resuming into a number that silently leaves clips out.
@@ -629,8 +658,12 @@ async def run_multi_async(
         samples: list[Sample] = list(
             loader.iter_samples(internal_subset, limit=limit)
         )
+        dropped = _dropped_rows(loader)
         if not samples:
-            logger.warning("subset %s produced no samples; skipping", subset)
+            logger.warning(
+                "subset %s produced no samples; skipping (rows dropped by the "
+                "loader: %s)", subset, dropped or "none reported",
+            )
             continue
 
         pbars = {
@@ -667,7 +700,9 @@ async def run_multi_async(
         for k, outcomes in zip(pending, per_model, strict=True):
             _record_subset(
                 out_dir=out_dirs[k], spec=specs[k],
-                result=_RunResult(subset=subset, outcomes=list(outcomes)),
+                result=_RunResult(
+                    subset=subset, outcomes=list(outcomes), dropped=dropped
+                ),
                 entries=entries[k], limit=limit, manifest=manifests[k],
             )
 
