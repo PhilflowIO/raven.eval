@@ -163,6 +163,22 @@ def test_vendor_error_message_fails_the_utterance() -> None:
         _run(handler)
 
 
+def test_session_cap_is_transient() -> None:
+    async def handler(ws: ServerConnection) -> None:
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "Error",
+                    "error": "Unauthorized Connection: Too many concurrent sessions",
+                }
+            )
+        )
+        await _drain(ws, {})
+
+    with pytest.raises(TransientStreamError, match="session cap"):
+        _run(handler)
+
+
 def test_retry_reruns_a_failed_session() -> None:
     calls = {"n": 0}
 

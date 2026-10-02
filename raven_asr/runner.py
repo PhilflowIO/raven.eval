@@ -50,9 +50,10 @@ DEFAULT_CONCURRENCY: dict[str, int] = {
     # xAI documents 10 requests/s for REST STT; 8 in flight stays under it.
     "xai": 8,
     # Streaming sessions run at real-time pace, so throughput is concurrency x
-    # audio speed. The concurrent-session cap is per account; a rejected
-    # handshake (HTTP 429) is retried as a transient stream failure.
-    "assemblyai_realtime": 8,
+    # audio speed. The concurrent-session cap is per account (measured at about
+    # five on 2026-10-02, with closed sessions freeing their slot late); a
+    # session refused for the cap is retried as a transient stream failure.
+    "assemblyai_realtime": 4,
 }
 
 
