@@ -48,7 +48,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
 
-from .base import Sample
+from .base import (
+    DECODE_ERRORS,
+    DROP_EMPTY_REFERENCE,
+    DROP_UNDECODABLE,
+    RowTally,
+    Sample,
+)
 from .local_archive import RemoteArtifact, ensure_artifact, swiss_corpora_dir
 from .local_archive import decode_audio_bytes as _decode
 
@@ -111,6 +117,7 @@ class SpcTestLoader:
                 "SHARDS (URL + sha256 + size) together with the revision — a "
                 "revision without matching digests verifies nothing."
             )
+        self.tally = RowTally()
 
     def _shard_paths(self) -> list[Path]:
         directory = swiss_corpora_dir() / SUBDIR
@@ -124,28 +131,42 @@ class SpcTestLoader:
             )
         import pyarrow.parquet as pq
 
-        emitted = 0
-        for path in self._shard_paths():
-            parquet = pq.ParquetFile(str(path))
-            # Small batches keep memory flat: each row carries ~250 kB of FLAC.
-            for batch in parquet.iter_batches(batch_size=16):
-                for row in batch.to_pylist():
-                    reference = str(row.get(TEXT_COLUMN) or "")
-                    if not reference:
-                        # An empty reference makes WER undefined on that
-                        # utterance; drop it rather than deflate the denominator.
-                        continue
-                    audio, sample_rate = _decode(row[AUDIO_COLUMN]["bytes"])
-                    yield Sample(
-                        audio=audio,
-                        sample_rate=sample_rate,
-                        reference=reference,
-                        sample_id=self._sample_id(emitted, row),
-                        subset=self.subset,
-                    )
-                    emitted += 1
-                    if limit is not None and emitted >= limit:
-                        return
+        # Skipped rows are counted, not just skipped — see RowTally.
+        tally = self.tally = RowTally()
+        try:
+            for path in self._shard_paths():
+                parquet = pq.ParquetFile(str(path))
+                # Small batches keep memory flat: each row carries ~250 kB of FLAC.
+                for batch in parquet.iter_batches(batch_size=16):
+                    for row in batch.to_pylist():
+                        tally.rows_read += 1
+                        reference = str(row.get(TEXT_COLUMN) or "")
+                        if not reference:
+                            # An empty reference makes WER undefined on that
+                            # utterance; drop it rather than deflate the
+                            # denominator.
+                            tally.drop(DROP_EMPTY_REFERENCE)
+                            continue
+                        try:
+                            audio, sample_rate = _decode(row[AUDIO_COLUMN]["bytes"])
+                        except DECODE_ERRORS:
+                            tally.drop(DROP_UNDECODABLE)
+                            continue
+                        # The fallback id counts yielded samples, as it always
+                        # did: a dropped row must not shift later ids.
+                        sample_id = self._sample_id(tally.yielded, row)
+                        tally.yielded += 1
+                        yield Sample(
+                            audio=audio,
+                            sample_rate=sample_rate,
+                            reference=reference,
+                            sample_id=sample_id,
+                            subset=self.subset,
+                        )
+                        if limit is not None and tally.yielded >= limit:
+                            return
+        finally:
+            tally.log(DATASET_ID)
 
     @staticmethod
     def _sample_id(index: int, row: dict[str, Any]) -> str:

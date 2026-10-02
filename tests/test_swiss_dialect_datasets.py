@@ -17,8 +17,11 @@ read their pins costs nothing.
 
 from __future__ import annotations
 
+import io
 import json
+import logging
 import re
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -30,6 +33,9 @@ from raven_asr.config import (
     resolve_wer_dataset,
 )
 from raven_asr.datasets import WER_LOADERS
+from raven_asr.datasets import fhnw_all_dialects as fhnw_mod
+from raven_asr.datasets import spc_test as spc_mod
+from raven_asr.datasets.base import RowTally
 from raven_asr.datasets.fhnw_all_dialects import (
     ARCHIVE,
     REGION_NAMES,
@@ -281,3 +287,132 @@ def test_region_names_are_canton_codes_and_unknown_codes_stay_raw() -> None:
     # Not mapped -> reported as the code, never a guessed name.
     assert region_name("xx") == "xx"
     assert region_name("JU") == "JU"
+
+
+# ── rows the loader cannot yield are counted, never silently dropped ─────────
+
+FHNW_HEADER = "client_id\tpath\tsentence\tup_votes\tdown_votes\tage\tgender\taccent"
+
+
+def _flac_bytes() -> bytes:
+    np = pytest.importorskip("numpy")
+    sf = pytest.importorskip("soundfile")
+    buf = io.BytesIO()
+    sf.write(buf, np.zeros(1600, dtype="float32"), 16000, format="FLAC")
+    return buf.getvalue()
+
+
+def _fhnw_corpus(root: Path, rows: list[tuple[str, str, str]],
+                 clips: dict[str, bytes]) -> None:
+    """A tiny ``public.tsv`` + ``clips.tar`` in the layout the loader documents."""
+    unpacked = root / fhnw_mod.SUBDIR / fhnw_mod.UNPACKED_DIR
+    unpacked.mkdir(parents=True)
+    lines = [FHNW_HEADER] + [
+        f"spk\t{path}\t{sentence}\t0\t0\t\t\t{accent}"
+        for path, sentence, accent in rows
+    ]
+    (unpacked / fhnw_mod.TSV).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with tarfile.open(unpacked / fhnw_mod.TAR, "w") as tar:
+        for name, payload in clips.items():
+            info = tarfile.TarInfo(f"clips/{name}")
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+
+
+@pytest.fixture
+def fhnw_with_bad_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    flac = _flac_bytes()
+    _fhnw_corpus(
+        tmp_path,
+        rows=[
+            ("a.flac", "erster satz", "ZH"),
+            ("b.flac", "", "BE"),                 # no reference text
+            ("gone.flac", "kein clip", "SG"),     # not in the tar
+            ("broken.flac", "kaputt", "LU"),      # in the tar, not audio
+            ("c.flac", "zweiter satz", "BE"),
+        ],
+        clips={"a.flac": flac, "b.flac": flac, "broken.flac": b"not flac",
+               "c.flac": flac},
+    )
+    monkeypatch.setenv("SWISS_CORPORA_DIR", str(tmp_path))
+    return tmp_path
+
+
+def test_fhnw_counts_every_row_it_cannot_yield_by_reason(
+    fhnw_with_bad_rows: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    loader = fhnw_mod.FhnwAllDialectsLoader()
+    with caplog.at_level(logging.INFO, logger="raven_asr.datasets"):
+        samples = list(loader.iter_samples("fhnw-all-dialects"))
+
+    # The valid rows are untouched: same ids, same order as before.
+    assert [s.sample_id for s in samples] == [
+        "fhnw-all-dialects-ZH-a", "fhnw-all-dialects-BE-c"]
+    assert loader.tally == RowTally(
+        rows_read=5, yielded=2,
+        dropped={"empty_reference": 1, "clip_missing": 1, "undecodable": 1},
+    )
+    # Every row is accounted for: nothing can vanish between read and yield.
+    assert loader.tally.rows_read == loader.tally.yielded + loader.tally.n_dropped
+
+    (record,) = [r for r in caplog.records if r.name == "raven_asr.datasets"]
+    assert record.levelno == logging.WARNING
+    message = record.getMessage()
+    assert "3 of 5 rows read were DROPPED" in message
+    for part in ("empty_reference=1", "clip_missing=1", "undecodable=1"):
+        assert part in message
+
+
+def test_fhnw_tally_is_per_pass_and_respects_the_limit(
+    fhnw_with_bad_rows: Path,
+) -> None:
+    loader = fhnw_mod.FhnwAllDialectsLoader()
+    assert len(list(loader.iter_samples("fhnw-all-dialects", limit=1))) == 1
+    # Stopped at the limit: the bad rows behind it were never read.
+    assert loader.tally == RowTally(rows_read=1, yielded=1, dropped={})
+    list(loader.iter_samples("fhnw-all-dialects"))
+    assert loader.tally.rows_read == 5 and loader.tally.n_dropped == 3
+
+
+def test_fhnw_clean_corpus_reports_no_drops_without_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _fhnw_corpus(tmp_path, rows=[("a.flac", "ein satz", "ZH")],
+                 clips={"a.flac": _flac_bytes()})
+    monkeypatch.setenv("SWISS_CORPORA_DIR", str(tmp_path))
+    loader = fhnw_mod.FhnwAllDialectsLoader()
+    with caplog.at_level(logging.INFO, logger="raven_asr.datasets"):
+        assert len(list(loader.iter_samples("fhnw-all-dialects"))) == 1
+    assert loader.tally == RowTally(rows_read=1, yielded=1, dropped={})
+    assert [r.levelno for r in caplog.records] == [logging.INFO]
+
+
+def test_spc_counts_every_row_it_cannot_yield_by_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    flac = _flac_bytes()
+    shard = tmp_path / "shard.parquet"
+    pq.write_table(
+        pa.table({
+            "audio": [{"bytes": flac, "path": "a.flac"},
+                      {"bytes": flac, "path": "b.flac"},
+                      {"bytes": b"not flac", "path": "c.flac"},
+                      {"bytes": flac, "path": "d.flac"}],
+            "sentence": ["erster satz", "", "kaputt", "zweiter satz"],
+            "path": ["a.flac", "b.flac", "c.flac", "d.flac"],
+        }),
+        shard,
+    )
+    loader = spc_mod.SpcTestLoader()
+    monkeypatch.setattr(loader, "_shard_paths", lambda: [shard])
+    with caplog.at_level(logging.WARNING, logger="raven_asr.datasets"):
+        samples = list(loader.iter_samples("spc-test"))
+
+    assert [s.sample_id for s in samples] == ["spc-test-a.flac", "spc-test-d.flac"]
+    assert loader.tally == RowTally(
+        rows_read=4, yielded=2, dropped={"empty_reference": 1, "undecodable": 1})
+    assert "2 of 4 rows read were DROPPED" in caplog.text
