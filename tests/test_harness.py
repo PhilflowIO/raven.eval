@@ -474,7 +474,12 @@ def test_summary_shows_rows_the_loader_dropped(
         runner, "_iter_loader_for_subset",
         lambda _s, **_kw: pytest.fail("subset should resume from its marker"),
     )
-    (out / "summary.json").unlink()
+    # The summary stays in place: its manifest is what makes the run resumable.
+    # Blank the counts in it, so the assertion below can only pass if the
+    # rewritten summary took them from the marker.
+    summary = json.loads((out / "summary.json").read_text())
+    summary["results"][0].update(n_dropped=None, dropped_by_reason=None)
+    (out / "summary.json").write_text(json.dumps(summary))
     runner.run(model_key="primeline/whisper-large-v3-german",
                subsets=["Tuda-De"], limit=None, out_dir=out)
     (row,) = json.loads((out / "summary.json").read_text())["results"]
