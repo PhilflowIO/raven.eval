@@ -49,7 +49,7 @@ asr = [
     "httpx",
     "websockets>=13",
 ]
-modal = ["modal"]
+modal = ["modal", "soxr"]
 # Tier-2 DER harness (raven_diar): run the pinned diarizer over public audio and
 # score DER. HEAVY (torch + pyannote.audio + a GPU + the gated community-1 model)
 # — isolated here so the Tier-1 DER re-score (scripts/verify.py) and `make verify`
