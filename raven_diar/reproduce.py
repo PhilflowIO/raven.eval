@@ -20,9 +20,16 @@ import argparse
 import json
 import logging
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
+from raven_eval_core.contract import resolved_contract
 from raven_eval_core.der import to_rttm
+from raven_eval_core.run_manifest import (
+    SCHEMA_VERSION,
+    build_run_manifest,
+    local_gpu,
+)
 
 from .config import DER_DATASETS, KNOWN_DIARIZERS
 from .datasets.base import DiarDatasetLoader
@@ -32,6 +39,14 @@ from .score import score_rttm_pairs
 logger = logging.getLogger("raven_diar.reproduce")
 
 _SUPPORTED_METRICS = ("der",)
+
+# Every diarizer lane's inference stack, recorded in the run manifest beside the
+# scorer libraries both harnesses share (raven_eval_core.run_manifest). A lane
+# that is not installed reads null, which is itself what the run was.
+MANIFEST_LIBRARIES: tuple[str, ...] = (
+    "pyannote.audio", "torch", "torchaudio", "nemo_toolkit", "diarizen",
+    "huggingface-hub", "datasets", "soundfile", "httpx",
+)
 
 
 def _make_loader(loader_name: str, split: str | None = None) -> DiarDatasetLoader:
@@ -140,7 +155,9 @@ def run(
 
     score = score_rttm_pairs(dataset, rttm_pairs)
     spec = KNOWN_DIARIZERS[model_key]
+    run_config = getattr(diarizer, "run_config", None)
     summary = {
+        "schema_version": SCHEMA_VERSION,
         "model_id": spec.model_id,
         "label": spec.label,
         "adapter": spec.adapter,
@@ -159,9 +176,23 @@ def run(
     # not a model or dataset pin — Sortformer's streaming latency preset is the
     # first. An adapter that has none stays absent from the summary rather than
     # writing a null, so existing summaries keep their shape.
-    run_config = getattr(diarizer, "run_config", None)
     if run_config:
         summary["diarizer_config"] = run_config
+    # What produced the numbers above. The hashed config is the contract plus
+    # the pins and settings as this run resolved them, CLI overrides applied.
+    summary["run_manifest"] = build_run_manifest(
+        resolved_config={
+            "contract": resolved_contract(),
+            "diarizer": {**asdict(spec), "revision": summary["model_revision"]},
+            "dataset": {**asdict(ds_spec), "revision": summary["dataset_revision"]},
+            "limit_per_dataset": limit,
+            "diarizer_config": run_config or None,
+        },
+        libraries=MANIFEST_LIBRARIES,
+        # A hosted diarizer runs on the vendor's hardware, which nobody here can
+        # attest; a local one ran on whatever this machine offers.
+        gpu=None if spec.hosted else local_gpu(),
+    )
     summary_path = out_dir / "summary.json"
     summary_path.write_text(
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

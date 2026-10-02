@@ -10,9 +10,27 @@ release is a `results-YYYY-MM-DD` tag on a published result round (see README,
 "Citing a result"). Everything before the first tag is dated by commit and
 untagged, so it has no fixed version to cite.
 
+## `summary.json` schema versions
+
+A Tier-2 run's `summary.json` carries a `schema_version`. `make verify` fails on
+a summary whose version is not listed here, rather than re-scoring a format it
+would have to guess at (`raven_eval_core/run_manifest.py`).
+
+| Version | Shape |
+|---|---|
+| 1 | Every summary written before the field existed, identified by `schema_version` being **absent**. Model and dataset revisions, coverage counters, results. Committed artifacts in this format stay as they are: a manifest back-filled later would describe an environment nobody recorded. |
+| 2 | Adds `schema_version: 2` and `run_manifest`: `git` (`sha`, `dirty`), `uv_lock_sha256`, `python`, `platform`, `libraries` (name → installed version, `null` if not installed), `gpu` (`null` when inference ran on someone else's hardware — a hosted API or a remote endpoint), `config_sha256` (the resolved config: scoring contract plus the run's pins and settings), `argv`. Never an environment variable's value or an endpoint URL. |
+
 ## [Unreleased]
 
 ### Added
+- Every Tier-2 `summary.json`, WER and DER, embeds a run manifest and a
+  `schema_version` (table above). `make verify` and `make promote` reject a
+  version they do not know, and a version-2 summary without a well-formed
+  manifest.
+- `benchmark.config.yaml` is loaded through a strict schema
+  (`raven_eval_core/contract.py`): an unknown or missing key fails the load
+  instead of being read as "not set".
 - `artifacts/SHA256SUMS`: a sha256 manifest over every file under `artifacts/`,
   written by `make manifest`. `make verify` (and CI) fail before re-scoring if any
   file is modified, missing or unlisted.
@@ -20,6 +38,12 @@ untagged, so it has no fixed version to cite.
   round, so a cited number points at fixed bytes.
 - A conflict-of-interest statement above the result tables in `README.md` and
   `BENCHMARKS.md`, naming the systems Raven's own product runs.
+
+### Changed
+- A WER run resumes a finished subset only if it was measured under the same
+  commit, lockfile, libraries and config as the resuming run; otherwise the
+  subset is re-run. One summary holds one manifest, so it can only describe
+  results that share one.
 
 ## 2026-09-19 — untagged
 

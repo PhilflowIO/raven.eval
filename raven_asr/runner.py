@@ -11,12 +11,18 @@ import sys
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from raven_eval_core.entities import entity_hit_rate
 from tqdm import tqdm
 
+from raven_eval_core.contract import resolved_contract
 from raven_eval_core.flozi_wer import evaluate
+from raven_eval_core.run_manifest import (
+    SCHEMA_VERSION,
+    build_run_manifest,
+    same_run_conditions,
+)
 
 from .adapters.base import ASRAdapter
 from .config import (
@@ -44,6 +50,11 @@ DEFAULT_CONCURRENCY: dict[str, int] = {
     # xAI documents 10 requests/s for REST STT; 8 in flight stays under it.
     "xai": 8,
 }
+
+
+# The client-side inference stack, recorded in the run manifest beside the
+# scorer libraries every harness shares (raven_eval_core.run_manifest).
+MANIFEST_LIBRARIES: tuple[str, ...] = ("datasets", "soundfile", "httpx", "modal")
 
 
 @dataclass(frozen=True)
@@ -279,18 +290,65 @@ def _compare_against_flozi(
     return out
 
 
+def _run_manifest(
+    spec: ModelSpec, limit: int | None, revision: str | None
+) -> dict[str, Any]:
+    """The manifest of one invocation for one model, built before any request.
+
+    The hashed config is everything that decides what a number means and is not
+    already named per result: the scoring contract, the model binding (env-var
+    *names* only — ``ModelSpec`` holds no value) and the two run settings that
+    change which clips are scored. Each result carries its own dataset pin.
+
+    ``gpu`` is null for every ASR adapter: all of them call an endpoint, and a
+    client cannot attest the hardware behind one.
+    """
+    return build_run_manifest(
+        resolved_config={
+            "contract": resolved_contract(),
+            "model": asdict(spec),
+            "limit_per_subset": limit,
+            "dataset_revision_override": revision,
+        },
+        libraries=MANIFEST_LIBRARIES,
+        gpu=None,
+    )
+
+
+def _resumable(out_dir: Path, manifest: dict[str, Any]) -> bool:
+    """Whether ``out_dir``'s finished subsets were measured as this run measures.
+
+    A summary holds one manifest, so it can only describe subsets that share
+    one. Markers left by a different commit, lockfile or config — or by a run
+    from before the manifest existed — are not resumed into it.
+    """
+    try:
+        previous = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(previous, dict) and same_run_conditions(
+        previous.get("run_manifest"), manifest
+    )
+
+
 def _write_outputs(
-    out_dir: Path, spec: ModelSpec, entries: list[ResultEntry], limit: int | None
+    out_dir: Path,
+    spec: ModelSpec,
+    entries: list[ResultEntry],
+    limit: int | None,
+    manifest: dict[str, Any],
 ) -> Path:
     yaml_path = out_dir / "model-index.yaml"
     write_yaml(yaml_path, build_model_index(model_id=spec.model_id, results=entries))
     summary = {
+        "schema_version": SCHEMA_VERSION,
         "model_id": spec.model_id,
         "label": spec.label,
         "adapter": spec.adapter,
         "model_revision": spec.revision,
         "limit_per_subset": limit,
         "results": _compare_against_flozi(spec.model_id, entries),
+        "run_manifest": manifest,
     }
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -328,6 +386,7 @@ def _record_subset(
     result: _RunResult,
     entries: list[ResultEntry],
     limit: int | None,
+    manifest: dict[str, Any],
     revision: str | None = None,
 ) -> None:
     """Persist one finished subset: predictions, score, resume marker, outputs.
@@ -387,7 +446,7 @@ def _record_subset(
             spec.label, subset, metrics.n_samples, metrics.wer_pct,
         )
     # Roll outputs after every subset so a crash leaves usable artefacts.
-    _write_outputs(out_dir, spec, entries, limit)
+    _write_outputs(out_dir, spec, entries, limit, manifest)
 
 
 def _dataset_id_for_subset(subset: str) -> str:
@@ -420,10 +479,17 @@ async def run_async(
     adapter = _make_adapter(spec)
     out_dir.mkdir(parents=True, exist_ok=True)
     entries: list[ResultEntry] = []
+    manifest = _run_manifest(spec, limit, revision)
+    resumable = _resumable(out_dir, manifest)
 
     for subset in subsets:
         marker = out_dir / f".done_{_safe(subset)}.json"
-        if marker.exists():
+        if marker.exists() and not resumable:
+            logger.warning(
+                "subset %s was finished under a different commit, lockfile or "
+                "config than this run; re-running it instead of resuming", subset
+            )
+        elif marker.exists():
             try:
                 cached = json.loads(marker.read_text(encoding="utf-8"))
                 entries.append(ResultEntry(**cached))
@@ -442,10 +508,10 @@ async def run_async(
         )
         _record_subset(
             out_dir=out_dir, spec=spec, result=run_result, entries=entries,
-            limit=limit, revision=revision,
+            limit=limit, manifest=manifest, revision=revision,
         )
 
-    return _write_outputs(out_dir, spec, entries, limit)
+    return _write_outputs(out_dir, spec, entries, limit, manifest)
 
 
 def run(
@@ -497,6 +563,7 @@ async def run_multi_async(
     semaphores: dict[str, asyncio.Semaphore] = {}
     out_dirs: dict[str, Path] = {}
     entries: dict[str, list[ResultEntry]] = {}
+    manifests: dict[str, dict[str, Any]] = {}
     concurrency_overrides = concurrency_overrides or {}
 
     for key in model_keys:
@@ -513,11 +580,18 @@ async def run_multi_async(
         semaphores[key] = asyncio.Semaphore(conc)
         out_dirs[key] = out_root / spec.label
         out_dirs[key].mkdir(parents=True, exist_ok=True)
+        manifests[key] = _run_manifest(spec, limit, None)
+        resumable = _resumable(out_dirs[key], manifests[key])
         # Resume from any already-present markers.
         loaded: list[ResultEntry] = []
         for subset in subsets:
             mp = out_dirs[key] / f".done_{_safe(subset)}.json"
-            if mp.exists():
+            if mp.exists() and not resumable:
+                logger.warning(
+                    "[%s] subset %s was finished under a different commit, "
+                    "lockfile or config than this run; re-running it", key, subset
+                )
+            elif mp.exists():
                 try:
                     loaded.append(
                         ResultEntry(**json.loads(mp.read_text(encoding="utf-8")))
@@ -583,12 +657,14 @@ async def run_multi_async(
             _record_subset(
                 out_dir=out_dirs[k], spec=specs[k],
                 result=_RunResult(subset=subset, outcomes=list(outcomes)),
-                entries=entries[k], limit=limit,
+                entries=entries[k], limit=limit, manifest=manifests[k],
             )
 
     yaml_paths: dict[str, Path] = {}
     for k in model_keys:
-        yaml_paths[k] = _write_outputs(out_dirs[k], specs[k], entries[k], limit)
+        yaml_paths[k] = _write_outputs(
+            out_dirs[k], specs[k], entries[k], limit, manifests[k]
+        )
     return yaml_paths
 
 

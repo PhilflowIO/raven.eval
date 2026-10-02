@@ -9,7 +9,7 @@ DER analogue of ``raven_asr.promote``. Takes a runner output dir
         gold/<dataset>/<file>.rttm    (copied verbatim — the reference diarization)
         hyp/<dataset>/<file>.rttm     (copied verbatim — the diarizer's hypothesis)
         expected.json                 ({dataset: {every published scalar}})
-        summary.json                  (provenance: model, revisions, limit)
+        summary.json                  (provenance: model, revisions, limit, run manifest)
 
 ``expected.json`` is derived from ``summary.json`` (never hand-typed), so a
 committed number can only ever equal what the scorer produced. Once committed,
@@ -26,6 +26,8 @@ import re
 import shutil
 import sys
 from pathlib import Path
+
+from raven_eval_core.run_manifest import summary_problem
 
 from .score import DerScore
 
@@ -81,6 +83,10 @@ def promote(results_dir: Path, artifacts_dir: Path, run_name: str) -> Path:
         )
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    # Same gate as raven_asr.promote: a format `make verify` does not read is
+    # refused before it becomes an artifact.
+    if problem := summary_problem(summary):
+        raise ValueError(f"{summary_path}: {problem}")
     expected = _expected_from_summary(summary)
     if not expected:
         raise ValueError(f"summary.json in {results_dir} has no results to promote")

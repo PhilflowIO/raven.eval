@@ -33,6 +33,11 @@ pinned (`FLOZI_DATASET_REVISION` in `raven_asr.config`, the revision the
 published rows were measured at); `--dataset-revision <hash>` overrides it, and
 the revision a run actually read is recorded per result in `summary.json`.
 
+`summary.json` also carries the run manifest: the commit and dirty flag of this
+checkout, the `uv.lock` hash, library versions, a hash of the resolved config and
+the command line (`CHANGELOG.md`, "summary.json schema versions"). It holds no
+environment variable's value: no key and no endpoint URL is written to it.
+
 ## Per-adapter requirements
 
 | Model key (`MODEL=`)                 | Adapter          | Needs |

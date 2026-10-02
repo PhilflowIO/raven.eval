@@ -33,6 +33,12 @@ manifest (``artifacts/SHA256SUMS``, written by ``scripts/manifest.py``) — no f
 modified, missing or unlisted — or nothing is re-scored at all. Re-scoring bytes
 that are not the sealed ones would answer a question nobody asked.
 
+The format is checked before the numbers: an artifact whose ``summary.json``
+declares a ``schema_version`` this code does not know — or a current one without
+a well-formed run manifest — fails without being re-scored
+(``raven_eval_core.run_manifest``). A summary with no version field is the
+legacy format every artifact committed before the field existed is in.
+
 Exit code is nonzero on any mismatch, on manifest drift, OR on an empty artifacts
 dir (so CI can't silently go green on a run that produced nothing).
 
@@ -89,6 +95,7 @@ from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
 from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
 from raven_eval_core.flozi_wer import normalize_flozi as normalize_text
+from raven_eval_core.run_manifest import summary_problem
 from raven_eval_core.wer import corpus_wer_strict_de_pct
 
 # Abs-diff tolerance on wer_pct / cer_pct. 0.05 pp absorbs float/lib jitter
@@ -265,6 +272,23 @@ def _coverage_problem(n_lines: int, n_failed: int, exp: dict | None) -> str:
     return ""
 
 
+def _summary_format_problem(model_dir: Path) -> str:
+    """Why this artifact's ``summary.json`` is in a format we do not read, or ``""``.
+
+    An artifact without a summary is not failed here: the committed fixtures
+    carry none, and that every published artifact has one is asserted where the
+    published table is (``tests/test_published_table.py``).
+    """
+    path = model_dir / "summary.json"
+    if not path.exists():
+        return ""
+    try:
+        summary = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return f"malformed summary.json: {exc}"
+    return summary_problem(summary)
+
+
 def find_model_dirs(artifacts_dir: Path) -> list[Path]:
     """Every dir containing at least one predictions_<subset>.jsonl."""
     dirs = {
@@ -289,6 +313,12 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
     all_ok = True
     for model_dir in model_dirs:
         rel = model_dir.relative_to(artifacts_dir)
+        format_problem = _summary_format_problem(model_dir)
+        if format_problem:
+            rows.append({"model": str(rel), "subset": "*", "status": "FAIL",
+                         "detail": format_problem})
+            all_ok = False
+            continue
         expected_path = model_dir / "expected.json"
         expected: dict = {}
         if not expected_path.exists():
@@ -486,6 +516,12 @@ def verify_der(artifacts_dir: Path) -> tuple[bool, list[dict]]:
     all_ok = True
     for model_dir in model_dirs:
         rel = model_dir.relative_to(artifacts_dir)
+        format_problem = _summary_format_problem(model_dir)
+        if format_problem:
+            rows.append({"model": str(rel), "dataset": "*", "status": "FAIL",
+                         "detail": format_problem})
+            all_ok = False
+            continue
         try:
             expected = json.loads(
                 (model_dir / "expected.json").read_text(encoding="utf-8")

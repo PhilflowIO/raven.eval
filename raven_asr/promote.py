@@ -35,6 +35,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from raven_eval_core.run_manifest import summary_problem
+
 
 def _safe_run_name(name: str) -> str:
     """Sanitize a run-name into a single path segment.
@@ -255,6 +257,10 @@ def promote(
         )
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    # Refused here rather than at the next `make verify`: an artifact in a format
+    # the verifier does not read would be committed only to fail there.
+    if problem := summary_problem(summary):
+        raise ValueError(f"{summary_path}: {problem}")
     _refuse_incomplete(summary, preds)
     expected = _expected_from_summary(summary)
     _add_strict_de(expected, preds)
@@ -271,7 +277,7 @@ def promote(
         json.dumps(expected, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     # Carry the summary alongside for provenance (model and dataset revisions,
-    # adapter, limit, coverage counters).
+    # adapter, limit, coverage counters, run manifest).
     shutil.copy2(summary_path, dest / "summary.json")
     return dest
 

@@ -103,8 +103,12 @@ def test_every_metric_module_is_registered() -> None:
     # Not a metric of its own: the resampler behind `der.uncertainty` and
     # `wer.uncertainty`, whose settings those blocks declare.
     shared_by_metrics = {"bootstrap"}
+    # Not scorers at all: the strict loader for the contract this test reads,
+    # and the record of what produced a run. Neither computes a number.
+    not_scorers = {"contract", "run_manifest"}
     unmapped = sorted(
         on_disk - {"__init__"} - set(module_to_metric) - shared_by_metrics
+        - not_scorers
     )
     assert not unmapped, (
         f"scorer module(s) {unmapped} exist under raven_eval_core/ but map to no "
