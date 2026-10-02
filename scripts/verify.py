@@ -289,6 +289,37 @@ def _summary_format_problem(model_dir: Path) -> str:
     return summary_problem(summary)
 
 
+def _drop_problem(exp: dict) -> str:
+    """Why a committed drop count cannot be trusted, or ``""``.
+
+    ``n_dropped`` counts corpus rows the loader never yielded, so it cannot be
+    re-derived from the predictions. What can be held is that it agrees with its
+    own breakdown. Absent on artifacts promoted before the counters existed —
+    those are not failed for lacking it.
+    """
+    if "n_dropped" not in exp and "dropped_by_reason" not in exp:
+        return ""
+    n, by_reason = exp.get("n_dropped"), exp.get("dropped_by_reason")
+    if (
+        not isinstance(n, int) or isinstance(n, bool) or n < 0
+        or not isinstance(by_reason, dict)
+        or not all(
+            isinstance(v, int) and not isinstance(v, bool) and v > 0
+            for v in by_reason.values()
+        )
+    ):
+        return (
+            f"n_dropped={n!r} / dropped_by_reason={by_reason!r}: expected a "
+            "count and a {reason: positive count} breakdown"
+        )
+    if n != sum(by_reason.values()):
+        return (
+            f"n_dropped={n} does not equal the sum of dropped_by_reason "
+            f"({sum(by_reason.values())})"
+        )
+    return ""
+
+
 def find_model_dirs(artifacts_dir: Path) -> list[Path]:
     """Every dir containing at least one predictions_<subset>.jsonl."""
     dirs = {
@@ -429,6 +460,13 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
                         f"[{exp['wer_ci_lo']}, {exp['wer_ci_hi']}] (tol {TOLERANCE_PCT})"
                     )
                     ok = False
+
+            # Rows the loader dropped: opt-in like strict-de, held to its own
+            # breakdown when committed.
+            drop_problem = _drop_problem(exp)
+            if drop_problem:
+                detail = (detail + " " if detail else "") + drop_problem
+                ok = False
 
             # The numeric entity score is published beside the WER, so it is
             # re-derived like it — point, interval and the counts it rests on.
