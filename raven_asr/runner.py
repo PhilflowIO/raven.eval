@@ -49,6 +49,10 @@ DEFAULT_CONCURRENCY: dict[str, int] = {
     "openai_whisper": 3,
     # xAI documents 10 requests/s for REST STT; 8 in flight stays under it.
     "xai": 8,
+    # Streaming sessions run at real-time pace, so throughput is concurrency x
+    # audio speed. The concurrent-session cap is per account; a rejected
+    # handshake (HTTP 429) is retried as a transient stream failure.
+    "assemblyai_realtime": 8,
 }
 
 
@@ -121,6 +125,13 @@ def _make_adapter(spec: ModelSpec) -> ASRAdapter:
             provider_id=spec.label,
             model_id=spec.model_id,
             api_key_env=spec.api_key_env or "XAI_API_KEY",
+        )
+    if spec.adapter == "assemblyai_realtime":
+        from .adapters.assemblyai_realtime import AssemblyAIRealtimeAdapter
+        return AssemblyAIRealtimeAdapter(
+            provider_id=spec.label,
+            model_id=spec.model_id,
+            api_key_env=spec.api_key_env or "ASSEMBLYAI_API_KEY",
         )
     if spec.adapter == "modal_app":
         from .adapters.modal_app import ModalAppAdapter
