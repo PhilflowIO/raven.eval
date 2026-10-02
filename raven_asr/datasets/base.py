@@ -46,6 +46,9 @@ class Sample:
 #: Why a corpus row produced no sample. The keys of ``RowTally.dropped`` and of
 #: ``dropped_by_reason`` in a run's ``summary.json``.
 DROP_EMPTY_REFERENCE: Final[str] = "empty_reference"
+#: The row points at a reference that does not exist (xSID: no parallel
+#: Standard German sentence), as opposed to one that exists and is empty.
+DROP_REFERENCE_MISSING: Final[str] = "reference_missing"
 DROP_CLIP_MISSING: Final[str] = "clip_missing"
 DROP_UNDECODABLE: Final[str] = "undecodable"
 
@@ -108,10 +111,10 @@ class DatasetLoader(Protocol):
     Loaders must yield samples lazily so the runner can apply --limit
     without materializing the full dataset.
 
-    A loader that can skip rows additionally keeps a :class:`RowTally` on
-    ``self.tally``, reset at the start of every ``iter_samples`` pass. It is not
-    part of the protocol: a loader without one is reported as "drops unknown",
-    which is different from "no drops".
+    Every loader in this package keeps a :class:`RowTally` on ``self.tally``,
+    reset at the start of every ``iter_samples`` pass. It is not part of the
+    protocol, so a test double may omit it: a loader without one is reported as
+    "drops unknown" (``null``), which is different from "no drops".
     """
 
     name: str
