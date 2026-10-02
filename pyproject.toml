@@ -25,6 +25,12 @@ dependencies = [
     # exactly where a tokenizer default could move and silently shift every
     # published BLEU; the signature records the exact version per number.
     "sacrebleu>=2.4,<3",
+    # The scoring contract (benchmark.config.yaml) is loaded through a strict
+    # schema that rejects unknown keys (raven_eval_core/contract.py). BASE, not
+    # behind an extra: every Tier-2 lane resolves its config through it, and one
+    # name per lane for the same two libraries is how the lanes drift apart.
+    "pydantic>=2",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]
