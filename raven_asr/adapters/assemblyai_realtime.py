@@ -227,6 +227,11 @@ class AssemblyAIRealtimeAdapter:
         return asyncio.run(self.atranscribe(audio, sample_rate))
 
 
+# The ``Error`` text AssemblyAI sends when the account's concurrent-session cap
+# is full (observed 2026-10-02; arrives as a message, not a close code).
+_SESSION_CAP = "Too many concurrent sessions"
+
+
 async def _receive(ws: object, session: _Session) -> None:
     """Read messages until ``Termination``; the server closes right after it."""
     async for message in ws:  # type: ignore[attr-defined]
@@ -249,7 +254,13 @@ async def _receive(ws: object, session: _Session) -> None:
             session.termination = body
             return
         elif kind == "Error":
-            raise RuntimeError(f"AssemblyAI streaming error: {body.get('error')!r}")
+            error = str(body.get("error", ""))
+            if _SESSION_CAP in error:
+                # Capacity, not a fault: the account's concurrent-session cap was
+                # full. Closed sessions free their slot with a delay, so a burst
+                # can overshoot even below the cap — back off and retry.
+                raise TransientStreamError(f"session cap: {error!r}")
+            raise RuntimeError(f"AssemblyAI streaming error: {error!r}")
 
 
 def _check_pin(model_id: str, begin: dict[str, object]) -> None:
