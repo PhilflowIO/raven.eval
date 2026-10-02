@@ -104,8 +104,9 @@ def test_every_metric_module_is_registered() -> None:
     # `wer.uncertainty`, whose settings those blocks declare.
     shared_by_metrics = {"bootstrap"}
     # Not scorers at all: the strict loader for the contract this test reads,
-    # and the record of what produced a run. Neither computes a number.
-    not_scorers = {"contract", "run_manifest"}
+    # the record of what produced a run, and the reader of the `systems:` block
+    # (training-data disclosure per system). None computes a number.
+    not_scorers = {"contract", "run_manifest", "systems"}
     unmapped = sorted(
         on_disk - {"__init__"} - set(module_to_metric) - shared_by_metrics
         - not_scorers
@@ -196,6 +197,136 @@ def test_region_breakdown_matches_the_public_contract() -> None:
     assert block["min_n"] == REGION_MIN_N
     assert set(block["datasets"]) == set(REGION_PARSERS)
     assert "dialect_region_breakdown" not in _declared_metrics()
+
+
+# ── Training-data disclosure: the `systems:` block ───────────────────────────
+
+
+def _raw_system_entries() -> list[tuple[str, dict]]:
+    """Every full entry of the raw block, read without the parser under test."""
+    return [
+        (f"systems.{family}.{key}", entry)
+        for family, entries in _config()["systems"].items()
+        for key, entry in entries.items()
+        if "same_as" not in entry
+    ]
+
+
+def test_systems_block_is_not_a_metric() -> None:
+    assert "systems" in _config()
+    assert "systems" not in _declared_metrics()
+
+
+def test_systems_statuses_come_from_the_allowed_set() -> None:
+    """Read from the raw YAML, so a parser bug cannot wave a value through."""
+    from raven_eval_core.systems import CORPUS_SEEN_VALUES, TRAINING_DATA_STATUSES
+
+    assert TRAINING_DATA_STATUSES == ("offengelegt", "teilweise", "nicht offengelegt")
+    assert CORPUS_SEEN_VALUES == ("ja", "nein", "unbekannt")
+    entries = _raw_system_entries()
+    assert entries, "the `systems:` block is empty"
+    offenders = []
+    for where, entry in entries:
+        if entry["training_data"]["status"] not in TRAINING_DATA_STATUSES:
+            offenders.append(f"{where}: status {entry['training_data']['status']!r}")
+        for dataset, seen in entry["test_corpus_seen"].items():
+            if seen["seen"] not in CORPUS_SEEN_VALUES:
+                offenders.append(f"{where}.{dataset}: seen {seen['seen']!r}")
+    assert not offenders, offenders
+
+
+def test_every_ja_and_nein_carries_a_source_and_a_quote() -> None:
+    """`ja` and `nein` are claims about a vendor; an unsourced one is a guess."""
+    offenders, claims = [], 0
+    for where, entry in _raw_system_entries():
+        for dataset, seen in entry["test_corpus_seen"].items():
+            if seen["seen"] == "unbekannt":
+                continue
+            claims += 1
+            if not str(seen.get("source", "")).startswith("https://") or not seen.get("quote"):
+                offenders.append(f"{where}.test_corpus_seen.{dataset}")
+    assert claims, "no `ja`/`nein` in the block — this test would guard nothing"
+    assert not offenders, f"`ja`/`nein` without source URL + verbatim quote: {offenders}"
+
+
+def test_every_system_entry_names_what_was_checked_and_when() -> None:
+    import datetime
+
+    for where, entry in _raw_system_entries():
+        training = entry["training_data"]
+        assert isinstance(training["checked"], datetime.date), where
+        assert training["sources"], f"{where}: no page was recorded as checked"
+        assert all(s["url"].startswith("https://") for s in training["sources"]), where
+
+
+def test_systems_block_validates_against_the_registries() -> None:
+    """Keys are registry keys and corpora are dataset selectors — no second list."""
+    from raven_asr.config import KNOWN_MODELS
+    from raven_diar.config import KNOWN_DIARIZERS
+    from test_published_table import published_systems
+
+    systems = published_systems()
+    assert set(systems["wer"]) <= set(KNOWN_MODELS)
+    assert set(systems["der"]) <= set(KNOWN_DIARIZERS)
+    # An alias resolves to the entry of the checkpoint it serves.
+    alias = systems["wer"]["modal/parakeet"]
+    assert alias.same_as == "primeline/parakeet-primeline"
+    assert alias.status == systems["wer"][alias.same_as].status
+
+
+def _parse(block: dict):
+    from raven_eval_core.systems import parse_systems
+
+    return parse_systems(
+        block,
+        known_systems={"wer": {"a/model", "served/elsewhere", "other/model"}, "der": {"diar"}},
+        known_corpora={"wer": {"fleurs"}, "der": {"ami"}},
+        same_checkpoint={
+            "wer": {"a/model": "ckpt", "served/elsewhere": "ckpt", "other/model": "x"},
+        },
+    )
+
+
+def _entry(**seen) -> dict:
+    import datetime
+
+    return {
+        "training_data": {
+            "status": "nicht offengelegt",
+            "checked": datetime.date(2026, 10, 2),
+            "sources": [{"url": "https://example.org/card"}],
+        },
+        "test_corpus_seen": {"fleurs": seen or {"seen": "unbekannt"}},
+    }
+
+
+def test_the_parser_accepts_a_minimal_entry_and_an_alias() -> None:
+    parsed = _parse({"wer": {"a/model": _entry(), "served/elsewhere": {"same_as": "a/model"}}})
+    assert parsed["wer"]["a/model"].corpus_seen("fleurs").seen == "unbekannt"
+    assert parsed["wer"]["served/elsewhere"].same_as == "a/model"
+    with pytest.raises(KeyError):  # absent is an error, never a silent `unbekannt`
+        parsed["wer"]["a/model"].corpus_seen("mls-de")
+
+
+@pytest.mark.parametrize(
+    ("block", "complaint"),
+    [
+        ({"wer": {"not/registered": _entry()}}, "not a registry key"),
+        ({"wer": {"a/model": _entry(seen="ja")}}, "needs a `source`"),
+        ({"wer": {"a/model": _entry(seen="nein", source="https://example.org")}}, "needs a `source`"),
+        ({"wer": {"a/model": _entry(seen="vielleicht")}}, "must be one of"),
+        ({"wer": {"a/model": {**_entry(), "test_corpus_seen": {"ami": {"seen": "unbekannt"}}}}},
+         "not a WER dataset"),
+        ({"wer": {"a/model": _entry(), "other/model": {"same_as": "a/model"}}},
+         "does not bind both keys to one checkpoint"),
+        ({"asr": {}}, "unknown family"),
+    ],
+)
+def test_the_parser_rejects_what_the_contract_forbids(block: dict, complaint: str) -> None:
+    from raven_eval_core.systems import SystemsContractError
+
+    with pytest.raises(SystemsContractError, match=complaint):
+        _parse(block)
 
 
 # ── Numeric entities: a wrong number must never be scored as the right one ────
