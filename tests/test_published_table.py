@@ -54,13 +54,18 @@ _DER_COLUMNS = {
     6: "der_classic", 7: "miss_classic", 8: "fa_classic", 9: "conf_classic",
     10: "der_classic_filemean",
 }
-_DER_WIDTH, _DER_N = 14, 12          # model | dataset | 9 numbers | CI | n | run
+# model | dataset | 9 numbers | CI | n | run | Trainingsdaten | kennt Testkorpus
+_DER_WIDTH, _DER_N = 16, 12
 _WER_COLUMNS = {2: "wer_pct", 4: "cer_pct", 6: "entity_hit_rate_pct"}
 #: "[lo, hi]" cells, each bound to its two expected.json fields.
 _WER_INTERVALS = {3: ("wer_ci_lo", "wer_ci_hi"), 7: ("entity_ci_lo", "entity_ci_hi")}
 _WER_N_ENTITIES = 8
-_WER_WIDTH, _WER_N = 11, 5
+_WER_WIDTH, _WER_N = 13, 5
 # model | subset | wer | CI | cer | n | numbers hit | CI | numbers | run | ref
+#       | Trainingsdaten | kennt Testkorpus
+#: The two disclosure cells close every result row, in both tables. They are
+#: appended rather than inserted so no numeric column index above moves.
+_DISCLOSURE_CELLS = {"training_data": -2, "corpus_seen": -1}
 
 
 def _linked_rows() -> list[tuple[str, list[str], Path]]:
@@ -112,6 +117,8 @@ def published_rows(metric: str = "der") -> list[dict]:
             "n": int(cells[n_idx]),
             "n_entities": None if is_der else int(cells[_WER_N_ENTITIES]),
             "artifact": artifact,
+            "metric": metric,
+            **{name: cells[i] for name, i in _DISCLOSURE_CELLS.items()},
         })
     return rows
 
@@ -270,3 +277,171 @@ def test_every_committed_artifact_is_traceable_to_a_pinned_revision():
         "committed DER artifacts whose provenance is not pinned: " + str(offenders)
     )
 
+
+
+# ── Training-data disclosure: no published system without an entry ───────────
+#
+# BENCHMARKS.md promises that training-data overlap is named beside the rows it
+# affects. That was kept for one model, as prose. It is now two cells on every
+# result row, read from `systems:` in benchmark.config.yaml, and these tests are
+# what keeps a new row — or a new artifact — from being published without them.
+
+README = REPO_ROOT / "README.md"
+
+
+def published_systems() -> dict:
+    """`systems:` from the contract, validated against the code registries.
+
+    The binding to the registries lives here because this is the one place that
+    may import both harnesses; ``raven_eval_core.contract`` takes them as
+    arguments so the metric core keeps depending on neither.
+    """
+    from raven_asr.config import FLOZI_SUBSETS, KNOWN_MODELS, WER_DATASETS
+    from raven_diar.config import DER_DATASETS, KNOWN_DIARIZERS
+    from raven_eval_core.contract import load_contract, resolve_systems
+
+    return resolve_systems(
+        load_contract().systems,
+        known_systems={"wer": KNOWN_MODELS, "der": KNOWN_DIARIZERS},
+        # A WER row is published per subset where a corpus has several, so the
+        # selectors the harness accepts are the corpus keys, not only the ids.
+        known_corpora={"wer": {*WER_DATASETS, *FLOZI_SUBSETS}, "der": DER_DATASETS},
+        same_checkpoint={
+            "wer": {key: spec.model_id for key, spec in KNOWN_MODELS.items()},
+            "der": {key: spec.model_id for key, spec in KNOWN_DIARIZERS.items()},
+        },
+    )
+
+
+def _system_key(row: dict) -> str:
+    """The registry key a row is about: the model cell up to any ` (licence)`."""
+    return row["model_cell"].split(" (")[0].strip()
+
+
+def _all_published_rows() -> list[dict]:
+    return published_rows("der") + published_rows("wer")
+
+
+@pytest.mark.parametrize(
+    "row", _all_published_rows(),
+    ids=lambda r: f"{r['artifact'].name}-{r['dataset_cell'][:18]}",
+)
+def test_every_published_row_states_its_training_data(row: dict):
+    """Both disclosure cells equal what the contract records for that system."""
+    systems = published_systems()[row["metric"]]
+    key = _system_key(row)
+    assert key in systems, (
+        f"BENCHMARKS.md publishes a {row['metric'].upper()} row for {key!r} but "
+        f"benchmark.config.yaml has no systems.{row['metric']}.{key} entry. Read "
+        f"the vendor's model card, record what it says about training data, then "
+        f"publish the row."
+    )
+    entry = systems[key]
+    expected = json.loads((row["artifact"] / "expected.json").read_text())
+    dataset = _dataset_for(row, expected)
+    seen = entry.corpus_seen(dataset).seen
+    printed = {name: row[name].replace("*", "").strip() for name in _DISCLOSURE_CELLS}
+    assert printed == {"training_data": entry.status, "corpus_seen": seen}, (
+        f"{key} on {dataset}: the row's last two cells must read "
+        f"`| {entry.status} | {seen} |` (systems.{row['metric']}.{key}), "
+        f"the table prints {printed}."
+    )
+
+
+def test_every_committed_artifact_has_a_training_data_entry():
+    """An artifact is a published measurement even before it has a table row."""
+    from raven_asr.config import KNOWN_MODELS
+    from raven_diar.config import KNOWN_DIARIZERS
+
+    systems = published_systems()
+    by_label = {
+        "wer": {spec.label: key for key, spec in KNOWN_MODELS.items()},
+        "der": {spec.label: key for key, spec in KNOWN_DIARIZERS.items()},
+    }
+    checked, missing = 0, []
+    for expected_path in sorted(ARTIFACTS.rglob("expected.json")):
+        artifact = expected_path.parent
+        if artifact.relative_to(ARTIFACTS).parts[0].startswith(FIXTURE_PREFIXES):
+            continue
+        family = "der" if (artifact / "gold").is_dir() else "wer"
+        where = artifact.relative_to(REPO_ROOT)
+        key = by_label[family].get(artifact.name)
+        if key is None or key not in systems[family]:
+            missing.append(f"{where}: no systems.{family} entry for {artifact.name!r}")
+            continue
+        for dataset in json.loads(expected_path.read_text(encoding="utf-8")):
+            checked += 1
+            if dataset not in systems[family][key].test_corpus_seen:
+                missing.append(f"{where}: systems.{family}.{key} says nothing about {dataset!r}")
+    assert checked, "no committed artifact was examined — this guard matched nothing"
+    assert not missing, (
+        "committed artifacts without a training-data disclosure:\n  " + "\n  ".join(missing)
+    )
+
+
+def _table_after(text: str, marker: str) -> list[list[str]]:
+    """Body rows of the first markdown table following ``marker``."""
+    lines = text[text.index(marker):].splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("|"))
+    body = []
+    for line in lines[start + 2:]:
+        if not line.startswith("|"):
+            break
+        body.append(_cells(line))
+    return body
+
+
+def test_the_sources_table_matches_the_contract():
+    """Status, date and every source link per published system, as recorded."""
+    systems = published_systems()
+    published = {(r["metric"], _system_key(r)) for r in _all_published_rows()}
+    rows = {
+        cells[0].strip("`"): cells
+        for cells in _table_after(BENCHMARKS.read_text(encoding="utf-8"), "<!-- systems-sources -->")
+    }
+    assert set(rows) == {key for _, key in published}, (
+        "the sources table must list exactly the systems with a published row"
+    )
+    for family, key in sorted(published):
+        entry, cells = systems[family][key], rows[key]
+        assert cells[1] == entry.status, f"{key}: sources table prints {cells[1]!r}"
+        training = entry.training_data
+        assert cells[2] == training.checked.isoformat(), f"{key}: checked date {cells[2]!r}"
+        absent = [s.url for s in training.sources if f"({s.url})" not in cells[3]]
+        assert not absent, f"{key}: sources table omits {absent}"
+
+
+#: The README headline rows carry no model name, so which system and which
+#: corpora a row stands for is stated here. A row added to that table without a
+#: line below fails, which is the point.
+_README_ROWS = {
+    "VoxConverse test (EN, in-the-wild)": ("der", "pyannote-community-1", ["voxconverse-test"]),
+    "VoxConverse dev (EN)": ("der", "pyannote-community-1", ["voxconverse"]),
+    "CALLHOME-de (DE, telephone)": ("der", "pyannote-community-1", ["callhome-de"]),
+    "Tuda-De / CommonVoice / MLS (DE)": (
+        "wer", "primeline/parakeet-primeline",
+        ["Tuda-De", "common_voice_19_0", "multilingual_librispeech"],
+    ),
+}
+
+
+def test_the_readme_headline_table_states_training_data():
+    """The first table a reader meets carries the same two columns."""
+    systems = published_systems()
+    rows = _table_after(README.read_text(encoding="utf-8"), "<!-- headline-table -->")
+    assert rows, "README headline table not found"
+    for cells in rows:
+        assert cells[1] in _README_ROWS, (
+            f"README headline row {cells[1]!r} is not mapped to a system in "
+            f"_README_ROWS — say which system and corpora it stands for."
+        )
+        family, key, datasets = _README_ROWS[cells[1]]
+        entry = systems[family][key]
+        # One value where the corpora agree, else one per corpus in the order
+        # the dataset cell names them.
+        values = [entry.corpus_seen(d).seen for d in datasets]
+        seen = values[0] if len(set(values)) == 1 else " / ".join(values)
+        assert cells[-2:] == [entry.status, seen], (
+            f"README row {cells[1]!r} must end `| {entry.status} | {seen} |`, "
+            f"it prints {cells[-2:]}."
+        )

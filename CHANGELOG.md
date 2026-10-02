@@ -38,6 +38,11 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   round, so a cited number points at fixed bytes.
 - A conflict-of-interest statement above the result tables in `README.md` and
   `BENCHMARKS.md`, naming the systems Raven's own product runs.
+- Two columns on every result row, *Trainingsdaten* and *kennt Testkorpus*: what
+  each vendor documents about its training data and whether that includes the
+  corpus the row is scored on. Recorded per system with source, verbatim quote
+  and date in `benchmark.config.yaml` → `systems`; a published row or committed
+  artifact without an entry fails the build.
 
 ### Changed
 - A WER run resumes a finished subset only if it was measured under the same

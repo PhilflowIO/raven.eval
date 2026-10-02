@@ -39,13 +39,25 @@ check instead of shrinking the corpus; training-data overlap is named beside the
 rows it affects; the page awards no winner marks; and `make verify` re-scores
 every number from the committed outputs, for anyone.
 
-| metric | dataset | number | comparison |
-|--------|---------|--------|------------|
-| **DER** | VoxConverse test (EN, in-the-wild) | **11.15 %** @ collar 0.0 | pyannote card **11.2 %** ✓ (Δ 0.05 pp) |
-| DER | VoxConverse dev (EN) | 7.17 % @ collar 0.0 | easier split |
-| **DER** | CALLHOME-de (DE, telephone) | **16.08 %** @ collar 0.25 | between pyannote 3.1 (19.0) & pyannoteAI (8.3) |
-| **WER** | Tuda-De / CommonVoice / MLS (DE) | 2.6–4.0 % | flozi dataset-card anchors |
-| Numbers hit | Tuda-De / CommonVoice / MLS (DE) | 94.5–98.3 % | dates, amounts, counts exactly right — the error WER hides; 91–339 numbers per set |
+<!-- headline-table -->
+| metric | dataset | number | comparison | Trainingsdaten | kennt Testkorpus |
+|--------|---------|--------|------------|----------------|------------------|
+| **DER** | VoxConverse test (EN, in-the-wild) | **11.15 %** @ collar 0.0 | pyannote card **11.2 %** ✓ (Δ 0.05 pp) | nicht offengelegt | unbekannt |
+| DER | VoxConverse dev (EN) | 7.17 % @ collar 0.0 | easier split | nicht offengelegt | unbekannt |
+| **DER** | CALLHOME-de (DE, telephone) | **16.08 %** @ collar 0.25 | between pyannote 3.1 (19.0) & pyannoteAI (8.3) | nicht offengelegt | unbekannt |
+| **WER** | Tuda-De / CommonVoice / MLS (DE) | 2.6–4.0 % | flozi dataset-card anchors | teilweise | unbekannt |
+| Numbers hit | Tuda-De / CommonVoice / MLS (DE) | 94.5–98.3 % | dates, amounts, counts exactly right — the error WER hides; 91–339 numbers per set | teilweise | unbekannt |
+
+*Trainingsdaten* is what the vendor documents about the model's training data
+(`offengelegt`, `teilweise`, `nicht offengelegt`); *kennt Testkorpus* is whether
+that documented data includes the corpus the row is scored on (`ja`, `nein`,
+`unbekannt`) — one value where a row's corpora agree, otherwise one per corpus
+in the order the row names them. `ja` means
+documented training on that corpus — its training split or the same source — and
+is **not** a claim that the test recordings themselves were trained on. Sources,
+quotes and the date checked are in `benchmark.config.yaml` → `systems`; the
+legend is in
+[`BENCHMARKS.md`](./BENCHMARKS.md#training-data--what-each-system-is-documented-to-have-seen).
 
 Every row is re-scored on every push by CI. Full tables with per-file provenance
 and pinned model/dataset commits: [**`BENCHMARKS.md`**](./BENCHMARKS.md).

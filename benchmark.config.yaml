@@ -330,3 +330,255 @@ dialect_region_breakdown:
   wer: corpus WER over the region's utterances + percentile bootstrap CI (wer.uncertainty settings)
   bleu: corpus BLEU over the region's utterances + n — NO interval, BLEU has none yet
   coverage: every utterance lands in exactly one region; Σ region n == corpus n, or the breakdown refuses to print
+
+# What each benchmarked system's vendor documents about its training data, and
+# whether that overlaps the corpora it is scored on above. BENCHMARKS.md and
+# README.md print both values beside every result row; the tables are bound to
+# this block by tests/test_published_table.py, and a published row without an
+# entry here fails the build.
+#
+#   training_data.status
+#     offengelegt        the vendor names the training corpora
+#     teilweise          part of the lineage is documented, part is not
+#     nicht offengelegt  closed API, or a card that names no corpus
+#   test_corpus_seen.<dataset>.seen
+#     ja         documented training on that corpus — its train split or the same
+#                source. NOT a claim that the test recordings themselves were in
+#                training.
+#     nein       the vendor states its training set as a closed list and the
+#                corpus is not in it
+#     unbekannt  nothing documented either way. Never a guess, and an open-ended
+#                list ("including ...") cannot support `nein`.
+#   For a system that is `teilweise` because only its base model is
+#   documented, a `ja` is inherited from that base model and holds only if the
+#   system really was initialised from it. The entry's note says so.
+#
+# Sources are model cards, papers and dataset documentation only. Open weights
+# prove nothing here: they ship without their training data and the data cannot
+# be read back out of them. Every `ja` / `nein` carries a source and a verbatim
+# quote; `checked` is the day the pages were read.
+#
+# Keys are registry keys — raven_asr.config.KNOWN_MODELS under `wer`,
+# raven_diar.config.KNOWN_DIARIZERS under `der` — and dataset keys are the
+# selectors those harnesses accept. This block lists no models of its own: an
+# unknown key is rejected by raven_eval_core.contract.resolve_systems.
+systems:
+  wer:
+    primeline/parakeet-primeline:
+      training_data:
+        status: teilweise
+        checked: 2026-10-02
+        note: >-
+          The card calls the model "based on the NVIDIA parakeet-tdt-0.6b-v3
+          architecture" and refers to that model as "the base model"; it names
+          no training data of its own and carries no base_model metadata. It
+          reports results on Tuda-De, MLS and Common Voice 19 — the subsets it
+          is scored on here. The NVIDIA model's training data is documented.
+          `teilweise`, and every `ja` below, therefore ASSUME the weights were
+          initialised from the NVIDIA model, which the primeline card does not
+          state in those words.
+        sources:
+          - url: https://huggingface.co/primeline/parakeet-primeline
+            quote: "It is based on the [NVIDIA parakeet-tdt-0.6b-v3] architecture"
+            note: the card has no training-data section
+          - url: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+            quote: "The model was trained on the combination of [Granary dataset's ASR subset] and in-house dataset NeMo ASR Set 3.0"
+          - url: https://arxiv.org/abs/2509.14128
+            quote: "NeMo ASR Set provides invaluable human-annotated data sourced from proven quality datasets including AMI [...], FLEURS [...], Common Voice [...], Multilingual LibriSpeech (MLS) [...], and language-specific datasets"
+            note: >-
+              technical report of the NVIDIA model; its Table 10 gives 2602.24 h
+              of German ASR data from NeMo ASR Set 3.0 but not which corpora
+              those hours come from
+          - url: https://huggingface.co/datasets/nvidia/Granary
+            quote: "MOSEL (Multi-corpus Collection) [...] Sources: VoxPopuli + YouTube-Commons + LibriLight"
+      test_corpus_seen:
+        Tuda-De:
+          seen: unbekannt
+          note: named in neither the NVIDIA card nor its technical report; both lists are open-ended and primeline names nothing
+        multilingual_librispeech: &parakeet_mls
+          seen: unbekannt
+          note: >-
+            The NVIDIA card and technical report name Multilingual LibriSpeech
+            as a source of the human-labelled set without a language, and the
+            report gives German hours without their corpora. Likely, not
+            documented: no source says GERMAN MLS was trained on.
+        common_voice_19_0:
+          seen: unbekannt
+          note: >-
+            The NVIDIA card names "Mozilla Common Voice (v7.0)" without a
+            language; the technical report gives German hours without their
+            corpora. Likely, not documented.
+        mls-de: *parakeet_mls
+        avemio-german-mixed-test:
+          seen: unbekannt
+          note: >-
+            Follows its components, Common Voice and MLS German (the dataset
+            card says "Commonvoice 17.0" in its text and "Commonvoice 19.0" in
+            a heading, and speaks of three sources while naming two).
+        voxpopuli-de:
+          seen: ja
+          source: https://huggingface.co/datasets/nvidia/Granary
+          quote: "MOSEL (Multi-corpus Collection) [...] Sources: VoxPopuli + YouTube-Commons + LibriLight"
+          note: >-
+            Via the NVIDIA model, whose card says "660,000 hours of
+            pseudo-labeled data from Granary [...] including: YTC, MOSEL, YODAS"
+            (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3); Granary ships
+            a German VoxPopuli config (`de_voxpopuli`). Same source — European
+            Parliament recordings, pseudo-labelled. Assumes initialisation from
+            the NVIDIA weights, see training_data.note.
+        fleurs:
+          seen: unbekannt
+          note: >-
+            The NVIDIA card lists FLEURS as an evaluation set, while the
+            technical report names FLEURS among the sources of the
+            human-labelled training set, without language or split.
+        spc-test: {seen: unbekannt}
+        fhnw-all-dialects: {seen: unbekannt}
+    # Registry binds this key to the same checkpoint (model_id
+    # primeline/parakeet-primeline), served through Modal instead of vLLM.
+    modal/parakeet:
+      same_as: primeline/parakeet-primeline
+    xai/grok-voice-transcribe-2.0:
+      training_data: &xai_training
+        status: nicht offengelegt
+        checked: 2026-10-02
+        sources:
+          - url: https://docs.x.ai/developers/models/speech-to-text
+            note: model page; no statement about training data
+          - url: https://docs.x.ai/developers/model-capabilities/audio/speech-to-text
+            note: guide naming both versions; no statement about training data
+      test_corpus_seen: &closed_api_wer
+        avemio-german-mixed-test: {seen: unbekannt}
+        fleurs: {seen: unbekannt}
+        mls-de: {seen: unbekannt}
+        voxpopuli-de: {seen: unbekannt}
+        spc-test: {seen: unbekannt}
+        fhnw-all-dialects: {seen: unbekannt}
+    xai/grok-voice-transcribe-1.0:
+      training_data: *xai_training
+      test_corpus_seen: *closed_api_wer
+  der:
+    pyannote-community-1:
+      training_data:
+        status: nicht offengelegt
+        checked: 2026-10-02
+        note: >-
+          Open weights, but neither the model card nor the release post names a
+          training corpus. The card's benchmark table lists evaluation sets only.
+        sources:
+          - url: https://huggingface.co/pyannote/speaker-diarization-community-1
+            quote: "Training and tuning made possible thanks to GENCI on the Jean Zay supercomputer."
+            note: >-
+              The only sentence on the card about training; names no data. The
+              repository is gated: the raw README returns HTTP 401 without a
+              login, so the card was read as the publicly rendered model page,
+              not from the repository files. The gated sub-cards embedding/ and
+              plda/ were not read.
+          - url: https://www.pyannote.ai/blog/community-1
+            note: release post; no training corpus named
+      test_corpus_seen: &unknown_der
+        callhome-de: {seen: unbekannt}
+        ami: {seen: unbekannt}
+        voxconverse: {seen: unbekannt}
+        voxconverse-test: {seen: unbekannt}
+    sortformer-4spk-v1:
+      training_data:
+        status: offengelegt
+        checked: 2026-10-02
+        sources:
+          - url: https://huggingface.co/nvidia/diar_sortformer_4spk-v1
+            quote: "Sortformer was trained on a combination of 2030 hours of real conversations and 5150 hours or simulated audio mixtures"
+      test_corpus_seen:
+        callhome-de: &sortformer_callhome
+          seen: unbekannt
+          note: >-
+            The card lists "2000 NIST Speaker Recognition Evaluation, split1"
+            as training data and itself calls that set "CALLHOME
+            (NIST-SRE-2000 Disc8)". Whether it shares recordings with the
+            TalkBank CALLHOME German set scored here is documented nowhere we
+            could read, so this is neither `ja` nor `nein`.
+        ami:
+          seen: ja
+          source: https://huggingface.co/nvidia/diar_sortformer_4spk-v1
+          quote: "Training Datasets (Real conversations) [...] AMI Meeting Corpus"
+          note: the card names the corpus, not which split
+        voxconverse: &sortformer_v1_voxconverse
+          seen: ja
+          source: https://huggingface.co/nvidia/diar_sortformer_4spk-v1
+          quote: "Training Datasets (Real conversations) [...] VoxConverse-v0.3"
+          note: the card names the corpus, not which split
+        voxconverse-test: *sortformer_v1_voxconverse
+    sortformer-streaming-4spk-v2:
+      training_data:
+        status: offengelegt
+        checked: 2026-10-02
+        sources:
+          - url: https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2
+            quote: "Sortformer was trained on a combination of 2445 hours of real conversations and 5150 hours or simulated audio mixtures"
+      test_corpus_seen:
+        callhome-de: *sortformer_callhome
+        ami:
+          seen: ja
+          source: https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2
+          quote: "Training Datasets (Real conversations) [...] AMI Meeting Corpus"
+          note: the card names the corpus, not which split
+        voxconverse: &sortformer_v2_voxconverse
+          seen: ja
+          source: https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2
+          quote: "Training Datasets (Real conversations) [...] VoxConverse-v0.3"
+          note: the card names the corpus, not which split
+        voxconverse-test: *sortformer_v2_voxconverse
+    deepgram-nova-3:
+      training_data:
+        status: nicht offengelegt
+        checked: 2026-10-02
+        sources:
+          - url: https://deepgram.com/learn/introducing-nova-3-speech-to-text-api
+            quote: "a multi-stage training process that combines synthetic code-switched data at massive scale with carefully curated real-world datasets"
+            note: the only description of training data; names no corpus
+          - url: https://developers.deepgram.com/docs/models-languages-overview
+            note: model overview; no statement about training data
+          - url: https://developers.deepgram.com/docs/diarization
+            note: diarization docs; no statement about training data
+      test_corpus_seen: *unknown_der
+    assemblyai-universal-3-5-pro:
+      training_data:
+        status: nicht offengelegt
+        checked: 2026-10-02
+        sources:
+          - url: https://www.assemblyai.com/docs/pre-recorded-audio/universal-3-5-pro
+            note: model docs; no statement about training data
+          - url: https://www.assemblyai.com/docs/getting-started/models
+            note: model overview; no statement about training data
+      test_corpus_seen: *unknown_der
+    diarizen-wavlm-large-s80-md-v2:
+      training_data:
+        status: offengelegt
+        checked: 2026-10-02
+        sources:
+          - url: https://huggingface.co/BUT-FIT/diarizen-wavlm-large-s80-md-v2
+            quote: "The model was trained on far-field, single-channel audio from a diverse set of public datasets, including AMI, AISHELL-4, AliMeeting, NOTSOFAR-1, MSDWild, DIHARD3, RAMC, and VoxConverse."
+          - url: https://github.com/BUTSpeechFIT/DiariZen
+            quote: "We train DiariZen models on a compound dataset composed of the datasets listed in the table below"
+      test_corpus_seen:
+        callhome-de:
+          seen: unbekannt
+          note: >-
+            CALLHOME is in neither list — but the model card's list is
+            open-ended ("including"), and the repository's table of training
+            sets is a benchmark table. Not enough for `nein`.
+        ami:
+          seen: ja
+          source: https://huggingface.co/BUT-FIT/diarizen-wavlm-large-s80-md-v2
+          quote: "public datasets, including AMI, AISHELL-4, AliMeeting, NOTSOFAR-1, MSDWild, DIHARD3, RAMC, and VoxConverse"
+          note: >-
+            The card names the corpus, not which split. The repository's table
+            (https://github.com/BUTSpeechFIT/DiariZen) lists it as "AMI-SDM",
+            the far-field channel; scored here on the headset mix of the same
+            meetings.
+        voxconverse: &diarizen_voxconverse
+          seen: ja
+          source: https://huggingface.co/BUT-FIT/diarizen-wavlm-large-s80-md-v2
+          quote: "public datasets, including AMI, AISHELL-4, AliMeeting, NOTSOFAR-1, MSDWild, DIHARD3, RAMC, and VoxConverse"
+          note: the card names the corpus, not which split
+        voxconverse-test: *diarizen_voxconverse
