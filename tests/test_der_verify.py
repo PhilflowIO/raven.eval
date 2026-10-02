@@ -94,6 +94,7 @@ def test_wrong_der_expected_fails(tmp_path: Path):
     assert not all_ok
     assert any(r["status"] == "FAIL" for r in rows)
     # combined CLI must return nonzero (1) — there is a real mismatch.
+    verify.manifest.write_manifest(tmp_path)  # seal, so the exit code is the scorer's
     assert verify.main(["--artifacts-dir", str(tmp_path)]) == 1
 
 
@@ -108,6 +109,7 @@ def test_correct_der_expected_passes(tmp_path: Path):
     )
     all_ok, rows = verify.verify_der(tmp_path)
     assert all_ok and rows
+    verify.manifest.write_manifest(tmp_path)  # seal, so the exit code is the scorer's
     assert verify.main(["--artifacts-dir", str(tmp_path)]) == 0
 
 
@@ -125,4 +127,5 @@ def test_missing_hyp_rttm_raises(tmp_path: Path):
 def test_empty_artifacts_still_fails(tmp_path: Path):
     """No WER and no DER artifacts → exit 2 (unchanged emptiness guard)."""
     assert verify.verify_der(tmp_path) == (True, [])
+    verify.manifest.write_manifest(tmp_path)  # seal, so the exit code is the scorer's
     assert verify.main(["--artifacts-dir", str(tmp_path)]) == 2

@@ -28,8 +28,13 @@ exactly the ``n_samples`` lines its expected.json commits to. A WER computed ove
 only the clips a model finished is not the published quantity, however well it
 re-scores.
 
-Exit code is nonzero on any mismatch OR on an empty artifacts dir (so CI can't
-silently go green on a run that produced nothing).
+Integrity is checked before coverage: the artifacts dir must match its sha256
+manifest (``artifacts/SHA256SUMS``, written by ``scripts/manifest.py``) — no file
+modified, missing or unlisted — or nothing is re-scored at all. Re-scoring bytes
+that are not the sealed ones would answer a question nobody asked.
+
+Exit code is nonzero on any mismatch, on manifest drift, OR on an empty artifacts
+dir (so CI can't silently go green on a run that produced nothing).
 
 --------------------------------------------------------------------------------
 Why this file re-implements the flozi WER pipeline instead of calling
@@ -71,6 +76,7 @@ and tests keep working.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
 import sys
@@ -120,6 +126,16 @@ __all__ = [
     "verify_der",
     "verify_entities",
 ]
+
+# scripts/ is not a package, so the sibling manifest module is loaded by path —
+# the same way the tests load this file, which keeps both entry points working.
+_MANIFEST_SPEC = importlib.util.spec_from_file_location(
+    "raven_eval_manifest", Path(__file__).resolve().parent / "manifest.py"
+)
+manifest = importlib.util.module_from_spec(_MANIFEST_SPEC)
+sys.modules["raven_eval_manifest"] = manifest  # dataclasses resolve it by name
+assert _MANIFEST_SPEC.loader is not None
+_MANIFEST_SPEC.loader.exec_module(manifest)
 
 # --- artifact scanning + comparison -------------------------------------------
 
@@ -587,6 +603,11 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
+    drift = manifest.check_manifest(args.artifacts_dir)
+    if not drift.ok:
+        print(drift.report(args.artifacts_dir), file=sys.stderr)
+        return 1
+
     wer_ok, wer_rows = verify(args.artifacts_dir)
     der_ok, der_rows = verify_der(args.artifacts_dir)
 
@@ -633,7 +654,8 @@ def main(argv: list[str] | None = None) -> int:
                 tolerances.append(f"BLEU ±{BLEU_TOLERANCE}")
         if der_rows:
             tolerances.append(f"DER ±{DER_TOLERANCE_PCT} pp")
-        print(f"OK: {total} row(s) reproduced ({', '.join(tolerances)}).")
+        print(f"OK: {total} row(s) reproduced ({', '.join(tolerances)}); "
+              f"artifacts match {manifest.MANIFEST_NAME}.")
         return 0
     print(f"FAIL: {n_fail}/{total} row(s) did not reproduce.", file=sys.stderr)
     return 1

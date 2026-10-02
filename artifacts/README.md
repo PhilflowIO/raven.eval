@@ -6,6 +6,11 @@ and asserts each matches its committed `expected.json` within ±0.05 pp. CI runs
 on every push, so a committed number can never silently drift from the committed
 data.
 
+Every file here, this one included, is listed with its sha256 in `SHA256SUMS`,
+and `make verify` checks that list before it re-scores anything. Adding,
+changing or removing an artifact therefore needs `make manifest` and the
+regenerated `SHA256SUMS` in the same commit.
+
 ## WER artifacts
 
 Each `<run>/<model>/` directory holds the per-utterance model outputs Raven's

@@ -6,6 +6,26 @@
 > this page resolves to a committed artifact that `make verify` re-scores on
 > every push, in both directions (`tests/test_published_table.py`).
 
+## Who is measuring, and what Raven has at stake
+
+Raven sells meeting transcription, and this page ranks models Raven's own product
+runs. `primeline/parakeet-primeline` transcribes every standard tier (the
+`primeline/parakeet-primeline` rows of the WER table), and
+`pyannote/speaker-diarization-community-1` is the diarizer built into the product
+(the `pyannote-community-1` rows of the DER tables). Raven's sovereign tier uses a
+third model, Voxtral Mini 3B, served by Privatemode; it has no row here. Every
+other row is a system Raven does not run.
+
+That interest is bounded by rules the repository enforces rather than by our
+word. The scoring conventions and bootstrap seeds are pinned in
+[`benchmark.config.yaml`](./benchmark.config.yaml), every model and dataset is
+pinned to a revision that each artifact records, and a test fails any artifact
+that does not. A failed request or a missing hypothesis fails `make verify`
+instead of quietly shrinking the corpus a number stands for. Training-data
+overlap is named beside the rows it affects, not in a footnote. No row carries a
+winner mark. And every number below re-scores from committed model outputs with
+`make verify`, on a laptop, by anyone who doubts it.
+
 ## Scoring contract
 
 See [`benchmark.config.yaml`](./benchmark.config.yaml). Every metric declared

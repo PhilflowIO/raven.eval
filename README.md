@@ -27,6 +27,18 @@ download a dataset, load a model, or need a license.
 
 ## Numbers you can re-score right now
 
+**Raven has a stake in some of these rows.** Raven sells meeting transcription,
+and two models on this page are inside it: `primeline/parakeet-primeline`
+transcribes every standard tier (it produced the WER row below), and
+`pyannote/speaker-diarization-community-1` is the diarizer built into the
+product (the DER rows). A benchmark run by an interested party has to say so
+where the numbers are. What bounds the interest is the protocol, not our
+intentions: scoring rules, bootstrap seeds and every model and dataset revision
+are pinned in this repository; a failed request or a missing hypothesis fails the
+check instead of shrinking the corpus; training-data overlap is named beside the
+rows it affects; the page awards no winner marks; and `make verify` re-scores
+every number from the committed outputs, for anyone.
+
 | metric | dataset | number | comparison |
 |--------|---------|--------|------------|
 | **DER** | VoxConverse test (EN, in-the-wild) | **11.15 %** @ collar 0.0 | pyannote card **11.2 %** ✓ (Δ 0.05 pp) |
@@ -176,6 +188,27 @@ real-world telephone or meeting audio, 15–25 % is typical. The collar (a forgi
 window around speaker boundaries, usually 0.0 or 0.25 s) and the overlap rule change
 the number substantially — never compare DER across different rules.
 
+## Citing a result
+
+A number re-scores green against whatever `artifacts/` holds today, so a citation
+needs a version that cannot move. Each published result round gets a dated git
+tag, `results-YYYY-MM-DD`, on the commit that publishes it. That commit carries
+[`artifacts/SHA256SUMS`](./artifacts/SHA256SUMS) — the sha256 of every file under
+`artifacts/`, sorted, in plain `sha256sum` format — so the tag names exact bytes,
+including the provenance files no scorer reads. Cite the tag, not a branch.
+
+```bash
+git checkout results-YYYY-MM-DD
+make verify                                   # manifest first, then every number
+(cd artifacts && sha256sum -c SHA256SUMS)     # the same check, without this repo's code
+```
+
+`make verify` and CI fail if any artifact file is modified, missing or not in the
+manifest. An intended change is re-sealed with one command, `make manifest`, and
+committed together with the manifest it produces; the tag of an earlier round
+keeps the manifest it shipped with. What changed in the protocol between rounds
+is in [`CHANGELOG.md`](./CHANGELOG.md).
+
 ## Repository layout
 
 - **`raven_eval_core/`** — the standalone, secret-free metric core. `der.py`
@@ -192,7 +225,10 @@ the number substantially — never compare DER across different rules.
   against `nryant/dscore`.
 - **`artifacts/`** — the committed proof: per-file references + hypotheses +
   `expected.json` for every published number, re-scored by `make verify`.
-- **`scripts/verify.py`** — the Tier-1 re-scorer.
+- **`scripts/verify.py`** — the Tier-1 re-scorer. Checks `artifacts/SHA256SUMS`
+  before it scores anything.
+- **`scripts/manifest.py`** — writes (`make manifest`) and checks the artifact
+  manifest.
 
 ## What these numbers are not
 

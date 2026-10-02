@@ -1,7 +1,7 @@
 # raven.eval — one entrypoint per verification level.
 # See README.md for the three-tier verifiability model.
 
-.PHONY: install test verify analyse rescore reproduce promote dscore-check clean
+.PHONY: install test verify manifest analyse rescore reproduce promote dscore-check clean
 
 install:            ## Install the pinned environment (uv, fails on lockfile drift).
 	uv sync --locked --extra dev --extra asr
@@ -13,9 +13,16 @@ test:               ## Run the scorer + harness tests (the regression guard).
 # Re-scores BOTH the committed WER predictions_*.jsonl AND the committed DER
 # gold/hyp RTTMs with our own scorer, and asserts each matches its expected.json.
 # This is how anyone verifies our numbers in seconds. Exits nonzero on any
-# mismatch or on an artifacts dir with no WER *and* no DER artifacts.
+# mismatch, on an artifacts dir with no WER *and* no DER artifacts, and — checked
+# first — on any file under artifacts/ that differs from artifacts/SHA256SUMS.
 verify:             ## Tier-1: re-score committed WER + DER artifacts → reproduce published numbers.
 	uv run python scripts/verify.py
+
+# Re-seal artifacts/ after an intended change: rewrites artifacts/SHA256SUMS
+# (sha256 of every file, sorted, sha256sum format). Commit it with the change; a
+# results-YYYY-MM-DD tag then fixes that exact manifest. See README "Releases".
+manifest:           ## Re-seal artifacts/: rewrite artifacts/SHA256SUMS after an intended change.
+	uv run python scripts/manifest.py
 
 # Read a committed artifact past its corpus scalar. Same data, same scorer, no GPU
 # — every interval and paired comparison quoted in BENCHMARKS.md comes from here.
