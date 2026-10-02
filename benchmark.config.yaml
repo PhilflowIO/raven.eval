@@ -361,7 +361,7 @@ dialect_region_breakdown:
 # Keys are registry keys — raven_asr.config.KNOWN_MODELS under `wer`,
 # raven_diar.config.KNOWN_DIARIZERS under `der` — and dataset keys are the
 # selectors those harnesses accept. This block lists no models of its own: an
-# unknown key is rejected by raven_eval_core.systems.parse_systems.
+# unknown key is rejected by raven_eval_core.contract.resolve_systems.
 systems:
   wer:
     primeline/parakeet-primeline:

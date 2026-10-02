@@ -104,9 +104,8 @@ def test_every_metric_module_is_registered() -> None:
     # `wer.uncertainty`, whose settings those blocks declare.
     shared_by_metrics = {"bootstrap"}
     # Not scorers at all: the strict loader for the contract this test reads,
-    # the record of what produced a run, and the reader of the `systems:` block
-    # (training-data disclosure per system). None computes a number.
-    not_scorers = {"contract", "run_manifest", "systems"}
+    # and the record of what produced a run. Neither computes a number.
+    not_scorers = {"contract", "run_manifest"}
     unmapped = sorted(
         on_disk - {"__init__"} - set(module_to_metric) - shared_by_metrics
         - not_scorers
@@ -219,8 +218,12 @@ def test_systems_block_is_not_a_metric() -> None:
 
 def test_systems_statuses_come_from_the_allowed_set() -> None:
     """Read from the raw YAML, so a parser bug cannot wave a value through."""
-    from raven_eval_core.systems import CORPUS_SEEN_VALUES, TRAINING_DATA_STATUSES
+    from typing import get_args
 
+    from raven_eval_core.contract import CorpusSeenValue, TrainingDataStatus
+
+    TRAINING_DATA_STATUSES = get_args(TrainingDataStatus)
+    CORPUS_SEEN_VALUES = get_args(CorpusSeenValue)
     assert TRAINING_DATA_STATUSES == ("offengelegt", "teilweise", "nicht offengelegt")
     assert CORPUS_SEEN_VALUES == ("ja", "nein", "unbekannt")
     entries = _raw_system_entries()
@@ -275,10 +278,10 @@ def test_systems_block_validates_against_the_registries() -> None:
 
 
 def _parse(block: dict):
-    from raven_eval_core.systems import parse_systems
+    from raven_eval_core.contract import Systems, resolve_systems
 
-    return parse_systems(
-        block,
+    return resolve_systems(
+        Systems.model_validate({"wer": {}, "der": {}, **block}),
         known_systems={"wer": {"a/model", "served/elsewhere", "other/model"}, "der": {"diar"}},
         known_corpora={"wer": {"fleurs"}, "der": {"ami"}},
         same_checkpoint={
@@ -288,12 +291,10 @@ def _parse(block: dict):
 
 
 def _entry(**seen) -> dict:
-    import datetime
-
     return {
         "training_data": {
             "status": "nicht offengelegt",
-            "checked": datetime.date(2026, 10, 2),
+            "checked": "2026-10-02",
             "sources": [{"url": "https://example.org/card"}],
         },
         "test_corpus_seen": {"fleurs": seen or {"seen": "unbekannt"}},
@@ -311,21 +312,23 @@ def test_the_parser_accepts_a_minimal_entry_and_an_alias() -> None:
 @pytest.mark.parametrize(
     ("block", "complaint"),
     [
-        ({"wer": {"not/registered": _entry()}}, "not a registry key"),
+        # Rejected by the schema: the shape of an entry.
         ({"wer": {"a/model": _entry(seen="ja")}}, "needs a `source`"),
         ({"wer": {"a/model": _entry(seen="nein", source="https://example.org")}}, "needs a `source`"),
-        ({"wer": {"a/model": _entry(seen="vielleicht")}}, "must be one of"),
+        ({"wer": {"a/model": _entry(seen="vielleicht")}}, "'ja', 'nein' or 'unbekannt'"),
+        ({"wer": {"a/model": {**_entry(), "same_as": "other/model"}}}, "stands alone"),
+        ({"wer": {"a/model": {"training_data": _entry()["training_data"]}}}, "non-empty `test_corpus_seen`"),
+        ({"asr": {}}, "asr"),
+        # Rejected against the registries: what an entry names.
+        ({"wer": {"not/registered": _entry()}}, "not a registry key"),
         ({"wer": {"a/model": {**_entry(), "test_corpus_seen": {"ami": {"seen": "unbekannt"}}}}},
          "not a WER dataset"),
         ({"wer": {"a/model": _entry(), "other/model": {"same_as": "a/model"}}},
          "does not bind both keys to one checkpoint"),
-        ({"asr": {}}, "unknown family"),
     ],
 )
 def test_the_parser_rejects_what_the_contract_forbids(block: dict, complaint: str) -> None:
-    from raven_eval_core.systems import SystemsContractError
-
-    with pytest.raises(SystemsContractError, match=complaint):
+    with pytest.raises(ValueError, match=complaint):  # pydantic's error is one too
         _parse(block)
 
 

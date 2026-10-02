@@ -293,14 +293,15 @@ def published_systems() -> dict:
     """`systems:` from the contract, validated against the code registries.
 
     The binding to the registries lives here because this is the one place that
-    may import both harnesses; ``raven_eval_core.systems`` takes them as
+    may import both harnesses; ``raven_eval_core.contract`` takes them as
     arguments so the metric core keeps depending on neither.
     """
     from raven_asr.config import FLOZI_SUBSETS, KNOWN_MODELS, WER_DATASETS
     from raven_diar.config import DER_DATASETS, KNOWN_DIARIZERS
-    from raven_eval_core.systems import load_systems
+    from raven_eval_core.contract import load_contract, resolve_systems
 
-    return load_systems(
+    return resolve_systems(
+        load_contract().systems,
         known_systems={"wer": KNOWN_MODELS, "der": KNOWN_DIARIZERS},
         # A WER row is published per subset where a corpus has several, so the
         # selectors the harness accepts are the corpus keys, not only the ids.
@@ -404,8 +405,9 @@ def test_the_sources_table_matches_the_contract():
     for family, key in sorted(published):
         entry, cells = systems[family][key], rows[key]
         assert cells[1] == entry.status, f"{key}: sources table prints {cells[1]!r}"
-        assert cells[2] == entry.checked.isoformat(), f"{key}: checked date {cells[2]!r}"
-        absent = [s.url for s in entry.sources if f"({s.url})" not in cells[3]]
+        training = entry.training_data
+        assert cells[2] == training.checked.isoformat(), f"{key}: checked date {cells[2]!r}"
+        absent = [s.url for s in training.sources if f"({s.url})" not in cells[3]]
         assert not absent, f"{key}: sources table omits {absent}"
 
 
