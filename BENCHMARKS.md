@@ -54,7 +54,12 @@ the row is scored on:
   not on it.
 - `unbekannt`: nothing documented either way. This is never a guess, and it is
   the only honest value for a closed API. An open-ended list ("trained on
-  datasets including …") cannot support `nein`.
+  datasets including …") cannot support `nein`, and a corpus named without its
+  language cannot support `ja` for the German part of it.
+
+Where a system is `teilweise` because only its base model is documented, a `ja`
+is inherited from that base model and holds only if the system really was
+initialised from it; the entry's note in the contract says so.
 
 Open weights settle none of this. Weights are released without their training
 data and the data cannot be read back out of them, so the only sources admitted
@@ -63,7 +68,7 @@ are model cards, papers and dataset documentation.
 <!-- systems-sources -->
 | system | Trainingsdaten | checked | sources |
 |--------|----------------|---------|---------|
-| `primeline/parakeet-primeline` | teilweise | 2026-10-02 | [primeline/parakeet-primeline](https://huggingface.co/primeline/parakeet-primeline), [nvidia/parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), [nvidia/Granary](https://huggingface.co/datasets/nvidia/Granary) |
+| `primeline/parakeet-primeline` | teilweise | 2026-10-02 | [primeline/parakeet-primeline](https://huggingface.co/primeline/parakeet-primeline), [nvidia/parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), [arxiv.org/…/2509.14128](https://arxiv.org/abs/2509.14128), [nvidia/Granary](https://huggingface.co/datasets/nvidia/Granary) |
 | `xai/grok-voice-transcribe-2.0` | nicht offengelegt | 2026-10-02 | [docs.x.ai/…/speech-to-text](https://docs.x.ai/developers/models/speech-to-text), [docs.x.ai/…/speech-to-text](https://docs.x.ai/developers/model-capabilities/audio/speech-to-text) |
 | `xai/grok-voice-transcribe-1.0` | nicht offengelegt | 2026-10-02 | [docs.x.ai/…/speech-to-text](https://docs.x.ai/developers/models/speech-to-text), [docs.x.ai/…/speech-to-text](https://docs.x.ai/developers/model-capabilities/audio/speech-to-text) |
 | `pyannote-community-1` | nicht offengelegt | 2026-10-02 | [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), [pyannote.ai/…/community-1](https://www.pyannote.ai/blog/community-1) |
@@ -76,11 +81,16 @@ are model cards, papers and dataset documentation.
 Three entries need a sentence each, because the value alone would mislead:
 
 - **`primeline/parakeet-primeline`** — Raven's own standard-tier model — is
-  `teilweise`. Its base, `nvidia/parakeet-tdt-0.6b-v3`, documents training on
-  Multilingual LibriSpeech, Common Voice and (through Granary) VoxPopuli; the
-  German fine-tune on top names no data at all, and its card reports results on
-  Tuda-De, MLS and Common Voice — the three subsets it is scored on here. Read
-  its MLS and Common Voice rows as in-domain.
+  `teilweise`. Its card calls it "based on the NVIDIA parakeet-tdt-0.6b-v3
+  architecture", names no training data, and reports results on Tuda-De, MLS and
+  Common Voice — the three subsets it is scored on here. The NVIDIA model
+  documents its training data, and names Multilingual LibriSpeech and Common
+  Voice among it, but without a language: its technical report gives 2,602 hours
+  of human-labelled German without saying which corpora they are. So those rows
+  read `unbekannt` — likely in-domain, not documented. Only VoxPopuli is `ja`,
+  through Granary's German VoxPopuli set, and that assumes the primeline weights
+  were initialised from the NVIDIA model, which its card does not say in those
+  words.
 - **Sortformer on `callhome-de`** is `unbekannt`, not `nein`. Both cards list
   "2000 NIST Speaker Recognition Evaluation, split1" as training data and
   themselves call that set "CALLHOME (NIST-SRE-2000 Disc8)". Whether it shares
@@ -265,8 +275,8 @@ WER. CER is on raw text.
 | model | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | run | flozi ref WER | Trainingsdaten | kennt Testkorpus |
 |-------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|-----|--------------:|----------------|------------------|
 | primeline/parakeet-primeline | Tuda-De | 4.02 | [2.76, 5.55] | 2.75 | 414 | 94.51 | [87.50, 100.00] | 91 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 | teilweise | unbekannt |
-| primeline/parakeet-primeline | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | 97.05 | [95.10, 98.60] | 339 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 | teilweise | ja |
-| primeline/parakeet-primeline | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | 98.31 | [96.62, 99.66] | 295 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 | teilweise | ja |
+| primeline/parakeet-primeline | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | 97.05 | [95.10, 98.60] | 339 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 | teilweise | unbekannt |
+| primeline/parakeet-primeline | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | 98.31 | [96.62, 99.66] | 295 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 | teilweise | unbekannt |
 | xai/grok-voice-transcribe-2.0 | avemio-german-mixed-test | 6.87 | [5.24, 8.76] | 3.85 | 100 | 100.00 | [100.00, 100.00] | 3 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — | nicht offengelegt | unbekannt |
 | xai/grok-voice-transcribe-2.0 | fleurs | 4.59 | [3.43, 5.90] | 2.57 | 100 | 93.18 | [83.78, 100.00] | 44 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — | nicht offengelegt | unbekannt |
 | xai/grok-voice-transcribe-2.0 | mls-de | 8.37 | [6.87, 9.95] | 10.53 | 100 | 90.00 | [66.67, 100.00] | 10 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — | nicht offengelegt | unbekannt |
@@ -769,23 +779,24 @@ statement about folding, not about diarization.
 
 **DiariZen was trained on two of these three corpora, and that changes how two
 of its rows may be read.** The *kennt Testkorpus* column of the result table
-carries the fact — `ja` for VoxConverse and AMI, `nein` for CALLHOME — and the
-quotes from its model card and repository are in `benchmark.config.yaml` →
-`systems.der`. Its VoxConverse and AMI numbers are therefore in-domain, while
-`pyannote-community-1` and the two hosted systems on those rows document no such
-training. That is not a defect of the model and not a mistake in the
-measurement; it is a property of the comparison:
+carries the fact — `ja` for VoxConverse and AMI — and the quote from its model
+card is in `benchmark.config.yaml` → `systems.der`. Its VoxConverse and AMI
+numbers are therefore in-domain, while `pyannote-community-1` and the two hosted
+systems on those rows document no such training. That is not a defect of the
+model and not a mistake in the measurement; it is a property of the comparison:
 
 - The **VoxConverse** rows above, including the 1.58 pp lead over community-1 and
   the flat speaker-count profile, show a model on its training distribution. The
   lead is real as a number and is **not** evidence of better generalisation.
 - The **AMI** row below is the same situation — and there Sortformer shares it:
   both Sortformer cards list AMI as training data too.
-- **CALLHOME is not in DiariZen's list**, so the German row — the one this
-  page's main ranking rides on, and the one that reconciles with the ETH
-  benchmark to 0.24 pp — is an out-of-domain measurement for DiariZen. For the
-  Sortformer rows on it the column reads `unbekannt`, for the reason given under
+- **CALLHOME is not in DiariZen's list**, but that list is open-ended
+  ("including …"), so the German row — the one this page's main ranking rides
+  on, and the one that reconciles with the ETH benchmark to 0.24 pp — reads
+  `unbekannt` for DiariZen rather than `nein`, and `unbekannt` for Sortformer
+  for the reason given under
   [Training data](#training-data--what-each-system-is-documented-to-have-seen).
+  No system on that row documents training on it.
 
 **On meetings DiariZen does not rescue the picture.** AMI test, all 16 meetings,
 same gold and same scorer: **23.14 %** at collar 0.25 against the streaming
@@ -960,7 +971,7 @@ to the collar-0.25 DER and is not a breakdown of it.
 | deepgram-nova-3 | voxconverse (**test**) | 40.33 | 28.46 | 2.51 | 9.36 | 37.81 | 26.99 | 1.49 | 9.33 | 32.18 | [32.22, 43.48] | 232 | [2026-09-04](./artifacts/2026-09-04-voxconverse-test-deepgram-nova-3/deepgram-nova-3/) | nicht offengelegt | unbekannt |
 | deepgram-nova-3 | ami (test, 4-speaker meetings, IHM) | 34.07 | 25.19 | 2.88 | 5.99 | 29.37 | 22.56 | 1.70 | 5.11 | 28.93 | [25.11, 33.50] | 16 | [2026-09-04](./artifacts/2026-09-04-ami-deepgram-nova-3/deepgram-nova-3/) | nicht offengelegt | unbekannt |
 | assemblyai-universal-3-5-pro | ami (test, 4-speaker meetings, IHM) | 39.94 | 36.46 | 1.98 | 1.50 | 36.04 | 33.08 | 1.83 | 1.13 | 35.85 | [32.46, 39.32] | 16 | [2026-09-04](./artifacts/2026-09-04-ami-assemblyai-universal-3-5-pro/assemblyai-universal-3-5-pro/) | nicht offengelegt | unbekannt |
-| diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 15.70 | 11.95 | 2.95 | 0.80 | **12.07** | 10.44 | 1.08 | 0.55 | 11.84 | [11.19, 13.01] | 120 | [2026-09-04](./artifacts/2026-09-04-callhome-de-diarizen/diarizen-wavlm-large-s80-md-v2/) | offengelegt | nein |
+| diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | callhome-de (German, telephone) | 15.70 | 11.95 | 2.95 | 0.80 | **12.07** | 10.44 | 1.08 | 0.55 | 11.84 | [11.19, 13.01] | 120 | [2026-09-04](./artifacts/2026-09-04-callhome-de-diarizen/diarizen-wavlm-large-s80-md-v2/) | offengelegt | unbekannt |
 | diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | voxconverse (dev) | 4.52 | 1.51 | 1.67 | 1.34 | **2.75** | 0.86 | 0.72 | 1.17 | 3.31 | [2.32, 3.26] | 216 | [2026-09-04](./artifacts/2026-09-04-voxconverse-dev-diarizen/diarizen-wavlm-large-s80-md-v2/) | offengelegt | ja |
 | diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | voxconverse (**test**) | 9.17 | 3.55 | 3.42 | 2.21 | **6.83** | 2.86 | 2.07 | 1.90 | 6.85 | [6.12, 7.59] | 232 | [2026-09-04](./artifacts/2026-09-04-voxconverse-test-diarizen/diarizen-wavlm-large-s80-md-v2/) | offengelegt | ja |
 | diarizen-wavlm-large-s80-md-v2 (CC-BY-NC, non-commercial) | ami (meetings) | 25.69 | 22.68 | 1.14 | 1.87 | **23.14** | 21.38 | 0.51 | 1.25 | 22.49 | [20.16, 26.11] | 16 | [2026-09-05](./artifacts/2026-09-05-ami-diarizen/diarizen-wavlm-large-s80-md-v2/) | offengelegt | ja |

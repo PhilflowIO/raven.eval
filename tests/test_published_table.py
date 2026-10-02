@@ -435,8 +435,10 @@ def test_the_readme_headline_table_states_training_data():
         )
         family, key, datasets = _README_ROWS[cells[1]]
         entry = systems[family][key]
-        # One value per corpus, in the order the dataset cell names them.
-        seen = " / ".join(entry.corpus_seen(d).seen for d in datasets)
+        # One value where the corpora agree, else one per corpus in the order
+        # the dataset cell names them.
+        values = [entry.corpus_seen(d).seen for d in datasets]
+        seen = values[0] if len(set(values)) == 1 else " / ".join(values)
         assert cells[-2:] == [entry.status, seen], (
             f"README row {cells[1]!r} must end `| {entry.status} | {seen} |`, "
             f"it prints {cells[-2:]}."
