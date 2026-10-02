@@ -255,13 +255,15 @@ async def _receive(ws: object, session: _Session) -> None:
 def _check_pin(model_id: str, begin: dict[str, object]) -> None:
     """Fail if the session says it is serving a model other than the pinned one.
 
-    The v3 ``Begin`` message is not documented to carry the model; when it does,
-    a mismatch is fatal (the number would be published under the wrong name).
-    When it does not, the request pin is all the client can attest — the same
-    standing as every other hosted adapter's ``model`` field.
+    The v3 ``Begin`` message names the served model in ``configuration.model``
+    (undocumented; observed 2026-10-02). A mismatch is fatal — the number would
+    be published under the wrong name — and so is a ``Begin`` that stops naming
+    it: the session would then be unattested, which is how a silent fallback to
+    the default model would look.
     """
-    served = begin.get("speech_model")
-    if served is not None and served != model_id:
+    configuration = begin.get("configuration")
+    served = configuration.get("model") if isinstance(configuration, dict) else None
+    if served != model_id:
         raise RuntimeError(
-            f"AssemblyAI served speech_model={served!r} but the pin is {model_id!r}"
+            f"AssemblyAI served model={served!r} but the pin is {model_id!r}"
         )

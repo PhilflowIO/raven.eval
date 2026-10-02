@@ -30,6 +30,11 @@ def _clip() -> tuple[np.ndarray, int]:
     return np.full(5600, 0.25, dtype=np.float32), 16000
 
 
+def _begin(model: str) -> dict[str, Any]:
+    """The Begin message as the v3 API sends it (observed 2026-10-02)."""
+    return {"type": "Begin", "id": "s1", "configuration": {"model": model}}
+
+
 async def _drain(ws: ServerConnection, seen: dict[str, Any]) -> None:
     """Read audio until Terminate, recording what the client sent."""
     seen["audio_bytes"] = 0
@@ -77,7 +82,7 @@ def test_session_protocol_and_transcript() -> None:
     async def handler(ws: ServerConnection) -> None:
         seen["path"] = ws.request.path
         seen["auth"] = ws.request.headers.get("Authorization")
-        await ws.send(json.dumps({"type": "Begin", "id": "s1"}))
+        await ws.send(json.dumps(_begin("universal-3-6-pro")))
         await _drain(ws, seen)
         for turn in (
             {"turn_order": 0, "transcript": "Guten", "end_of_turn": False},
@@ -111,11 +116,21 @@ def test_session_protocol_and_transcript() -> None:
 
 def test_pin_mismatch_is_fatal() -> None:
     async def handler(ws: ServerConnection) -> None:
-        await ws.send(json.dumps({"type": "Begin", "speech_model": "universal-3-5-pro"}))
+        await ws.send(json.dumps(_begin("universal-3-5-pro")))
         await _drain(ws, {})
         await ws.send(json.dumps({"type": "Termination"}))
 
     with pytest.raises(RuntimeError, match="universal-3-5-pro"):
+        _run(handler)
+
+
+def test_unattested_session_is_fatal() -> None:
+    async def handler(ws: ServerConnection) -> None:
+        await ws.send(json.dumps({"type": "Begin", "id": "s1"}))
+        await _drain(ws, {})
+        await ws.send(json.dumps({"type": "Termination"}))
+
+    with pytest.raises(RuntimeError, match="served model=None"):
         _run(handler)
 
 
