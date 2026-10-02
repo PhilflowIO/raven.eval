@@ -43,7 +43,11 @@ def _artifact(root: Path) -> Path:
     )
     (model / "expected.json").write_text(
         json.dumps({"S": {"wer_pct": 0.0, "cer_pct": 0.0, "n_samples": 1,
-                          "wer_ci_lo": 0.0, "wer_ci_hi": 0.0}}),
+                          "wer_ci_lo": 0.0, "wer_ci_hi": 0.0,
+                          # "hallo welt" holds no number: the entity score is null.
+                          "entity_hit_rate_pct": None, "entity_ci_lo": None,
+                          "entity_ci_hi": None, "n_entities": 0,
+                          "n_utterances_with_entities": 0}}),
         encoding="utf-8",
     )
     return model
