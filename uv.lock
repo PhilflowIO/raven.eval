@@ -4593,6 +4593,7 @@ asr = [
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-15-raven-eval-core-diar') or (python_full_version >= '3.12' and extra != 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diar' and extra == 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diarizen' and extra == 'extra-15-raven-eval-core-sortformer')" },
     { name = "pyyaml" },
     { name = "soundfile" },
+    { name = "soxr" },
     { name = "tqdm" },
     { name = "websockets" },
 ]
@@ -4683,6 +4684,7 @@ requires-dist = [
     { name = "soundfile", marker = "extra == 'diar-hosted'" },
     { name = "soundfile", marker = "extra == 'diarizen'" },
     { name = "soundfile", marker = "extra == 'sortformer'" },
+    { name = "soxr", marker = "extra == 'asr'" },
     { name = "text2num" },
     { name = "toml", marker = "extra == 'diarizen'" },
     { name = "torch", marker = "extra == 'diar'" },
@@ -5288,6 +5290,7 @@ name = "soxr"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-raven-eval-core-diarizen'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-15-raven-eval-core-diar') or (python_full_version < '3.12' and extra != 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diar' and extra == 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diarizen' and extra == 'extra-15-raven-eval-core-sortformer')" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-15-raven-eval-core-diar') or (python_full_version >= '3.12' and extra != 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diar' and extra == 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diarizen' and extra == 'extra-15-raven-eval-core-sortformer')" },
 ]

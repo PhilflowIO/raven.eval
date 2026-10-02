@@ -48,6 +48,10 @@ asr = [
     "pyyaml",
     "httpx",
     "websockets>=13",
+    # Resampling for adapters whose endpoint accepts one rate only (the Modal
+    # apps take 16 kHz; the Swiss corpora are 44.1 kHz). In this extra, not
+    # `modal`, so the conversion is tested wherever the harness is.
+    "soxr",
 ]
 modal = ["modal"]
 # Tier-2 DER harness (raven_diar): run the pinned diarizer over public audio and

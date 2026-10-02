@@ -8,6 +8,13 @@ models; FastConformer local-attention single-call for parakeet). The
 adapter side does no chunking, no stitching, no overlap math — that
 class of bug is structurally impossible here.
 
+Every Modal app accepts **16 kHz** mono PCM16 only and rejects anything else.
+Loaders yield audio at the corpus's native rate (the Swiss corpora are
+44.1 kHz), so the adapter converts at this boundary — the one place that knows
+the remote's input contract — with soxr at its "VHQ" setting. The hosted
+adapters keep sending native audio: each vendor resamples on its own side, and
+converting for them here would change what their published numbers measured.
+
 The previous adapter-side ``plan_chunks`` / ``stitch_transcripts`` path
 was removed after internal review, once we confirmed (52.2 % best_k=0
 rate) that the longest-common-suffix stitcher duplicated overlap regions
@@ -32,6 +39,26 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 logger = logging.getLogger(__name__)
+
+# The only input rate the Modal STT apps accept (they raise on any other).
+MODAL_INPUT_SAMPLE_RATE: int = 16_000
+
+
+def to_input_rate(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+    """Resample mono float audio to ``MODAL_INPUT_SAMPLE_RATE`` (no-op if equal)."""
+    if sample_rate == MODAL_INPUT_SAMPLE_RATE:
+        return audio
+    import soxr
+
+    return np.asarray(
+        soxr.resample(
+            np.asarray(audio, dtype=np.float32),
+            sample_rate,
+            MODAL_INPUT_SAMPLE_RATE,
+            quality="VHQ",
+        ),
+        dtype=np.float32,
+    )
 
 
 # Per-provider default threshold above which the adapter routes to the
@@ -109,9 +136,11 @@ class ModalAppAdapter:
         function_name = (
             self._longform_function_name if longform else self._function_name
         )
-        wav_bytes = encode_wav_pcm16(audio, sample_rate)
+        wav_bytes = encode_wav_pcm16(
+            to_input_rate(audio, sample_rate), MODAL_INPUT_SAMPLE_RATE
+        )
         started = time.monotonic()
-        text = await self._invoke_remote(fn, wav_bytes, sample_rate)
+        text = await self._invoke_remote(fn, wav_bytes, MODAL_INPUT_SAMPLE_RATE)
         latency = time.monotonic() - started
         return TranscribeResult(
             text=text,
@@ -120,6 +149,8 @@ class ModalAppAdapter:
                 "app": self._app_name,
                 "function": function_name,
                 "longform": longform,
+                "input_sample_rate": sample_rate,
+                "sent_sample_rate": MODAL_INPUT_SAMPLE_RATE,
             },
         )
 

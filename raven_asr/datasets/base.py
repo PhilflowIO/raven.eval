@@ -16,7 +16,9 @@ class Sample:
 
     Attributes:
         audio: PCM float32 mono samples in [-1.0, 1.0].
-        sample_rate: Hz, always 16000 for flozi-aligned evaluation.
+        sample_rate: Hz, the corpus's native rate (16000 for the flozi-aligned
+            sets, 44100 for the Swiss corpora). Adapters whose endpoint needs
+            a fixed rate convert at their own boundary.
         reference: Ground-truth transcript (raw, pre-normalize).
         sample_id: Stable identifier for traceability across runs.
         subset: Subset label (e.g. "Tuda-De", "common_voice_19_0").
