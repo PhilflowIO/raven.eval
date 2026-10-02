@@ -36,6 +36,12 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   file is modified, missing or unlisted.
 - The `results-YYYY-MM-DD` release convention: one tag per published result
   round, so a cited number points at fixed bytes.
+- `n_dropped` / `dropped_by_reason` on every result row of a run's
+  `summary.json`: corpus rows the loader could not yield (`empty_reference`,
+  `clip_missing`, `undecodable`) and that were therefore never attempted. The
+  FHNW and SPC loaders count them instead of skipping silently; `null` means the
+  loader keeps no count. Measured on the full FHNW public half: 2,875 of 2,875
+  rows yield a clip, none dropped.
 - A conflict-of-interest statement above the result tables in `README.md` and
   `BENCHMARKS.md`, naming the systems Raven's own product runs.
 

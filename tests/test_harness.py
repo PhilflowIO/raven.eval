@@ -26,7 +26,7 @@ from raven_asr import promote as promote_mod
 from raven_asr import runner
 from raven_asr.adapters.base import TranscribeResult
 from raven_asr.config import KNOWN_MODELS, ModelSpec
-from raven_asr.datasets.base import Sample
+from raven_asr.datasets.base import RowTally, Sample
 
 
 class _PerfectAdapter:
@@ -424,3 +424,76 @@ def test_summary_records_the_entity_score_beside_the_wer(
     (row,) = json.loads((results_dir / "summary.json").read_text())["results"]
     assert row["entity_hit_rate_pct"] == 100.0
     assert (row["n_entities"], row["n_utterances_with_entities"]) == (2, 2)
+
+
+class _DroppingLoader(_FakeLoader):
+    """A loader that, like the archive-backed ones, could not yield some rows."""
+
+    def __init__(self, samples: list[Sample], dropped: dict[str, int]) -> None:
+        super().__init__(samples)
+        self._dropped = dropped
+        self.tally = RowTally()
+
+    def iter_samples(self, subset: str, limit: int | None = None) -> list[Sample]:
+        out = super().iter_samples(subset, limit)
+        n = sum(self._dropped.values())
+        self.tally = RowTally(
+            rows_read=len(out) + n, yielded=len(out), dropped=dict(self._dropped))
+        return out
+
+
+def test_summary_shows_rows_the_loader_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A run over fewer rows than the corpus must say so in its own output."""
+    samples, registry = _make_samples("Tuda-De", ["hallo welt", "guten tag"])
+    dropped = {"clip_missing": 2, "empty_reference": 1}
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_DroppingLoader(samples, dropped), "Tuda-De"),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    out = tmp_path / "primeline-whisper-large-v3-german"
+    with caplog.at_level("WARNING", logger="raven_asr.runner"):
+        runner.run(model_key="primeline/whisper-large-v3-german",
+                   subsets=["Tuda-De"], limit=None, out_dir=out)
+
+    (row,) = json.loads((out / "summary.json").read_text())["results"]
+    assert row["n_dropped"] == 3
+    assert row["dropped_by_reason"] == dropped
+    # Dropped rows were never attempted; they are not hidden inside n_failed.
+    assert (row["n_attempted"], row["n_ok"], row["n_failed"]) == (2, 2, 0)
+    assert "dropped 3 row(s)" in caplog.text
+
+    # A resumed run still shows them: the marker carries the counts.
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: pytest.fail("subset should resume from its marker"),
+    )
+    (out / "summary.json").unlink()
+    runner.run(model_key="primeline/whisper-large-v3-german",
+               subsets=["Tuda-De"], limit=None, out_dir=out)
+    (row,) = json.loads((out / "summary.json").read_text())["results"]
+    assert (row["n_dropped"], row["dropped_by_reason"]) == (3, dropped)
+
+
+def test_summary_distinguishes_no_drops_from_a_loader_without_a_tally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``0`` is a claim the loader made; ``null`` means nobody counted."""
+    samples, registry = _make_samples("Tuda-De", ["hallo welt"])
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    for name, loader, expected in (
+        ("counted", _DroppingLoader(samples, {}), (0, {})),
+        ("uncounted", _FakeLoader(samples), (None, None)),
+    ):
+        monkeypatch.setattr(
+            runner, "_iter_loader_for_subset",
+            lambda _s, _l=loader, **_kw: (_l, "Tuda-De"),
+        )
+        out = tmp_path / name
+        runner.run(model_key="primeline/whisper-large-v3-german",
+                   subsets=["Tuda-De"], limit=None, out_dir=out)
+        (row,) = json.loads((out / "summary.json").read_text())["results"]
+        assert (row["n_dropped"], row["dropped_by_reason"]) == expected
