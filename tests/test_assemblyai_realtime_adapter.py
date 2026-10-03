@@ -18,7 +18,11 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
 
 from raven_asr import runner
-from raven_asr.adapters.assemblyai_realtime import AssemblyAIRealtimeAdapter
+from raven_asr.adapters.assemblyai_realtime import (
+    AssemblyAIRealtimeAdapter,
+    SessionRate,
+    SessionRefused,
+)
 from raven_asr.config import KNOWN_MODELS
 from raven_asr.retry import TransientStreamError, with_retry
 
@@ -67,8 +71,30 @@ def _run(
 
 
 def _unretried(adapter: AssemblyAIRealtimeAdapter) -> Callable[..., Awaitable[Any]]:
-    inner = AssemblyAIRealtimeAdapter.atranscribe.__wrapped__  # type: ignore[attr-defined]
+    """One bare session: no transport retry, no waiting out refusals."""
+    inner = AssemblyAIRealtimeAdapter._session.__wrapped__  # type: ignore[attr-defined]
     return lambda audio, sr: inner(adapter, audio, sr)
+
+
+_LIMIT_ERROR = {
+    "type": "Error",
+    "error": "Unauthorized Connection: Too many concurrent sessions",
+}
+
+
+class _FakeClock:
+    """Virtual time for SessionRate: sleeping advances the clock, nothing waits."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.slept: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
 
 
 @pytest.fixture(autouse=True)
@@ -163,20 +189,147 @@ def test_vendor_error_message_fails_the_utterance() -> None:
         _run(handler)
 
 
-def test_session_cap_is_transient() -> None:
+def test_session_limit_error_is_a_refusal() -> None:
     async def handler(ws: ServerConnection) -> None:
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "Error",
-                    "error": "Unauthorized Connection: Too many concurrent sessions",
-                }
-            )
-        )
+        await ws.send(json.dumps(_LIMIT_ERROR))
         await _drain(ws, {})
 
-    with pytest.raises(TransientStreamError, match="session cap"):
+    with pytest.raises(SessionRefused, match="session limit"):
         _run(handler)
+
+
+def test_session_limit_close_code_is_a_refusal() -> None:
+    async def handler(ws: ServerConnection) -> None:
+        await ws.close(3009, "Unauthorized Connection: Too many concurrent sessions")
+
+    with pytest.raises(SessionRefused, match="3009"):
+        _run(handler)
+
+
+def test_refusals_wait_without_spending_the_retry_budget() -> None:
+    """More refusals than the transport retry allows, and the utterance still lands."""
+    state = {"sessions": 0}
+
+    async def handler(ws: ServerConnection) -> None:
+        state["sessions"] += 1
+        if state["sessions"] <= 7:  # with_retry gives up after 6 attempts
+            await ws.send(json.dumps(_LIMIT_ERROR))
+            await _drain(ws, {})
+            return
+        await ws.send(json.dumps(_begin("universal-3-6-pro")))
+        await _drain(ws, {})
+        await ws.send(json.dumps({"type": "Turn", "turn_order": 0,
+                                  "transcript": "Grüezi", "end_of_turn": True}))
+        await ws.send(json.dumps({"type": "Termination"}))
+
+    async def main() -> Any:
+        async with serve(handler, "127.0.0.1", 0) as srv:
+            port = srv.sockets[0].getsockname()[1]
+            rate = SessionRate(8, window_s=0.01)
+            adapter = AssemblyAIRealtimeAdapter(
+                base_url=f"ws://127.0.0.1:{port}/v3/ws", realtime=False,
+                timeout_s=5, session_rate=rate,
+            )
+            return await adapter.atranscribe(*_clip()), rate
+
+    result, rate = asyncio.run(main())
+    assert result.text == "Grüezi"
+    assert result.raw["n_refused_sessions"] == 7
+    assert state["sessions"] == 8
+    assert rate.per_min < 8  # the refusals taught it a lower limit
+
+
+def test_more_utterances_than_the_limit_all_land() -> None:
+    """A run larger than one minute's budget finishes with zero failures."""
+    served = {"n": 0}
+
+    async def handler(ws: ServerConnection) -> None:
+        served["n"] += 1
+        await ws.send(json.dumps(_begin("universal-3-6-pro")))
+        await _drain(ws, {})
+        await ws.send(json.dumps({"type": "Turn", "turn_order": 0,
+                                  "transcript": "ok", "end_of_turn": True}))
+        await ws.send(json.dumps({"type": "Termination"}))
+
+    async def main() -> list[Any]:
+        async with serve(handler, "127.0.0.1", 0) as srv:
+            port = srv.sockets[0].getsockname()[1]
+            adapter = AssemblyAIRealtimeAdapter(
+                base_url=f"ws://127.0.0.1:{port}/v3/ws", realtime=False,
+                timeout_s=5, session_rate=SessionRate(3, window_s=0.05),
+            )
+            return list(await asyncio.gather(
+                *(adapter.atranscribe(*_clip()) for _ in range(10))
+            ))
+
+    results = asyncio.run(main())
+    assert [r.text for r in results] == ["ok"] * 10
+    assert served["n"] == 10
+
+
+def test_endless_refusal_fails_loudly() -> None:
+    async def handler(ws: ServerConnection) -> None:
+        await ws.send(json.dumps(_LIMIT_ERROR))
+        await _drain(ws, {})
+
+    async def main() -> Any:
+        async with serve(handler, "127.0.0.1", 0) as srv:
+            port = srv.sockets[0].getsockname()[1]
+            adapter = AssemblyAIRealtimeAdapter(
+                base_url=f"ws://127.0.0.1:{port}/v3/ws", realtime=False,
+                timeout_s=5, session_rate=SessionRate(5, window_s=0.01),
+                refusal_patience_s=0.05,
+            )
+            return await adapter.atranscribe(*_clip())
+
+    with pytest.raises(RuntimeError, match="kept refusing") as info:
+        asyncio.run(main())
+    assert not isinstance(info.value, TransientStreamError)
+
+
+def test_rate_holds_openings_to_the_window() -> None:
+    clock = _FakeClock()
+    rate = SessionRate(3, clock=clock, sleep=clock.sleep)
+
+    async def open_five() -> list[float]:
+        opened = []
+        for _ in range(5):
+            await rate.acquire()
+            opened.append(clock.now)
+        return opened
+
+    # three at once, the fourth only when the first leaves the 60 s window
+    assert asyncio.run(open_five()) == [0.0, 0.0, 0.0, 60.0, 60.0]
+
+
+def test_rate_halves_once_per_burst_and_grows_like_the_vendor() -> None:
+    clock = _FakeClock()
+    rate = SessionRate(10, clock=clock, sleep=clock.sleep)
+    for _ in range(4):  # one burst refuses four utterances in flight
+        rate.refused()
+    assert rate.per_min == 5
+
+    async def fill_windows(n: int) -> None:
+        for _ in range(n):
+            for _ in range(int(rate.per_min)):
+                await rate.acquire()
+            clock.now += 60.0
+
+    asyncio.run(fill_windows(3))
+    # the burst's window does not count as headroom; full windows after it do
+    assert 5 * 1.1 <= rate.per_min <= 5 * 1.1**2 + 1e-9
+
+
+def test_rate_rejects_a_limit_below_one() -> None:
+    with pytest.raises(ValueError):
+        SessionRate(0.5)
+
+
+def test_rate_reads_the_paid_limit_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ASSEMBLYAI_SESSIONS_PER_MIN", "100")
+    assert AssemblyAIRealtimeAdapter().session_rate.per_min == 100
 
 
 def test_retry_reruns_a_failed_session() -> None:
