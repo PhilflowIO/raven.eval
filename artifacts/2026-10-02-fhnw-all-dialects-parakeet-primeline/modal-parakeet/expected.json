@@ -1,0 +1,19 @@
+{
+  "fhnw-all-dialects": {
+    "wer_pct": 31.0373,
+    "cer_pct": 16.4189,
+    "n_samples": 2875,
+    "n_dropped": 0,
+    "dropped_by_reason": {},
+    "wer_strict_de_pct": 31.0195,
+    "bleu": 48.7343,
+    "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0",
+    "wer_ci_lo": 30.2361,
+    "wer_ci_hi": 31.859,
+    "entity_hit_rate_pct": 93.2773,
+    "n_entities": 119,
+    "n_utterances_with_entities": 107,
+    "entity_ci_lo": 88.4956,
+    "entity_ci_hi": 97.479
+  }
+}

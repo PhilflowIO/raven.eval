@@ -200,6 +200,7 @@ WER. CER is on raw text.
 | primeline/parakeet-primeline | Tuda-De | 4.02 | [2.76, 5.55] | 2.75 | 414 | 94.51 | [87.50, 100.00] | 91 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 |
 | primeline/parakeet-primeline | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | 97.05 | [95.10, 98.60] | 339 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 |
 | primeline/parakeet-primeline | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | 98.31 | [96.62, 99.66] | 295 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 |
+| primeline/parakeet-primeline | fhnw-all-dialects | 31.04 | [30.24, 31.86] | 16.42 | 2875 | 93.28 | [88.50, 97.48] | 119 | [2026-10-02](./artifacts/2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet/) | — |
 | xai/grok-voice-transcribe-2.0 | avemio-german-mixed-test | 6.87 | [5.24, 8.76] | 3.85 | 100 | 100.00 | [100.00, 100.00] | 3 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
 | xai/grok-voice-transcribe-2.0 | fleurs | 4.59 | [3.43, 5.90] | 2.57 | 100 | 93.18 | [83.78, 100.00] | 44 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
 | xai/grok-voice-transcribe-2.0 | mls-de | 8.37 | [6.87, 9.95] | 10.53 | 100 | 90.00 | [66.67, 100.00] | 10 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
@@ -273,11 +274,41 @@ floor:
 
 ¹ Basel-Landschaft and Basel-Stadt: the corpus README labels BS speakers BL.
 
-So these runs say nothing about any single region yet. The public half of the
-corpus has 2,875 utterances, of which 13 of its 17 cantons hold at least 30;
-per-canton numbers appear here with the first run over it. Region rows never
-carry a winner mark and are never averaged — the corpus row pools utterances, it
-is not a mean of regions. Canton names follow ISO 3166-2:CH; a code the corpus
+So these runs say nothing about any single region.
+
+**Parakeet-primeline on the whole public half** (2026-10-02) covers all 2,875
+utterances of `fhnw-all-dialects`; every row of the corpus's `public.tsv` yielded
+a clip (`n_dropped` 0). It ran on the same weights served from Modal instead of
+the AI box; on `Tuda-De` that deployment scores 4.00 % against the 4.02 %
+published above, on the same 414 utterances. Corpus BLEU 48.73, strict-de WER
+31.02 %. Thirteen of the 17 cantons reach the floor (`make analyse
+ARTIFACT=artifacts/2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet`):
+
+| canton | n | WER strict % | 95 % CI | BLEU |
+|--------|--:|------------:|--------:|-----:|
+| BE | 684 | 32.48 | [30.77, 34.25] | 47.48 |
+| ZH | 480 | 29.96 | [28.01, 31.87] | 49.65 |
+| SG | 361 | 31.64 | [29.29, 34.05] | 48.10 |
+| AG | 353 | 29.35 | [27.32, 31.42] | 50.11 |
+| BL¹ | 188 | 29.14 | [26.35, 32.00] | 49.95 |
+| LU | 170 | 30.88 | [27.75, 34.13] | 50.16 |
+| TG | 170 | 30.99 | [27.93, 34.14] | 47.37 |
+| SO | 120 | 34.92 | [30.24, 39.91] | 45.19 |
+| ZG | 97 | 31.22 | [26.15, 36.64] | 49.06 |
+| UR | 56 | 29.08 | [24.58, 33.59] | 51.63 |
+| VS | 56 | 35.17 | [28.60, 42.03] | 44.93 |
+| GR | 42 | 26.07 | [20.96, 31.39] | 52.35 |
+| SZ | 31 | 26.57 | [19.87, 33.92] | 51.47 |
+| GL | 25 | — | — | — |
+| FR | 24 | — | — | — |
+| SH | 11 | — | — | — |
+| NW | 7 | — | — | — |
+
+GL, FR, SH and NW stay below 30 utterances in the public half, so the corpus
+cannot speak for them at any run size. Most intervals overlap; the table
+describes where the model stands per region and ranks no region against
+another. Region rows never carry a winner mark and are never averaged — the
+corpus row pools utterances, it is not a mean of regions. Canton names follow ISO 3166-2:CH; a code the corpus
 README does not explain stays a code.
 
 Re-score any row with `make verify` (Tier-1, no GPU) — it recomputes these from

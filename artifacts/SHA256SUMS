@@ -4393,6 +4393,9 @@ b07e77d34755ffc4a11647cc90c41c57a64680c188a91562cbb26898b07a9a98  2026-09-18-spc
 74074e682450b42e1409e1a671fc2b6bbdf7b1e7da2c5e5458035a56240c7b69  2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/expected.json
 c8406c5d0616504b3d460fa4dc5407e719a7adf279688275a1e1ba0d421eabc5  2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/predictions_voxpopuli-de.jsonl
 e116b0668a14ac6331a03b464b6ac3aee544029c14c8f1ac3afe487133f20487  2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/summary.json
+cad32e2d943a3aedb77085a091c9885b11ba05675767db86b1b08ab7ea0fa28f  2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet/expected.json
+b056afe234504f845786f9af8c170c79558ceeccd7452346be1e71bd1ace44ac  2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet/predictions_fhnw-all-dialects.jsonl
+52be6b6d99db6ded31bab70cc66c19f90f9c0bf09d4572f130fc2cfc214eb22b  2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet/summary.json
 f2ad8c87176a5e790bb2b4f204c923bfc94f97e466c4fae14743fb938ecc37f6  README.md
 c8c6c03ce4f001ef30621eee2988f74f01ae71b223604ded0edd077318bf1ce6  _demo/demo-model/expected.json
 211977d2c4d567bf845b89692c4848db1c3b0e9c5d40bb53d260b7e1191a9076  _demo/demo-model/predictions_Demo-DE.jsonl

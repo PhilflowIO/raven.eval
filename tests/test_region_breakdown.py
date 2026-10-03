@@ -9,6 +9,7 @@ shows its n and a note instead of a number.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -48,12 +49,14 @@ def test_committed_artifacts_exist_to_split() -> None:
 
 
 @pytest.mark.parametrize("path", FHNW_ARTIFACTS, ids=lambda p: p.parent.name)
-def test_committed_50_utterance_runs_publish_no_region_number(path: Path) -> None:
-    """At n=50 over 14 cantons no region reaches the minimum — n and a note only."""
+def test_a_region_gets_a_number_exactly_when_it_reaches_the_minimum(path: Path) -> None:
+    """Below the minimum n and a note only; at or above it, WER and BLEU."""
     for r in by_region(path, resamples=10):
-        assert r.n < REGION_MIN_N
-        assert r.wer is None and r.bleu is None
-        assert str(REGION_MIN_N) in r.note
+        if r.n < REGION_MIN_N:
+            assert r.wer is None and r.bleu is None
+            assert str(REGION_MIN_N) in r.note
+        else:
+            assert r.wer is not None and r.bleu is not None
 
 
 def test_a_region_number_is_the_corpus_scorer_on_that_region(tmp_path: Path) -> None:
@@ -115,12 +118,77 @@ def test_only_dialect_corpora_are_split() -> None:
     assert set(REGION_PARSERS) <= DIALECT_DATASET_IDS
 
 
+def _benchmarks() -> list[str]:
+    return (REPO_ROOT / "BENCHMARKS.md").read_text(encoding="utf-8").splitlines()
+
+
+def _cells(line: str) -> list[str]:
+    return [c.strip().rstrip("¹") for c in line.strip().strip("|").split("|")]
+
+
+def _n_lines(path: Path) -> int:
+    return sum(1 for x in path.read_text(encoding="utf-8").splitlines() if x)
+
+
 def test_published_canton_counts_equal_the_artifacts() -> None:
-    """The n row in BENCHMARKS.md is read off the committed artifacts, not typed."""
-    text = (REPO_ROOT / "BENCHMARKS.md").read_text(encoding="utf-8").splitlines()
-    header_at = next(i for i, line in enumerate(text) if line.startswith("| canton |"))
-    codes = [c.strip().rstrip("¹") for c in text[header_at].strip("|").split("|")][1:]
-    counts = [int(c) for c in text[header_at + 2].strip("|").split("|")[1:]]
+    """The n row of the sample-run table is read off those artifacts, not typed.
+
+    That table spreads the cantons across its columns and describes every
+    committed FHNW run over the same first utterances — those whose line count
+    is the sum of its n row.
+    """
+    text = _benchmarks()
+    header_at = next(i for i, line in enumerate(text)
+                     if line.startswith("| canton |") and "| n |" not in line)
+    codes = _cells(text[header_at])[1:]
+    counts = [int(c) for c in _cells(text[header_at + 2])[1:]]
     published = dict(zip(codes, counts, strict=True))
-    for path in FHNW_ARTIFACTS:
+    sample_runs = [p for p in FHNW_ARTIFACTS if _n_lines(p) == sum(counts)]
+    assert sample_runs
+    for path in sample_runs:
         assert {r.region: r.n for r in by_region(path, resamples=10)} == published
+
+
+_ARTIFACT_REF = re.compile(r"ARTIFACT=(artifacts/[^/\s`]+/[^/\s`]+)")
+
+
+def _region_tables() -> list[tuple[Path, list[list[str]]]]:
+    """Every one-canton-per-row table, bound to the artifact named just above it.
+
+    Binding by the `make analyse ARTIFACT=…` reference the text gives for the
+    table makes the link explicit: a table without one fails to parse.
+    """
+    text = _benchmarks()
+    out = []
+    for i, line in enumerate(text):
+        if not (line.startswith("| canton |") and "| n |" in line):
+            continue
+        ref = next(m for j in range(i - 1, -1, -1)
+                   if (m := _ARTIFACT_REF.search(text[j])))
+        rows = []
+        for row in text[i + 2:]:
+            if not row.startswith("|"):
+                break
+            rows.append(_cells(row))
+        out.append((REPO_ROOT / ref.group(1), rows))
+    return out
+
+
+def test_published_region_tables_equal_their_artifacts() -> None:
+    """Every printed canton row — n, WER, interval, BLEU — is the scorer's output."""
+    tables = _region_tables()
+    assert tables
+    for artifact, rows in tables:
+        (path,) = artifact.glob("predictions_fhnw-all-dialects.jsonl")
+        computed = {r.region: r for r in by_region(path)}
+        assert [row[0] for row in rows] == list(computed)  # every region, n order
+        for code, n, wer, interval, bleu in rows:
+            r = computed[code]
+            assert int(n) == r.n
+            if r.wer is None or r.bleu is None:
+                assert wer == interval == bleu == "—"
+                continue
+            lo, hi = (float(x) for x in interval.strip("[]").split(","))
+            for printed, value in ((wer, r.wer.point), (lo, r.wer.lo),
+                                   (hi, r.wer.hi), (bleu, r.bleu)):
+                assert float(printed) == pytest.approx(value, abs=0.005 + 1e-9)
