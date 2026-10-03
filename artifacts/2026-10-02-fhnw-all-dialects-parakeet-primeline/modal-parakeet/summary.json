@@ -1,0 +1,66 @@
+{
+  "schema_version": 2,
+  "model_id": "primeline/parakeet-primeline",
+  "label": "modal-parakeet",
+  "adapter": "modal_app",
+  "model_revision": null,
+  "limit_per_subset": null,
+  "results": [
+    {
+      "subset": "fhnw-all-dialects",
+      "n_samples": 2875,
+      "n_attempted": 2875,
+      "n_ok": 2875,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": null,
+      "dataset_sha256": "7ca2492143b6d418ca42d6407f939ce8d2c53f66999e05906931ccefe6ff3148",
+      "wer_pct": 31.0373,
+      "wer_filler_tolerant_pct": 31.0474,
+      "cer_pct": 16.4189,
+      "entity_hit_rate_pct": 93.2773,
+      "n_entities": 119,
+      "n_utterances_with_entities": 107,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null
+    }
+  ],
+  "run_manifest": {
+    "git": {
+      "sha": "1aaa3b758642f9c06e399a6536f7c32c4a78146d",
+      "dirty": false
+    },
+    "uv_lock_sha256": "f8c4fee49d50cb90443ab98cb1de4e50e0f04276a9233da227b85f9dd5eb6821",
+    "python": "3.11.15",
+    "platform": "Linux-7.2.7-arch1-1-x86_64-with-glibc2.44",
+    "libraries": {
+      "datasets": "5.0.1",
+      "httpx": "0.28.1",
+      "jiwer": "4.0.0",
+      "modal": "1.5.3",
+      "num2words": "0.5.14",
+      "numpy": "2.4.6",
+      "pyannote.core": "6.0.1",
+      "pyannote.metrics": "4.1",
+      "raven-eval-core": "0.1.0",
+      "sacrebleu": "2.6.0",
+      "soundfile": "0.14.0",
+      "text2num": "3.0.2",
+      "unidecode": "1.4.0"
+    },
+    "gpu": null,
+    "config_sha256": "a138fc99bd7e8a2133f63dbe7340eabe189f96895e721726fe1f6b075f38149f",
+    "argv": [
+      "python3",
+      "-m",
+      "raven_asr.runner",
+      "--models",
+      "modal/parakeet",
+      "--subsets",
+      "fhnw-all-dialects",
+      "--out",
+      "/home/dave/raven-eval-bench/raven.eval/results/reproduce/fhnw-all-dialects"
+    ]
+  }
+}
