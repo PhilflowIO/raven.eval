@@ -206,8 +206,11 @@ def test_session_limit_close_code_is_a_refusal() -> None:
         _run(handler)
 
 
-def test_refusals_wait_without_spending_the_retry_budget() -> None:
+def test_refusals_wait_without_spending_the_retry_budget(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """More refusals than the transport retry allows, and the utterance still lands."""
+    caplog.set_level("INFO", logger="raven_asr.assemblyai")
     state = {"sessions": 0}
 
     async def handler(ws: ServerConnection) -> None:
@@ -237,6 +240,12 @@ def test_refusals_wait_without_spending_the_retry_budget() -> None:
     assert result.raw["n_refused_sessions"] == 7
     assert state["sessions"] == 8
     assert rate.per_min < 8  # the refusals taught it a lower limit
+    # a run log must show every refusal and every rate change, or a slow run
+    # cannot be told apart from a refused one
+    refusals = [r for r in caplog.records if "session refused" in r.message]
+    assert len(refusals) == 7 and all(r.levelname == "WARNING" for r in refusals)
+    assert "(7 for this utterance" in refusals[-1].message
+    assert any("rate halved" in r.message for r in caplog.records)
 
 
 def test_more_utterances_than_the_limit_all_land() -> None:
