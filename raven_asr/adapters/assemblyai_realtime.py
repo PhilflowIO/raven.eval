@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from collections import deque
@@ -57,6 +58,8 @@ import numpy as np
 
 from ..retry import TransientStreamError, with_retry
 from .base import TranscribeResult
+
+logger = logging.getLogger("raven_asr.assemblyai")
 
 DEFAULT_BASE_URL = "wss://streaming.assemblyai.com/v3/ws"
 DEFAULT_MODEL = "universal-3-6-pro"
@@ -159,6 +162,7 @@ class SessionRate:
         """
         if not self._refused_in_window:
             self.per_min = max(1.0, self.per_min / 2)
+            logger.warning("session rate halved to %.2f/min", self.per_min)
         self._refused_in_window = True
 
     def _adapt(self, now: float) -> None:
@@ -167,6 +171,7 @@ class SessionRate:
         busy = self._opened_in_window >= 0.7 * int(self.per_min)
         if busy and not self._refused_in_window:
             self.per_min *= 1.1
+            logger.info("session rate grown to %.2f/min", self.per_min)
         self._window_start = now
         self._opened_in_window = 0
         self._refused_in_window = False
@@ -242,6 +247,12 @@ class AssemblyAIRealtimeAdapter:
             except SessionRefused as exc:
                 self.session_rate.refused()
                 n_refused += 1
+                logger.warning(
+                    "session refused (%d for this utterance, rate %.2f/min): %s",
+                    n_refused,
+                    self.session_rate.per_min,
+                    exc,
+                )
                 if time.monotonic() - started > self._refusal_patience_s:
                     raise RuntimeError(
                         f"AssemblyAI kept refusing new sessions for "
