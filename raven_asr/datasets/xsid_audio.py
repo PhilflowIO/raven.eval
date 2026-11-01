@@ -83,6 +83,8 @@ from .base import (
     RowTally,
     Sample,
 )
+from .local_archive import BENCH_CORPORA_DIR_ENV as _BENCH_CORPORA_DIR_ENV
+from .local_archive import corpora_root
 
 # ── Provenance pins ──────────────────────────────────────────────────────────
 
@@ -164,8 +166,8 @@ REFERENCE_VARIETY: Final[str] = "de"
 XSID_CORPORA_DIR_ENV: Final[str] = "XSID_CORPORA_DIR"
 #: Region override shared with the internal harness's Bavarian mirror.
 BAVARIAN_CORPORA_DIR_ENV: Final[str] = "BAVARIAN_CORPORA_DIR"
-#: Root of all locally mirrored bench corpora, one subdirectory per region.
-BENCH_CORPORA_DIR_ENV: Final[str] = "BENCH_CORPORA_DIR"
+#: Root of all locally mirrored bench corpora, shared with the Swiss corpora.
+BENCH_CORPORA_DIR_ENV: Final[str] = _BENCH_CORPORA_DIR_ENV
 
 
 def corpora_dir() -> Path:
@@ -175,8 +177,12 @@ def corpora_dir() -> Path:
 
         XSID_CORPORA_DIR        full path to the dir holding ``xsid-audio/``
         BAVARIAN_CORPORA_DIR    same, for the whole Bavarian region
-        BENCH_CORPORA_DIR       <root>/bavarian
-        default                 ~/.cache/raven-eval/corpora/bavarian
+        otherwise               <corpora root>/bavarian
+
+    The corpora root is shared with every archive-backed corpus
+    (:func:`raven_asr.datasets.local_archive.corpora_root`):
+    ``RAVEN_EVAL_CORPORA_DIR``, then ``BENCH_CORPORA_DIR``, then
+    ``$RAVEN_EVAL_CACHE_DIR/corpora``, then ``~/.cache/raven.eval/corpora``.
 
     The default is a cache dir on purpose: a clean checkout with no environment
     at all must still be able to run, by downloading. The env vars only make an
@@ -186,10 +192,7 @@ def corpora_dir() -> Path:
         override = os.environ.get(env_var)
         if override:
             return Path(override)
-    root = os.environ.get(BENCH_CORPORA_DIR_ENV)
-    if root:
-        return Path(root) / "bavarian"
-    return Path.home() / ".cache" / "raven-eval" / "corpora" / "bavarian"
+    return corpora_root() / "bavarian"
 
 
 # ── Acquisition ──────────────────────────────────────────────────────────────
@@ -341,6 +344,10 @@ class _XsidAudioLoader:
         for name in self.required_artifacts():
             ensure_artifact(name, root, fetcher=fetcher)
         return root
+
+    def prefetch(self) -> list[Path]:
+        """Fetch and verify this id's artifacts; return the corpus dir."""
+        return [self.prepare()]
 
     # ----- iteration ---------------------------------------------------------
 
