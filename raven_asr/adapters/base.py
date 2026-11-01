@@ -57,6 +57,37 @@ def sync_from_async(
     return asyncio.run(adapter.atranscribe(audio, sample_rate))
 
 
+class ServedModelMismatchError(RuntimeError):
+    """The endpoint reports serving a different model than the run is labelled with.
+
+    Not a property of one utterance but of the whole endpoint, so the runner lets
+    it abort the run instead of recording it as a failed clip: every transcript
+    after it would carry another model's output under this model's name.
+    """
+
+
+def resample_mono(audio: np.ndarray, sample_rate: int, target_rate: int) -> np.ndarray:
+    """Resample mono float audio to ``target_rate`` with soxr "VHQ" (no-op if equal).
+
+    For endpoints whose input contract is one fixed rate. Loaders yield the
+    corpus's native rate (the Swiss corpora are 44.1/48 kHz), so the conversion
+    happens at the adapter boundary — the one place that knows the contract.
+    """
+    if sample_rate == target_rate:
+        return audio
+    import soxr
+
+    return np.asarray(
+        soxr.resample(
+            np.asarray(audio, dtype=np.float32),
+            sample_rate,
+            target_rate,
+            quality="VHQ",
+        ),
+        dtype=np.float32,
+    )
+
+
 def encode_wav_pcm16(audio: np.ndarray, sample_rate: int) -> bytes:
     """Encode float32 mono PCM into a 16-bit WAV in-memory.
 
