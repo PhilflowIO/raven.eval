@@ -393,3 +393,85 @@ def test_the_runner_cli_threads_per_model_concurrency(
         "primeline/whisper-large-v3-german": 8,
         "openai/whisper-large-v3": 3,
     }
+
+
+# ── The reproduce CLI an unattended orchestrator drives ─────────────────────
+
+
+def _reproduce(out: Path, *extra: str) -> int:
+    from raven_asr import reproduce
+
+    return reproduce.main([
+        "--metric", "wer", "--dataset", SUBSET, "--model", MODEL,
+        "--out", str(out), *extra,
+    ])
+
+
+def test_reproduce_threads_concurrency_into_the_pool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    samples = _samples(40)
+    adapter = _NoisyAdapter(samples)
+    _wire(monkeypatch, _LazyLoader(samples), adapter)
+    assert _reproduce(tmp_path, "--concurrency", "7") == 0
+    assert adapter.max_in_flight == 7
+    assert (tmp_path / "primeline-whisper-large-v3-german" / f".done_{SUBSET}.json").exists()
+
+
+def test_reproduce_exits_nonzero_until_every_utterance_succeeded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    samples = _samples(10)
+    _wire(monkeypatch, _LazyLoader(samples), _NoisyAdapter(samples, fail_on={4}))
+    assert _reproduce(tmp_path) == 1
+    retry = _NoisyAdapter(samples)
+    _wire(monkeypatch, _LazyLoader(samples), retry)
+    assert _reproduce(tmp_path) == 0
+    assert retry.calls == [4]
+    # Complete and resumed: nothing to request, still a success.
+    again = _NoisyAdapter(samples)
+    _wire(monkeypatch, _LazyLoader(samples), again)
+    assert _reproduce(tmp_path) == 0
+    assert again.calls == []
+
+
+def test_a_rerun_that_fails_removes_the_marker_of_an_earlier_complete_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    samples = _samples(6)
+    out = tmp_path / "run"
+    _wire(monkeypatch, _LazyLoader(samples), _NoisyAdapter(samples))
+    _run(out)
+    assert (out / f".done_{SUBSET}.json").exists()
+
+    real = runner._run_manifest
+
+    def _other_commit(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        manifest = real(*args, **kwargs)
+        manifest["git"] = {"sha": "0" * 40, "dirty": False}
+        return manifest
+
+    monkeypatch.setattr(runner, "_run_manifest", _other_commit)
+    _wire(monkeypatch, _LazyLoader(samples), _NoisyAdapter(samples, fail_on={1}))
+    _run(out)
+    # Otherwise the next run would adopt the old-config marker as its own.
+    assert not (out / f".done_{SUBSET}.json").exists()
+
+
+def test_reproduce_reports_a_served_model_mismatch_with_its_own_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    samples = _samples(5)
+
+    class _Swapped(_NoisyAdapter):
+        async def atranscribe(self, audio: np.ndarray, sample_rate: int) -> TranscribeResult:
+            raise ServedModelMismatchError("the endpoint serves 'other/model'")
+
+    _wire(monkeypatch, _LazyLoader(samples), _Swapped(samples))
+    assert _reproduce(tmp_path) == 3
+    assert "other/model" in capsys.readouterr().err
+
+
+def test_reproduce_rejects_a_nonpositive_concurrency(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        _reproduce(tmp_path, "--concurrency", "0")

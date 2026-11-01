@@ -638,6 +638,10 @@ def _record_subset(
     path alike, so the two cannot disagree about what an artifact contains.
     """
     subset = result.subset
+    marker = out_dir / f".done_{_safe(subset)}.json"
+    # The marker is rewritten below only if this pass is complete. An older one
+    # must not outlive a pass that was not: it would be resumed as this run's.
+    marker.unlink(missing_ok=True)
     if not result.outcomes:
         logger.warning(
             "subset %s produced no samples; skipping (rows dropped by the "
@@ -694,9 +698,7 @@ def _record_subset(
             metrics.wer_pct, metrics.n_samples,
         )
     else:
-        (out_dir / f".done_{_safe(subset)}.json").write_text(
-            json.dumps(asdict(entry)), encoding="utf-8"
-        )
+        marker.write_text(json.dumps(asdict(entry)), encoding="utf-8")
         # Finished: nothing left to resume from the per-utterance log.
         (out_dir / f".progress_{_safe(subset)}.json").unlink(missing_ok=True)
         logger.info(
@@ -951,7 +953,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--subsets", required=True)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--out", type=Path, default=Path("results"))
-    parser.add_argument("--streaming", action="store_true")
+    parser.add_argument(
+        "--streaming", action="store_true",
+        help="stream from the HF Hub instead of the pinned local snapshot",
+    )
     parser.add_argument(
         "--concurrency",
         type=int,
@@ -994,16 +999,20 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(str(exc))
         if args.concurrency is not None:
             overrides = {k: overrides.get(k, args.concurrency) for k in model_keys}
-        paths = asyncio.run(
-            run_multi_async(
-                model_keys=model_keys,
-                subsets=subsets,
-                limit=args.limit,
-                out_root=args.out,
-                streaming=args.streaming,
-                concurrency_overrides=overrides,
+        try:
+            paths = asyncio.run(
+                run_multi_async(
+                    model_keys=model_keys,
+                    subsets=subsets,
+                    limit=args.limit,
+                    out_root=args.out,
+                    streaming=args.streaming,
+                    concurrency_overrides=overrides,
+                )
             )
-        )
+        except ServedModelMismatchError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 3
         for k, p in paths.items():
             print(f"[{k}] wrote {p}")
         return 0
@@ -1014,16 +1023,20 @@ def main(argv: list[str] | None = None) -> int:
             f"unknown --model {args.model!r}; see raven_asr.config.KNOWN_MODELS"
         )
     out_dir = args.out if args.out.name == spec.label else args.out / spec.label
-    yaml_path = asyncio.run(
-        run_async(
-            model_key=args.model,
-            subsets=subsets,
-            limit=args.limit,
-            out_dir=out_dir,
-            streaming=args.streaming,
-            concurrency=args.concurrency,
+    try:
+        yaml_path = asyncio.run(
+            run_async(
+                model_key=args.model,
+                subsets=subsets,
+                limit=args.limit,
+                out_dir=out_dir,
+                streaming=args.streaming,
+                concurrency=args.concurrency,
+            )
         )
-    )
+    except ServedModelMismatchError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
     print(f"wrote {yaml_path}")
     return 0
 
