@@ -9,11 +9,12 @@ short-circuit to, so the fetch goes through ``datasets.load_dataset`` with the
 config name and a **pinned revision** — the harness fetches the corpus itself, it
 never assumes it is already on disk.
 
-Streaming is the default here for the same reason: a full ``test`` split of
-VoxPopuli-de or MLS-de is far larger than the handful of records a Tier-2 run
-consumes, and ``--limit`` must not pay for a full download first. Set
-``streaming=False`` to materialize into the local HF cache instead (useful when
-the same split is re-run repeatedly).
+By default the split is read from a pinned local snapshot of exactly its files
+(``hf_data_files``, see :mod:`raven_asr.datasets.hf_snapshot`), fetched once into
+the HF cache — ``python -m raven_asr.prefetch`` does that ahead of a run. A full
+run streamed from the Hub dies on Hub timeouts; a run off local disk does not.
+``streaming=True`` (``--streaming``) streams from the Hub instead, which saves the
+download for a quick ``--limit`` smoke run.
 
 Every loader in this module yields the same :class:`~raven_asr.datasets.base.Sample`
 contract as ``flozi_mixed_evals`` — one dataset contract in this repo, not two.
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Iterator
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -34,6 +36,7 @@ from .base import (
     RowTally,
     Sample,
 )
+from .hf_snapshot import local_split, snapshot_paths
 
 if TYPE_CHECKING:  # pragma: no cover
     from datasets import Dataset, IterableDataset
@@ -63,38 +66,56 @@ class HFSingleConfigLoader:
     text_column: str = "text"
     license: str = "unknown"        # SPDX-ish slug
     source_url: str = ""            # human-readable provenance link
+    # Repo-relative files of ``hf_config``/``hf_split`` at the pinned revision —
+    # the files ``datasets`` resolves for that split when it streams. Changing
+    # the revision pin means re-checking this list.
+    hf_data_files: tuple[str, ...] = ()
 
-    def __init__(self, streaming: bool = True, revision: str | None = None) -> None:
+    def __init__(self, streaming: bool = False, revision: str | None = None) -> None:
         self._streaming = streaming
         # Pin a HF dataset revision for byte-reproducible references. ``None``
         # resolves to ``main`` HEAD at run time — the pins live in
         # ``raven_asr.config.WER_DATASETS`` and the runner threads them here.
         self._revision = revision
         self._cache: Dataset | IterableDataset | None = None
-        self._source: str | None = None  # "hf-streaming" | "hf-download"
+        self._source: str | None = None  # "local-snapshot" | "hf-streaming"
         self.tally = RowTally()
 
     # ----- loading -----------------------------------------------------------
 
     def _load(self) -> Dataset | IterableDataset:
-        from datasets import load_dataset
-
         if self._cache is not None:
             return self._cache
 
-        kwargs: dict[str, Any] = {
-            "split": self.hf_split,
-            "streaming": self._streaming,
-            "revision": self._revision,
-        }
-        if self.hf_config is not None:
-            ds = load_dataset(self.hf_dataset_id, self.hf_config, **kwargs)
+        if self._streaming:
+            from datasets import load_dataset
+
+            kwargs: dict[str, Any] = {
+                "split": self.hf_split,
+                "streaming": True,
+                "revision": self._revision,
+            }
+            if self.hf_config is not None:
+                ds = load_dataset(self.hf_dataset_id, self.hf_config, **kwargs)
+            else:
+                ds = load_dataset(self.hf_dataset_id, **kwargs)
+            self._source = "hf-streaming"
         else:
-            ds = load_dataset(self.hf_dataset_id, **kwargs)
+            ds = local_split(
+                self.hf_dataset_id, self._revision, self.hf_data_files, self.hf_split
+            )
+            self._source = "local-snapshot"
         ds = self._disable_audio_decoding(ds)
-        self._source = "hf-streaming" if self._streaming else "hf-download"
         self._cache = ds
         return ds
+
+    def prefetch(self) -> list[Path]:
+        """Fetch the pinned split files into the local cache; return their paths."""
+        paths = snapshot_paths(
+            self.hf_dataset_id, self._revision, self.hf_data_files, download=True
+        )
+        assert paths is not None
+        return paths
 
     def _disable_audio_decoding(self, ds: Any) -> Any:
         """Hand back raw ``{bytes, path}`` instead of a decoded waveform.

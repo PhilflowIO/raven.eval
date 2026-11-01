@@ -177,12 +177,11 @@ def _iter_loader_for_subset(
     deliberately not portable and stays internal.
     """
     dataset_id, internal_subset = resolve_wer_dataset(subset)
-    spec = WER_DATASETS[dataset_id]
     rev, _ = _dataset_pin(subset, revision)
     loader_cls = load_loader_class(dataset_id)
-    loader = loader_cls(
-        streaming=streaming or spec.stream_by_default, revision=rev
-    )
+    # Local snapshot unless the caller asks to stream: a full run streamed from
+    # the Hub dies on Hub timeouts (raven_asr.datasets.hf_snapshot).
+    loader = loader_cls(streaming=streaming, revision=rev)
     return loader, internal_subset
 
 

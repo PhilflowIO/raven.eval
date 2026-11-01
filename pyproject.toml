@@ -42,6 +42,9 @@ dev = ["pytest"]
 # separate so the base install stays lean).
 asr = [
     "datasets",
+    # Pinned local snapshots of the HF corpora (raven_asr.datasets.hf_snapshot);
+    # already a dependency of `datasets`, listed because it is imported directly.
+    "huggingface-hub",
     "soundfile",
     "numpy",
     "tqdm",

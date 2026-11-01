@@ -187,6 +187,10 @@ class FhnwAllDialectsLoader:
             )
         return unpacked
 
+    def prefetch(self) -> list[Path]:
+        """Fetch, verify and unpack the archive; return the unpacked corpus dir."""
+        return [self._prepare()]
+
     # ----- public contract ---------------------------------------------------
 
     def iter_samples(self, subset: str, limit: int | None = None) -> Iterator[Sample]:

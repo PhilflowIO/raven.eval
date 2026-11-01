@@ -94,9 +94,6 @@ class WerDatasetSpec:
     # institutional archive) > "hf" (versioned HF dataset at a pinned revision) >
     # "vendor" (vendor-hosted link — flagged, never silently relied on).
     durability: str
-    # These corpora are hundreds of GB; a --limit run must not pay for a full
-    # download first, so the loader streams unless the caller says otherwise.
-    stream_by_default: bool = False
     # sha256 of the fetched archive, where the source IS a loose archive rather
     # than a content-addressed HF revision. None for every HF-backed entry, and
     # None where a corpus is several loose archives — then the per-artifact
@@ -153,7 +150,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         revision="17bcbc196567bca7eae3e94942588b5678fd748e",
         subsets=("avemio-german-mixed-test",),
         durability="hf",
-        stream_by_default=True,
         notes="single test split, no config; reference column `transkription`.",
     ),
     # FLEURS — read parallel sentences, the speech side of FLoRes.
@@ -165,7 +161,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         revision="70bb2e84b976b7e960aa89f1c648e09c59f894dd",
         subsets=("fleurs",),
         durability="hf",
-        stream_by_default=True,
         notes="config=de_de, split=test (~350 sentences); raw_transcription.",
     ),
     # MLS German — read audiobook speech (LibriVox), the register whisper-class
@@ -178,7 +173,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         revision="2e83e61823b4c47dcbcb1980bb88601274127609",
         subsets=("mls-de",),
         durability="hf",
-        stream_by_default=True,
         notes="config=german (spelled out, not 'de'), split=test; `transcript`.",
     ),
     # VoxPopuli German — European-Parliament plenary speech. Spontaneous and
@@ -191,7 +185,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         revision="42f01879c780b4a2e90ec0b4f616c2ece526e4f1",
         subsets=("voxpopuli-de",),
         durability="hf",
-        stream_by_default=True,
         notes="config=de, split=test; raw_text with normalized_text fallback.",
     ),
     # ── Swiss German dialect corpora ────────────────────────────────────────

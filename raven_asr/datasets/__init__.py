@@ -42,7 +42,7 @@ WER_LOADERS: Final[dict[str, str]] = {
 # Modules in this package that are infrastructure, not a dataset loader. Kept
 # here so the contract test can tell "unregistered loader" from "shared base".
 NON_LOADER_MODULES: Final[frozenset[str]] = frozenset(
-    {"__init__", "base", "hf_single_config", "local_archive"}
+    {"__init__", "base", "hf_single_config", "hf_snapshot", "local_archive"}
 )
 
 

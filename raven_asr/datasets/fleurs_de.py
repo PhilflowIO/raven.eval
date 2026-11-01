@@ -42,6 +42,8 @@ class FleursDeLoader(HFSingleConfigLoader):
     hf_split = "test"
     audio_column = "audio"
     text_column = "raw_transcription"
+    # The split's files at the pinned revision (resolved 2026-11-02).
+    hf_data_files = ("parquet-data/de_de/test-00000-of-00001.parquet",)
     license = "CC-BY-4.0"
     source_url = "https://huggingface.co/datasets/google/fleurs"
 
