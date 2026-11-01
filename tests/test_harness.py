@@ -315,8 +315,8 @@ def test_make_adapter_refuses_a_self_hosted_spec_without_an_endpoint() -> None:
         runner._make_adapter(spec)
 
 
-# The binding interface to the box: which HF id runs on which server type. A
-# change here is a change for whoever serves the models, so it is pinned.
+# Which HF id runs on which server type is the interface to whoever serves the
+# models; a change here is a change for them, so it is pinned.
 _NEMO_SERVED = {
     "nvidia/parakeet-tdt-0.6b-v3",
     "nvidia/canary-1b-v2",
