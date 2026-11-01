@@ -69,7 +69,12 @@ EXTRA ?= $(if $(filter der,$(METRIC)),diar,asr)
 # CONCURRENCY= sets the requests in flight (WER only; default: the adapter's own).
 # A WER run resumes per utterance — rerun the same command after an abort.
 #   make reproduce METRIC=wer DATASET=fleurs MODEL=nvidia/canary-1b-v2 CONCURRENCY=16
+# MODEL_REV= pins a diarizer's weights (DER only). A WER model's revision is
+# fixed in the registry (raven_asr.config): a hosted model's versioned name, and
+# none for a self-hosted endpoint, whose loaded weights a client cannot attest.
 reproduce:          ## Tier-2: download public data → infer/diarize → score → table.
+	$(if $(and $(MODEL_REV),$(filter-out der,$(METRIC))),\
+		$(error MODEL_REV applies to METRIC=der only; a WER model's revision is fixed in raven_asr.config))
 	$(if $(and $(CONCURRENCY),$(filter der,$(METRIC))),\
 		$(error CONCURRENCY applies to METRIC=wer only; the DER lane diarizes one file at a time))
 	uv run --extra $(EXTRA) \
