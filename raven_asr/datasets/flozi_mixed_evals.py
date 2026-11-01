@@ -6,17 +6,18 @@ and ``common_voice_19_0``. Reference text lives in the ``references`` column,
 audio in ``audio`` (bytes form, decoded with soundfile to dodge the
 torchcodec dependency that ``Audio()`` casting requires).
 
-The loader prefers a local HF cache snapshot — populated up-front by
-``huggingface_hub.snapshot_download`` — so long bench runs don't depend on
-``huggingface.co`` parquet streaming, which has been observed to time out
-intermittently on 5h+ jobs. Falls back to ``load_dataset(..., streaming=True)``
-when no local cache is available.
+The loader reads a local snapshot of the pinned revision's 25 parquet shards
+(fetched once into the HF cache if absent; ``python -m raven_asr.prefetch`` does
+it ahead of a run), so long bench runs don't depend on ``huggingface.co``
+parquet streaming, which has been observed to time out intermittently on 5h+
+jobs. ``streaming=True`` streams from the Hub instead. The snapshot is looked up
+at the pinned revision only: a cached snapshot of another revision is not the
+corpus the recorded pin names.
 """
 
 from __future__ import annotations
 
 import io
-import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,6 +26,7 @@ import numpy as np
 import soundfile as sf
 
 from .base import DECODE_ERRORS, DROP_UNDECODABLE, RowTally, Sample
+from .hf_snapshot import local_split, snapshot_paths
 
 if TYPE_CHECKING:  # pragma: no cover
     from datasets import Dataset, IterableDataset
@@ -42,36 +44,10 @@ SUBSET_ALIASES = {
 }
 
 
-def _hf_cache_root() -> Path:
-    """Resolve the HF Hub cache root, honoring ``HF_HOME`` / ``HF_HUB_CACHE``."""
-    env_hub = os.environ.get("HF_HUB_CACHE")
-    if env_hub:
-        return Path(env_hub)
-    env_home = os.environ.get("HF_HOME")
-    if env_home:
-        return Path(env_home) / "hub"
-    return Path.home() / ".cache" / "huggingface" / "hub"
-
-
-def _find_local_parquets(dataset_id: str) -> list[str] | None:
-    """Look for a populated local snapshot, return parquet paths if found."""
-    repo_dir = _hf_cache_root() / f"datasets--{dataset_id.replace('/', '--')}"
-    snap_root = repo_dir / "snapshots"
-    if not snap_root.is_dir():
-        return None
-    # Pick the snapshot with the most parquets (in case multiple revisions sit there).
-    best: tuple[int, list[str]] | None = None
-    for snap in snap_root.iterdir():
-        if not snap.is_dir():
-            continue
-        parquets = sorted(str(p) for p in (snap / "data").glob("*.parquet"))
-        if not parquets:
-            continue
-        if best is None or len(parquets) > best[0]:
-            best = (len(parquets), parquets)
-    if best is None:
-        return None
-    return best[1]
+#: The 25 shards of the single ``train`` split at the pinned revision.
+DATA_FILES: tuple[str, ...] = tuple(
+    f"data/train-{i:05d}-of-00025.parquet" for i in range(25)
+)
 
 
 class FloziMixedEvalsLoader:
@@ -89,43 +65,40 @@ class FloziMixedEvalsLoader:
         self._dataset_id = dataset_id
         self._split = split
         self._streaming = streaming
-        # Pin a HF dataset revision for byte-reproducible references. ``None``
-        # resolves to ``main`` HEAD at run time (only applies to the network
-        # download/stream path — a local parquet snapshot is already frozen).
+        # Pin a HF dataset revision for byte-reproducible references. The runner
+        # threads the registry pin; ``None`` only works with streaming, where it
+        # resolves to ``main`` HEAD at run time.
         self._revision = revision
         self._cache: Dataset | IterableDataset | None = None
-        self._source: str | None = None  # "local-parquet" | "hf-streaming" | "hf-download"
+        self._source: str | None = None  # "local-snapshot" | "hf-streaming"
         self.tally = RowTally()
 
     def _load(self) -> Dataset | IterableDataset:
-        from datasets import load_dataset
-
         if self._cache is not None:
             return self._cache
 
-        local_parquets = _find_local_parquets(self._dataset_id)
-        if local_parquets:
-            # Direct parquet load bypasses the dataset-script + network round-trip
-            # entirely. Honors ``streaming`` flag — IterableDataset for memory-safe
-            # iteration, Dataset for repeat access.
-            ds = load_dataset(
-                "parquet",
-                data_files={self._split: local_parquets},
-                split=self._split,
-                streaming=self._streaming,
-            )
-            self._source = "local-parquet"
-        else:
+        if self._streaming:
+            from datasets import load_dataset
+
             ds = load_dataset(
                 self._dataset_id,
                 split=self._split,
-                streaming=self._streaming,
+                streaming=True,
                 revision=self._revision,
             )
-            self._source = "hf-streaming" if self._streaming else "hf-download"
+            self._source = "hf-streaming"
+        else:
+            ds = local_split(self._dataset_id, self._revision, DATA_FILES, self._split)
+            self._source = "local-snapshot"
 
         self._cache = ds
         return ds
+
+    def prefetch(self) -> list[Path]:
+        """Fetch the pinned shards into the local cache; return their paths."""
+        paths = snapshot_paths(self._dataset_id, self._revision, DATA_FILES, download=True)
+        assert paths is not None
+        return paths
 
     @staticmethod
     def _decode_audio(audio_field: object) -> tuple[np.ndarray, int]:

@@ -1,7 +1,7 @@
 # raven.eval — one entrypoint per verification level.
 # See README.md for the three-tier verifiability model.
 
-.PHONY: install test verify manifest analyse rescore reproduce promote dscore-check clean
+.PHONY: install test verify manifest analyse rescore reproduce prefetch promote dscore-check clean
 
 install:            ## Install the pinned environment (uv, fails on lockfile drift).
 	uv sync --locked --extra dev --extra asr
@@ -66,13 +66,31 @@ rescore:            ## Maintenance: add newly published fields to committed expe
 # Keys/GPU/gating: docs/TIER2-KEYS.md (WER) + docs/TIER2-DER-KEYS.md (DER).
 EXTRA ?= $(if $(filter der,$(METRIC)),diar,asr)
 
+# CONCURRENCY= sets the requests in flight (WER only; default: the adapter's own).
+# A WER run resumes per utterance — rerun the same command after an abort.
+#   make reproduce METRIC=wer DATASET=fleurs MODEL=nvidia/canary-1b-v2 CONCURRENCY=16
+# MODEL_REV= pins a diarizer's weights (DER only). A WER model's revision is
+# fixed in the registry (raven_asr.config): a hosted model's versioned name, and
+# none for a self-hosted endpoint, whose loaded weights a client cannot attest.
 reproduce:          ## Tier-2: download public data → infer/diarize → score → table.
+	$(if $(and $(MODEL_REV),$(filter-out der,$(METRIC))),\
+		$(error MODEL_REV applies to METRIC=der only; a WER model's revision is fixed in raven_asr.config))
+	$(if $(and $(CONCURRENCY),$(filter der,$(METRIC))),\
+		$(error CONCURRENCY applies to METRIC=wer only; the DER lane diarizes one file at a time))
 	uv run --extra $(EXTRA) \
 		python -m $(if $(filter der,$(METRIC)),raven_diar,raven_asr).reproduce \
 		--metric $(METRIC) --dataset $(DATASET) --model $(MODEL) \
 		$(if $(LIMIT),--limit $(LIMIT),) \
+		$(if $(CONCURRENCY),--concurrency $(CONCURRENCY),) \
 		$(if $(MODEL_REV),--model-revision $(MODEL_REV),) \
 		$(if $(DATASET_REV),--dataset-revision $(DATASET_REV),)
+
+# Fetch a WER dataset (or `all`) at its pinned revision into the local cache, so
+# a long run reads local disk instead of streaming. HF_HOME moves the HF corpora,
+# RAVEN_EVAL_CACHE_DIR the archive-backed ones (docs/TIER2-KEYS.md).
+#   make prefetch DATASET=all
+prefetch:           ## Tier-2: download WER datasets at their pin before a long run.
+	uv run --extra asr python -m raven_asr.prefetch --dataset $(DATASET)
 
 # Turn a completed Tier-2 run into a committable Tier-1 artifact under artifacts/,
 # which `make verify` then re-scores. METRIC selects the harness (default wer).

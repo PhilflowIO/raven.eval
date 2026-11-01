@@ -46,5 +46,7 @@ class AvemioGermanMixedTestLoader(HFSingleConfigLoader):
     hf_split = "test"
     audio_column = "audio"
     text_column = "transkription"
+    # The split's files at the pinned revision (resolved 2026-11-02).
+    hf_data_files = ("test/test-asr-german-mixed.parquet",)
     license = "CC-BY-4.0"
     source_url = "https://huggingface.co/datasets/avemio/ASR-GERMAN-MIXED-TEST"

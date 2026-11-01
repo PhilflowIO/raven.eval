@@ -110,7 +110,10 @@ and we make the reproducible ones *actually* reproducible:
   `make reproduce` downloads a public dataset, runs the pinned model, and scores it.
   WER on the `flozi00/asr-german-mixed-evals` subsets plus FLEURS (`de_de`), MLS
   German and VoxPopuli German — every id in `benchmark.config.yaml` resolves to a
-  loader here, and a test fails the build if that ever stops being true. DER
+  loader here, and a test fails the build if that ever stops being true. Full
+  sets run unattended: local dataset copies (`make prefetch`), a request pool
+  (`CONCURRENCY=`), per-utterance resume, and an exit code that says whether every
+  utterance succeeded — see [`docs/TIER2-KEYS.md`](./docs/TIER2-KEYS.md). DER
   (`make reproduce METRIC=der`) with `pyannote/speaker-diarization-community-1` on
   VoxConverse / CALLHOME-de / AMI (needs an HF token, the gated model license, a GPU,
   and shared FFmpeg libs — see [`docs/TIER2-DER-KEYS.md`](./docs/TIER2-DER-KEYS.md)).

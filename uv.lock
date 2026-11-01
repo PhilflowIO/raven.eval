@@ -4588,6 +4588,7 @@ dependencies = [
 asr = [
     { name = "datasets" },
     { name = "httpx" },
+    { name = "huggingface-hub" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-raven-eval-core-diarizen'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-15-raven-eval-core-diar') or (python_full_version < '3.12' and extra != 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diar' and extra == 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diarizen' and extra == 'extra-15-raven-eval-core-sortformer')" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-15-raven-eval-core-diar') or (python_full_version >= '3.12' and extra != 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diar' and extra == 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diarizen' and extra == 'extra-15-raven-eval-core-sortformer')" },
@@ -4656,6 +4657,7 @@ requires-dist = [
     { name = "einops", marker = "extra == 'diarizen'" },
     { name = "httpx", marker = "extra == 'asr'" },
     { name = "httpx", marker = "extra == 'diar-hosted'" },
+    { name = "huggingface-hub", marker = "extra == 'asr'" },
     { name = "huggingface-hub", marker = "extra == 'diar'" },
     { name = "huggingface-hub", marker = "extra == 'diarizen'" },
     { name = "huggingface-hub", marker = "extra == 'sortformer'" },

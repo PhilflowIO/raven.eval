@@ -94,9 +94,6 @@ class WerDatasetSpec:
     # institutional archive) > "hf" (versioned HF dataset at a pinned revision) >
     # "vendor" (vendor-hosted link — flagged, never silently relied on).
     durability: str
-    # These corpora are hundreds of GB; a --limit run must not pay for a full
-    # download first, so the loader streams unless the caller says otherwise.
-    stream_by_default: bool = False
     # sha256 of the fetched archive, where the source IS a loose archive rather
     # than a content-addressed HF revision. None for every HF-backed entry, and
     # None where a corpus is several loose archives — then the per-artifact
@@ -153,7 +150,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         revision="17bcbc196567bca7eae3e94942588b5678fd748e",
         subsets=("avemio-german-mixed-test",),
         durability="hf",
-        stream_by_default=True,
         notes="single test split, no config; reference column `transkription`.",
     ),
     # FLEURS — read parallel sentences, the speech side of FLoRes.
@@ -165,7 +161,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         revision="70bb2e84b976b7e960aa89f1c648e09c59f894dd",
         subsets=("fleurs",),
         durability="hf",
-        stream_by_default=True,
         notes="config=de_de, split=test (~350 sentences); raw_transcription.",
     ),
     # MLS German — read audiobook speech (LibriVox), the register whisper-class
@@ -178,7 +173,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         revision="2e83e61823b4c47dcbcb1980bb88601274127609",
         subsets=("mls-de",),
         durability="hf",
-        stream_by_default=True,
         notes="config=german (spelled out, not 'de'), split=test; `transcript`.",
     ),
     # VoxPopuli German — European-Parliament plenary speech. Spontaneous and
@@ -191,7 +185,6 @@ WER_DATASETS: Final[dict[str, WerDatasetSpec]] = {
         revision="42f01879c780b4a2e90ec0b4f616c2ece526e4f1",
         subsets=("voxpopuli-de",),
         durability="hf",
-        stream_by_default=True,
         notes="config=de, split=test; raw_text with normalized_text fallback.",
     ),
     # ── Swiss German dialect corpora ────────────────────────────────────────
@@ -359,9 +352,10 @@ class ModelSpec:
     model_id: str
     adapter: str  # adapter module name under raven_asr.adapters
     label: str  # short identifier used in result directory names
-    # Optional per-model endpoint env-var *names* (never values). When None the
-    # adapter's own defaults apply (legacy behaviour). Only the env-var names
-    # live in this public repo; the URLs/keys stay in the operator's env.
+    # Endpoint env-var *names* (never values): only the names live in this
+    # public repo, the URLs/keys stay in the operator's env. Required for the
+    # self-hosted ``vllm_openai`` adapter; hosted adapters fall back to their own
+    # key name when None.
     base_url_env: str | None = None
     api_key_env: str | None = None
     # What the client can attest about the weights it measured, recorded as
@@ -372,22 +366,64 @@ class ModelSpec:
     revision: str | None = None
 
 
+# ── Self-hosted endpoints ────────────────────────────────────────────────────
+# Every self-hosted model is reached through one of two OpenAI-compatible server
+# types, each named by ONE env var holding its base URL (including ``/v1``). The
+# server type is a property of the model — NeMo checkpoints run on the NeMo-style
+# server, everything else on vLLM (or a shim in front of it) — so it is fixed
+# here, and an operator only has to say where the two servers are.
+NEMO_BENCH_URL_ENV: Final[str] = "NEMO_BENCH_URL"
+VLLM_BENCH_URL_ENV: Final[str] = "VLLM_BENCH_URL"
+#: Optional Bearer token, shared by both server types.
+BENCH_STT_API_KEY_ENV: Final[str] = "BENCH_STT_API_KEY"
+
+#: HF repo id -> result-directory label, for models on the NeMo-style server.
+#: The id is also what the request posts as ``model`` and what the server must
+#: echo back as ``x_raven.model``. Labels of models with published artifacts
+#: (``primeline-parakeet``) are part of those artifacts' paths and stay as they are.
+NEMO_SERVED_MODELS: Final[dict[str, str]] = {
+    "nvidia/parakeet-tdt-0.6b-v3": "nvidia-parakeet-tdt-0.6b-v3",
+    "nvidia/canary-1b-v2": "nvidia-canary-1b-v2",
+    # library_name "nemo" on the HF card: NeMo server despite "streaming".
+    "nvidia/nemotron-3.5-asr-streaming-0.6b": "nvidia-nemotron-3.5-asr-streaming-0.6b",
+    "primeline/parakeet-primeline": "primeline-parakeet",
+}
+#: HF repo id -> result-directory label, for models on the vLLM server.
+VLLM_SERVED_MODELS: Final[dict[str, str]] = {
+    "ibm-granite/granite-speech-4.1-2b-plus": "granite-speech-4.1-2b-plus",
+    "CohereLabs/cohere-transcribe-03-2026": "cohere-transcribe-03-2026",
+    "microsoft/Phi-4-multimodal-instruct": "phi-4-multimodal",
+    "OpenMOSS-Team/MOSS-Transcribe-Diarize": "moss-transcribe-diarize",
+    "moonshine-ai/moonshine-streaming-small-de": "moonshine-streaming-small-de",
+    "Qwen/Qwen3-ASR-1.7B": "qwen3-asr-1.7b",
+    "mistralai/Voxtral-Mini-3B-2507": "voxtral-mini-3b-2507",
+    "primeline/whisper-large-v3-german": "primeline-whisper-large-v3-german",
+    "primeline/whisper-large-v3-turbo-german": "primeline-whisper-large-v3-turbo-german",
+    "openai/whisper-large-v3": "openai-whisper-large-v3",
+}
+
+
+def _self_hosted(model_id: str, label: str, url_env: str) -> ModelSpec:
+    return ModelSpec(
+        model_id=model_id,
+        adapter="vllm_openai",
+        label=label,
+        base_url_env=url_env,
+        api_key_env=BENCH_STT_API_KEY_ENV,
+    )
+
+
+#: The 14 self-hosted models, keyed by HF repo id. Of these, only the models in
+#: FLOZI_REFERENCE_WER carry a flozi-published anchor; the others deliberately
+#: have none (no published number on that dataset to sanity-check against).
+SELF_HOSTED_MODELS: Final[dict[str, ModelSpec]] = {
+    **{m: _self_hosted(m, lbl, NEMO_BENCH_URL_ENV) for m, lbl in NEMO_SERVED_MODELS.items()},
+    **{m: _self_hosted(m, lbl, VLLM_BENCH_URL_ENV) for m, lbl in VLLM_SERVED_MODELS.items()},
+}
+
+
 KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
-    "primeline/whisper-large-v3-german": ModelSpec(
-        model_id="primeline/whisper-large-v3-german",
-        adapter="vllm_openai",
-        label="primeline-whisper-large-v3-german",
-    ),
-    "primeline/whisper-large-v3-turbo-german": ModelSpec(
-        model_id="primeline/whisper-large-v3-turbo-german",
-        adapter="vllm_openai",
-        label="primeline-whisper-large-v3-turbo-german",
-    ),
-    "primeline/parakeet-primeline": ModelSpec(
-        model_id="primeline/parakeet-primeline",
-        adapter="vllm_openai",
-        label="primeline-parakeet",
-    ),
+    **SELF_HOSTED_MODELS,
     "voxtral-mini-latest": ModelSpec(
         model_id="voxtral-mini-latest",
         adapter="voxtral_mistral",
@@ -402,53 +438,6 @@ KNOWN_MODELS: Final[dict[str, ModelSpec]] = {
         model_id="whisper-1",
         adapter="openai_whisper",
         label="openai-whisper-1",
-    ),
-    # Wave-2 re-bench models (flow.raven#5137). Served on self-hosted
-    # OpenAI-compatible endpoints; per-model endpoint env *names* below.
-    # Of these, only nvidia/parakeet-tdt-0.6b-v3 has a flozi-published anchor
-    # in FLOZI_REFERENCE_WER — the others deliberately carry no anchor (no
-    # published number on this dataset to sanity-check against).
-    "nvidia/parakeet-tdt-0.6b-v3": ModelSpec(
-        model_id="nvidia/parakeet-tdt-0.6b-v3",
-        adapter="vllm_openai",
-        label="nvidia-parakeet-tdt-0.6b-v3",
-        base_url_env="NEMO_BENCH_URL",
-        api_key_env="NEMO_BENCH_API_KEY",
-    ),
-    "nvidia/canary-1b-v2": ModelSpec(
-        model_id="nvidia/canary-1b-v2",
-        adapter="vllm_openai",
-        label="nvidia-canary-1b-v2",
-        base_url_env="NEMO_BENCH_URL",
-        api_key_env="NEMO_BENCH_API_KEY",
-    ),
-    "ibm-granite/granite-speech-4.1-2b-plus": ModelSpec(
-        model_id="ibm-granite/granite-speech-4.1-2b-plus",
-        adapter="vllm_openai",
-        label="granite-speech-4.1-2b-plus",
-        base_url_env="VLLM_BENCH_URL",
-        api_key_env="VLLM_BENCH_API_KEY",
-    ),
-    "CohereLabs/cohere-transcribe-03-2026": ModelSpec(
-        model_id="CohereLabs/cohere-transcribe-03-2026",
-        adapter="vllm_openai",
-        label="cohere-transcribe-03-2026",
-        base_url_env="VLLM_BENCH_URL",
-        api_key_env="VLLM_BENCH_API_KEY",
-    ),
-    "OpenMOSS-Team/MOSS-Transcribe-Diarize": ModelSpec(
-        model_id="OpenMOSS-Team/MOSS-Transcribe-Diarize",
-        adapter="vllm_openai",
-        label="moss-transcribe-diarize",
-        base_url_env="VLLM_BENCH_URL",
-        api_key_env="VLLM_BENCH_API_KEY",
-    ),
-    "microsoft/Phi-4-multimodal-instruct": ModelSpec(
-        model_id="microsoft/Phi-4-multimodal-instruct",
-        adapter="vllm_openai",
-        label="phi-4-multimodal",
-        base_url_env="VLLM_BENCH_URL",
-        api_key_env="VLLM_BENCH_API_KEY",
     ),
     # xAI Grok Voice Transcribe — hosted, us-east-1, USD 0.10 per audio hour on
     # the REST endpoint (docs.x.ai/developers/models/speech-to-text, 2026-09-18).

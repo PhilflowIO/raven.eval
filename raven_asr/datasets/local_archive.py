@@ -52,20 +52,35 @@ CORPORA_DIR_ENV = "RAVEN_EVAL_CORPORA_DIR"
 BENCH_CORPORA_DIR_ENV = "BENCH_CORPORA_DIR"
 SWISS_CORPORA_DIR_ENV = "SWISS_CORPORA_DIR"
 
-DEFAULT_CORPORA_DIR = Path.home() / ".cache" / "raven.eval" / "corpora"
+#: Root of everything raven.eval caches outside the HF Hub cache (which follows
+#: ``HF_HOME``). Corpora land in ``<cache dir>/corpora`` unless a more specific
+#: env var above points elsewhere.
+CACHE_DIR_ENV = "RAVEN_EVAL_CACHE_DIR"
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "raven.eval"
+DEFAULT_CORPORA_DIR = DEFAULT_CACHE_DIR / "corpora"
 
 _CHUNK = 1 << 20
 
 Fetcher = Callable[[str, Path], None]
 
 
+def cache_dir() -> Path:
+    """``RAVEN_EVAL_CACHE_DIR``, else ``~/.cache/raven.eval``."""
+    override = os.environ.get(CACHE_DIR_ENV)
+    return Path(override).expanduser() if override else DEFAULT_CACHE_DIR
+
+
 def corpora_root() -> Path:
-    """Resolve the root under which fetched corpora are materialised."""
+    """Resolve the root under which fetched corpora are materialised.
+
+    ``RAVEN_EVAL_CORPORA_DIR``, then ``BENCH_CORPORA_DIR``, then
+    ``<cache dir>/corpora`` (see :func:`cache_dir`).
+    """
     for env in (CORPORA_DIR_ENV, BENCH_CORPORA_DIR_ENV):
         override = os.environ.get(env)
         if override:
             return Path(override).expanduser()
-    return DEFAULT_CORPORA_DIR
+    return cache_dir() / "corpora"
 
 
 def region_corpora_dir(region: str, env_var: str) -> Path:
@@ -234,9 +249,11 @@ def decode_audio_bytes(raw: bytes) -> tuple["object", int]:
 
 
 __all__ = [
+    "CACHE_DIR_ENV",
     "CORPORA_DIR_ENV",
     "ChecksumMismatch",
     "RemoteArtifact",
+    "cache_dir",
     "corpora_root",
     "decode_audio_bytes",
     "ensure_artifact",

@@ -24,6 +24,21 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Added
+- Self-hosted WER models bind to two endpoint env vars by server type
+  (`NEMO_BENCH_URL`, `VLLM_BENCH_URL`, optional `BENCH_STT_API_KEY`); five more
+  are registered (Qwen3-ASR-1.7B, Voxtral-Mini-3B-2507, whisper-large-v3,
+  moonshine-streaming-small-de, nemotron-3.5-asr-streaming-0.6b). The adapter
+  sends 16 kHz audio and aborts the run when the server reports serving another
+  model (`x_raven.model`). Replaces `VLLM_PRIMELINE_*`, `NEMO_BENCH_API_KEY` and
+  `VLLM_BENCH_API_KEY`.
+- WER runs resume per utterance: predictions are appended as they arrive, a
+  rerun requests only missing or failed utterances, and the final file and
+  scores equal an uninterrupted run's. `reproduce --concurrency`, and an exit
+  status that is 0 only for a complete subset.
+- WER datasets are read from a local copy at the pinned revision; streaming from
+  the Hub is opt-in (`--streaming`). `python -m raven_asr.prefetch` fetches ahead
+  of a run; `RAVEN_EVAL_CACHE_DIR` moves every archive-backed corpus (xSID's
+  default moves from `~/.cache/raven-eval` to `~/.cache/raven.eval`).
 - Every Tier-2 `summary.json`, WER and DER, embeds a run manifest and a
   `schema_version` (table above). `make verify` and `make promote` reject a
   version they do not know, and a version-2 summary without a well-formed

@@ -123,6 +123,10 @@ class SpcTestLoader:
         directory = swiss_corpora_dir() / SUBDIR
         return [ensure_artifact(shard, directory) for shard in SHARDS]
 
+    def prefetch(self) -> list[Path]:
+        """Fetch and verify both shards into the corpora cache; return their paths."""
+        return self._shard_paths()
+
     def iter_samples(self, subset: str, limit: int | None = None) -> Iterator[Sample]:
         if subset not in (self.subset, ALL_SUBSETS):
             raise ValueError(

@@ -155,11 +155,32 @@ def test_no_env_at_all_still_resolves_to_a_writable_cache(monkeypatch) -> None:
         xsid.XSID_CORPORA_DIR_ENV,
         xsid.BAVARIAN_CORPORA_DIR_ENV,
         xsid.BENCH_CORPORA_DIR_ENV,
+        "RAVEN_EVAL_CORPORA_DIR",
+        "RAVEN_EVAL_CACHE_DIR",
     ):
         monkeypatch.delenv(env, raising=False)
+    # One cache root for every corpus, the same one the Swiss corpora use.
     assert xsid.corpora_dir() == (
-        Path.home() / ".cache" / "raven-eval" / "corpora" / "bavarian"
+        Path.home() / ".cache" / "raven.eval" / "corpora" / "bavarian"
     )
+
+
+def test_the_cache_dir_env_moves_xsid_with_the_other_corpora(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from raven_asr.datasets import local_archive
+
+    for env in (
+        xsid.XSID_CORPORA_DIR_ENV, xsid.BAVARIAN_CORPORA_DIR_ENV,
+        xsid.BENCH_CORPORA_DIR_ENV, "RAVEN_EVAL_CORPORA_DIR", "SWISS_CORPORA_DIR",
+    ):
+        monkeypatch.delenv(env, raising=False)
+    monkeypatch.setenv("RAVEN_EVAL_CACHE_DIR", str(tmp_path))
+    assert xsid.corpora_dir() == tmp_path / "corpora" / "bavarian"
+    assert local_archive.swiss_corpora_dir() == tmp_path / "corpora" / "swiss"
+    # A corpus-specific override still wins over the cache dir.
+    monkeypatch.setenv(xsid.XSID_CORPORA_DIR_ENV, str(tmp_path / "x"))
+    assert xsid.corpora_dir() == tmp_path / "x"
 
 
 def test_required_artifacts_always_include_the_german_reference_tsvs() -> None:

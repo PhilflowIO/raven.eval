@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from ..retry import with_retry
-from .base import TranscribeResult, encode_wav_pcm16
+from .base import TranscribeResult, encode_wav_pcm16, resample_mono
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -46,19 +46,7 @@ MODAL_INPUT_SAMPLE_RATE: int = 16_000
 
 def to_input_rate(audio: np.ndarray, sample_rate: int) -> np.ndarray:
     """Resample mono float audio to ``MODAL_INPUT_SAMPLE_RATE`` (no-op if equal)."""
-    if sample_rate == MODAL_INPUT_SAMPLE_RATE:
-        return audio
-    import soxr
-
-    return np.asarray(
-        soxr.resample(
-            np.asarray(audio, dtype=np.float32),
-            sample_rate,
-            MODAL_INPUT_SAMPLE_RATE,
-            quality="VHQ",
-        ),
-        dtype=np.float32,
-    )
+    return resample_mono(audio, sample_rate, MODAL_INPUT_SAMPLE_RATE)
 
 
 # Per-provider default threshold above which the adapter routes to the
