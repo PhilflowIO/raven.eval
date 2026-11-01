@@ -202,8 +202,8 @@ def test_the_manifest_carries_no_environment_value(
     tmp_path: Path, demo_wer_run, monkeypatch: pytest.MonkeyPatch
 ):
     """Env-var NAMES are config; their values — URLs and keys — never ship."""
-    monkeypatch.setenv("VLLM_PRIMELINE_URL", "https://endpoint.invalid/secret-host")
-    monkeypatch.setenv("VLLM_PRIMELINE_API_KEY", "sk-not-a-real-key-0123456789")
+    monkeypatch.setenv("VLLM_BENCH_URL", "https://endpoint.invalid/secret-host")
+    monkeypatch.setenv("BENCH_STT_API_KEY", "sk-not-a-real-key-0123456789")
     text = json.dumps(demo_wer_run(tmp_path / "results" / "demo-model"))
     assert "endpoint.invalid" not in text
     assert "sk-not-a-real-key" not in text
