@@ -299,58 +299,63 @@ def _capture_vllm_adapter(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 def test_make_adapter_threads_endpoint_envs(monkeypatch: pytest.MonkeyPatch) -> None:
     """ModelSpec.base_url_env/api_key_env must reach the adapter constructor."""
     captured = _capture_vllm_adapter(monkeypatch)
-    spec = ModelSpec(
-        model_id="nvidia/canary-1b-v2",
-        adapter="vllm_openai",
-        label="nvidia-canary-1b-v2",
-        base_url_env="NEMO_BENCH_URL",
-        api_key_env="NEMO_BENCH_API_KEY",
-    )
-    runner._make_adapter(spec)
+    runner._make_adapter(KNOWN_MODELS["nvidia/canary-1b-v2"])
     assert captured == {
         "provider_id": "nvidia-canary-1b-v2",
         "model_id": "nvidia/canary-1b-v2",
         "base_url_env": "NEMO_BENCH_URL",
-        "api_key_env": "NEMO_BENCH_API_KEY",
+        "api_key_env": "BENCH_STT_API_KEY",
     }
 
 
-def test_make_adapter_default_none_keeps_legacy_envs(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Specs without endpoint envs must resolve to the adapter's legacy
-    defaults (VLLM_PRIMELINE_*)."""
-    vllm_mod = pytest.importorskip("raven_asr.adapters.vllm_openai")
-    captured = _capture_vllm_adapter(monkeypatch)
-    spec = KNOWN_MODELS["primeline/whisper-large-v3-german"]
-    assert spec.base_url_env is None and spec.api_key_env is None
-    runner._make_adapter(spec)
-    assert captured == {
-        "provider_id": "primeline-whisper-large-v3-german",
-        "model_id": "primeline/whisper-large-v3-german",
-        "base_url_env": vllm_mod.DEFAULT_BASE_URL_ENV,
-        "api_key_env": vllm_mod.DEFAULT_API_KEY_ENV,
-    }
-    assert captured["base_url_env"] == "VLLM_PRIMELINE_URL"
-    assert captured["api_key_env"] == "VLLM_PRIMELINE_API_KEY"
+def test_make_adapter_refuses_a_self_hosted_spec_without_an_endpoint() -> None:
+    """No silent fallback endpoint: a spec that names none is a registry bug."""
+    spec = ModelSpec(model_id="x/y", adapter="vllm_openai", label="x-y")
+    with pytest.raises(ValueError, match="base_url_env"):
+        runner._make_adapter(spec)
 
 
-def test_wave2_registry_entries_carry_endpoint_envs() -> None:
-    """The flow.raven#5137 wave-2 entries bind to their bench env pairs."""
-    nemo = {"nvidia/parakeet-tdt-0.6b-v3", "nvidia/canary-1b-v2"}
-    vllm = {
-        "ibm-granite/granite-speech-4.1-2b-plus",
-        "CohereLabs/cohere-transcribe-03-2026",
-        "OpenMOSS-Team/MOSS-Transcribe-Diarize",
-        "microsoft/Phi-4-multimodal-instruct",
-    }
-    for key in nemo | vllm:
+# The binding interface to the box: which HF id runs on which server type. A
+# change here is a change for whoever serves the models, so it is pinned.
+_NEMO_SERVED = {
+    "nvidia/parakeet-tdt-0.6b-v3",
+    "nvidia/canary-1b-v2",
+    "nvidia/nemotron-3.5-asr-streaming-0.6b",
+    "primeline/parakeet-primeline",
+}
+_VLLM_SERVED = {
+    "ibm-granite/granite-speech-4.1-2b-plus",
+    "CohereLabs/cohere-transcribe-03-2026",
+    "microsoft/Phi-4-multimodal-instruct",
+    "OpenMOSS-Team/MOSS-Transcribe-Diarize",
+    "moonshine-ai/moonshine-streaming-small-de",
+    "Qwen/Qwen3-ASR-1.7B",
+    "mistralai/Voxtral-Mini-3B-2507",
+    "primeline/whisper-large-v3-german",
+    "primeline/whisper-large-v3-turbo-german",
+    "openai/whisper-large-v3",
+}
+
+
+def test_all_fourteen_self_hosted_models_bind_to_their_server_type() -> None:
+    from raven_asr.config import SELF_HOSTED_MODELS
+
+    assert set(SELF_HOSTED_MODELS) == _NEMO_SERVED | _VLLM_SERVED
+    assert len(SELF_HOSTED_MODELS) == 14
+    for key in _NEMO_SERVED | _VLLM_SERVED:
         spec = KNOWN_MODELS[key]
         assert spec.adapter == "vllm_openai"
-        expected_url = "NEMO_BENCH_URL" if key in nemo else "VLLM_BENCH_URL"
-        expected_key = "NEMO_BENCH_API_KEY" if key in nemo else "VLLM_BENCH_API_KEY"
+        # The model posted (and echoed back) is the HF id the run is keyed by.
+        assert spec.model_id == key
+        expected_url = "NEMO_BENCH_URL" if key in _NEMO_SERVED else "VLLM_BENCH_URL"
         assert spec.base_url_env == expected_url
-        assert spec.api_key_env == expected_key
+        assert spec.api_key_env == "BENCH_STT_API_KEY"
+        # The client cannot see which weights a server loaded.
+        assert spec.revision is None
+    labels = [s.label for s in KNOWN_MODELS.values()]
+    assert len(labels) == len(set(labels)), "result-directory labels must be unique"
+    # A published artifact's directory name is its label; it must not move.
+    assert KNOWN_MODELS["primeline/parakeet-primeline"].label == "primeline-parakeet"
 
 
 def test_promote_refuses_empty_results(tmp_path: Path) -> None:
