@@ -104,11 +104,15 @@ def test_every_recipe_pins_a_full_commit() -> None:
             assert r["checkpoint_file"].endswith(".nemo"), rid
 
 
-def test_granite_serves_the_checkpoint_of_the_september_sweep() -> None:
-    """The pin is the checkpoint the September sweep served."""
+def test_granite_serves_the_retrained_checkpoint_on_an_engine_that_maps_it() -> None:
+    """IBM's 2026-10-21 re-upload (e69efe37) nests the text-model weights at
+    ``language_model.model.model.*``; vLLM maps that only from 0.33.0 on
+    (vllm-project/vllm#63050). Older engines refuse to start on it."""
     argv, _ = _build("ibm-granite/granite-speech-4.1-2b-plus")
     assert argv[2] == "ibm-granite/granite-speech-4.1-2b-plus"
-    assert _flag(argv, "--revision") == "1454e6e1e33845ca9280ff65f52cf1141ba6e6e2"
+    assert _flag(argv, "--revision") == "e69efe37f97b6283c61f5a8dadda2b3eb67765d6"
+    vllm = _pins((SERVING / "vllm" / "requirements.txt").read_text())["vllm"]
+    assert tuple(int(x) for x in vllm.split(".")[:2]) >= (0, 33), vllm
 
 
 @pytest.mark.parametrize("engine", ["vllm", "transformers", "nemo"])
