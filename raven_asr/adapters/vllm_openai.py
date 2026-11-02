@@ -20,6 +20,10 @@ Three properties a long unattended run depends on:
   the response carries ``x_raven.model`` and it differs from the posted model,
   :class:`~raven_asr.adapters.base.ServedModelMismatchError` aborts the run. A
   server that sends no echo at all is warned about once and trusted.
+* **Output format.** A model whose server wraps the transcript in markup of its
+  own (``raven_asr.config.OUTPUT_FORMATS``) is parsed here: ``text`` is what was
+  spoken, ``raw_text`` the server's string byte for byte, ``segments`` the
+  speaker turns the markup carried (:mod:`raven_asr.output_formats`).
 * **Serving identity.** The first response's ``x_raven`` engine / recipe /
   batching (:mod:`raven_asr.serving`) is pinned as :attr:`serving` and recorded
   with each pass; a later response with a different block raises
@@ -38,6 +42,7 @@ import httpx
 import numpy as np
 
 from .. import serving as serving_block
+from ..output_formats import parser_for
 from ..retry import with_retry
 from .base import (
     ServedModelMismatchError,
@@ -71,6 +76,7 @@ class VllmOpenAIAdapter:
         language: str = DEFAULT_LANGUAGE,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         transport: httpx.AsyncBaseTransport | None = None,
+        output_format: str | None = None,
     ) -> None:
         base_url = os.environ.get(base_url_env)
         if not base_url:
@@ -84,6 +90,7 @@ class VllmOpenAIAdapter:
         self._api_key = os.environ.get(api_key_env) if api_key_env else None
         self._language = language
         self._timeout_s = timeout_s
+        self._parse = parser_for(output_format)
         # Only tests pass one (httpx.MockTransport); None is the network.
         self._transport = transport
         self._client: httpx.AsyncClient | None = None
@@ -204,15 +211,21 @@ class VllmOpenAIAdapter:
         body: dict[str, object] = r.json()
         self._check_served_model(body)
         self._check_serving(body)
-        text = str(body.get("text", "")).strip()
+        served_text = str(body.get("text", ""))
+        raw = {
+            "body": body,
+            "input_sample_rate": sample_rate,
+            "sent_sample_rate": INPUT_SAMPLE_RATE,
+        }
+        if self._parse is None:
+            return TranscribeResult(text=served_text.strip(), latency_s=latency, raw=raw)
+        parsed = self._parse(served_text)
         return TranscribeResult(
-            text=text,
+            text=parsed.text,
             latency_s=latency,
-            raw={
-                "body": body,
-                "input_sample_rate": sample_rate,
-                "sent_sample_rate": INPUT_SAMPLE_RATE,
-            },
+            raw=raw,
+            raw_text=served_text,
+            segments=[seg.as_json() for seg in parsed.segments],
         )
 
     def transcribe(self, audio: np.ndarray, sample_rate: int) -> TranscribeResult:

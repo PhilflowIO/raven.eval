@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 from collections.abc import AsyncIterator, Iterable, Iterator
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NoReturn, cast
@@ -86,6 +86,11 @@ class _Outcome:
     prediction: str | None = None
     latency_s: float | None = None
     error: str | None = None
+    # Set only for a model with an output format (raven_asr.output_formats):
+    # the server's transcript as returned, and the speaker turns it carried.
+    # ``prediction`` is then the spoken text parsed out of it.
+    raw_prediction: str | None = None
+    segments: list[dict[str, object]] | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +123,7 @@ def _make_adapter(spec: ModelSpec) -> ASRAdapter:
             model_id=spec.model_id,
             base_url_env=spec.base_url_env,
             api_key_env=spec.api_key_env,
+            output_format=spec.output_format,
         )
     if spec.adapter == "voxtral_mistral":
         from .adapters.voxtral_mistral import VoxtralMistralAdapter
@@ -229,6 +235,8 @@ async def _attempt(adapter: ASRAdapter, sample: Sample) -> _Outcome:
         duration_s=duration_s,
         prediction=r.text,
         latency_s=r.latency_s,
+        raw_prediction=r.raw_text,
+        segments=r.segments,
     )
 
 
@@ -244,6 +252,11 @@ def _prediction_line(o: _Outcome) -> dict[str, object]:
         "sample_id": o.sample_id,
         "duration_s": round(o.duration_s, 6),
     }
+    if o.raw_prediction is not None:
+        # Only a model with an output format writes these: the server's string
+        # the prediction was parsed from, so the parse can be audited and redone.
+        line["raw_prediction"] = o.raw_prediction
+        line["segments"] = o.segments
     if o.error is not None:
         line["error"] = o.error
     return line
@@ -337,6 +350,8 @@ class _PredictionLog:
             duration_s=float(line["duration_s"]),
             prediction=line["prediction"],
             latency_s=line.get("latency_s"),
+            raw_prediction=line.get("raw_prediction"),
+            segments=line.get("segments"),
         )
 
     def append(self, outcome: _Outcome) -> None:
@@ -761,6 +776,7 @@ def _write_outputs(
     entries: list[ResultEntry],
     limit: int | None,
     manifest: dict[str, Any],
+    post_hoc: list[dict[str, Any]] | None = None,
 ) -> Path:
     yaml_path = out_dir / "model-index.yaml"
     write_yaml(yaml_path, build_model_index(model_id=spec.model_id, results=entries))
@@ -782,13 +798,126 @@ def _write_outputs(
         "adapter": spec.adapter,
         "model_revision": spec.revision,
         "limit_per_subset": limit,
+        # How the server's output became the scored prediction
+        # (raven_asr.output_formats); null for a plain-text model.
+        "output_format": spec.output_format,
         "results": results,
         "run_manifest": manifest,
     }
+    if post_hoc is None:
+        post_hoc = _recorded_post_hoc(out_dir)
+    if post_hoc:
+        # Steps applied to the recorded predictions after inference
+        # (raven_asr.reparse). The manifest above still names the run that
+        # produced the server output; these name what was done to it since.
+        summary["post_hoc"] = post_hoc
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     return yaml_path
+
+
+def _recorded_post_hoc(out_dir: Path) -> list[dict[str, Any]] | None:
+    """The ``post_hoc`` steps an earlier summary in ``out_dir`` recorded, if any."""
+    try:
+        previous = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    steps = previous.get("post_hoc") if isinstance(previous, dict) else None
+    return steps if isinstance(steps, list) else None
+
+
+def _entry_from_row(row: dict[str, Any]) -> ResultEntry:
+    """The ResultEntry a summary row was written from (``_compare_against_flozi``)."""
+    subset = str(row["subset"])
+    return ResultEntry(
+        dataset_id=_dataset_id_for_subset(subset),
+        dataset_name=subset,
+        subset_arg=subset,
+        wer_pct=float(row["wer_pct"]),
+        cer_pct=float(row["cer_pct"]),
+        n_samples=int(row["n_samples"]),
+        wer_filler_tolerant_pct=float(row.get("wer_filler_tolerant_pct") or 0.0),
+        n_failed=int(row.get("n_failed") or 0),
+        n_dropped=row.get("n_dropped"),
+        dropped_by_reason=row.get("dropped_by_reason"),
+        dataset_revision=row.get("dataset_revision"),
+        dataset_sha256=row.get("dataset_sha256"),
+        entity_hit_rate_pct=row.get("entity_hit_rate_pct"),
+        n_entities=int(row.get("n_entities") or 0),
+        n_utterances_with_entities=int(row.get("n_utterances_with_entities") or 0),
+    )
+
+
+def _scored(entry: ResultEntry, rows: list[dict[str, Any]]) -> ResultEntry:
+    """``entry`` with every score re-derived from its predictions lines."""
+    ok = [r for r in rows if r.get("error") is None and isinstance(r.get("prediction"), str)]
+    refs = [r["reference"] for r in ok]
+    preds = [r["prediction"] for r in ok]
+    metrics = evaluate(refs, preds)
+    entities = entity_hit_rate(refs, preds)
+    return replace(
+        entry,
+        wer_pct=metrics.wer_pct,
+        cer_pct=metrics.cer_pct,
+        n_samples=metrics.n_samples,
+        wer_filler_tolerant_pct=metrics.wer_filler_tolerant_pct,
+        n_failed=len(rows) - len(ok),
+        entity_hit_rate_pct=entities.hit_rate_pct,
+        n_entities=entities.n_entities,
+        n_utterances_with_entities=entities.n_utterances_with_entities,
+    )
+
+
+def rescore_recorded(
+    out_dir: Path,
+    spec: ModelSpec,
+    subsets: Iterable[str],
+    post_hoc_step: dict[str, Any],
+) -> None:
+    """Re-score ``subsets`` of a finished run from their (rewritten) predictions.
+
+    For :mod:`raven_asr.reparse`: the predictions changed after inference, so
+    every score derived from them is derived again, by the same functions a run
+    uses — the resume markers, ``summary.json`` and ``model-index.yaml`` alike.
+    What the run measured and cannot be re-derived (throughput, serving, the
+    run manifest, the dataset pin) is kept as recorded. ``post_hoc_step`` is
+    appended to the summary's ``post_hoc`` list.
+    """
+    summary_path = out_dir / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    targets = set(subsets)
+    entries: list[ResultEntry] = []
+    for row in summary.get("results", []):
+        subset = str(row["subset"])
+        marker = out_dir / f".done_{_safe(subset)}.json"
+        entry = (
+            ResultEntry(**json.loads(marker.read_text(encoding="utf-8")))
+            if marker.exists() else _entry_from_row(row)
+        )
+        if subset in targets:
+            path = out_dir / f"predictions_{_safe(subset)}.jsonl"
+            lines = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()
+                     if x.strip()]
+            entry = _scored(entry, lines)
+            if marker.exists():
+                marker.write_text(json.dumps(asdict(entry)), encoding="utf-8")
+        entries.append(entry)
+    # Subsets finished by an earlier invocation into the same dir carry only a
+    # marker, not a summary row; their marker is re-scored all the same.
+    for subset in targets - {e.subset_arg for e in entries}:
+        marker = out_dir / f".done_{_safe(subset)}.json"
+        path = out_dir / f"predictions_{_safe(subset)}.jsonl"
+        if marker.exists() and path.exists():
+            lines = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()
+                     if x.strip()]
+            entry = _scored(ResultEntry(**json.loads(marker.read_text(encoding="utf-8"))), lines)
+            marker.write_text(json.dumps(asdict(entry)), encoding="utf-8")
+    steps = list(summary.get("post_hoc") or []) + [post_hoc_step]
+    _write_outputs(
+        out_dir, spec, entries, summary.get("limit_per_subset"),
+        summary.get("run_manifest"), post_hoc=steps,
+    )
 
 
 def _write_predictions(path: Path, outcomes: list[_Outcome]) -> None:

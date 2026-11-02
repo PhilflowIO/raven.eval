@@ -23,6 +23,18 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 
 ## [Unreleased]
 
+### Fixed
+- MOSS-Transcribe-Diarize's timestamp and speaker markup (`[4.18][S01] … [13.81]`)
+  is parsed out of its output in the model layer (`raven_asr.output_formats`)
+  instead of being scored as words. Prediction lines of a model with an output
+  format carry `raw_prediction` (the server's output) and `segments` beside the
+  spoken-text `prediction`; `summary.json` names the `output_format`. Scored raw,
+  the strict-de lens put MOSS at ~100 % WER on read speech, and the published
+  flozi-strict lens — which drops bracketed text itself — still lost words the
+  markup glued together. Runs recorded before are re-derived without inference
+  by `make reparse`, which records the step under `post_hoc`. The scoring
+  contract (`benchmark.config.yaml`) is unchanged; no committed artifact moves.
+
 ### Changed
 - The vLLM serving engine moves from 0.28.0 to 0.33.0 (FlashInfer 0.7.2.post1
   with its prebuilt CUDA 13.0 kernels, torch 2.14.0, transformers 5.20.2 now

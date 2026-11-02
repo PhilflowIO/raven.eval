@@ -1,7 +1,7 @@
 # raven.eval — one entrypoint per verification level.
 # See README.md for the three-tier verifiability model.
 
-.PHONY: install test verify manifest analyse rescore reproduce prefetch promote dscore-check clean
+.PHONY: install test verify manifest analyse rescore reparse reproduce prefetch promote dscore-check clean
 
 install:            ## Install the pinned environment (uv, fails on lockfile drift).
 	uv sync --locked --extra dev --extra asr
@@ -45,6 +45,15 @@ analyse:            ## Tier-1: intervals (and paired gaps) for one committed art
 rescore:            ## Maintenance: add newly published fields to committed expected.json.
 	uv run python -m raven_diar.rescore $(if $(DRY),--dry-run,)
 	uv run python -m raven_asr.rescore $(if $(DRY),--dry-run,)
+
+# Re-derive a finished run's predictions from the server output they record,
+# for a model whose output format was learnt after it ran (MOSS's timestamp and
+# speaker markup): prediction = spoken text, raw_prediction = server output, and
+# every score re-computed. No inference. Refuses a model without a parser. Run it
+# on results/ before promote — committed artifacts are never rewritten.
+#   make reparse RESULTS=results/<run>/moss-transcribe-diarize
+reparse:            ## Maintenance: re-parse a run's recorded raw output, re-score (no inference).
+	uv run --extra asr python -m raven_asr.reparse $(RESULTS)
 
 # --- Tier 2: full re-run on public datasets (your own keys / GPU) ------------
 # Downloads the public dataset, runs inference with the pinned model, scores.

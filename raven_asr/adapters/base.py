@@ -25,14 +25,21 @@ class TranscribeResult:
     """Output of one transcription call.
 
     Attributes:
-        text: Raw model output, pre-normalize.
+        text: The spoken text, pre-normalize — the model output with any markup
+            of the model's own output format removed (raven_asr.output_formats).
         latency_s: Wall-clock seconds from request send to response decode.
         raw: Provider-specific debug payload (kept for traceability).
+        raw_text: The server's transcript exactly as returned, set only when the
+            model has an output format and ``text`` was parsed out of it.
+        segments: The speaker turns that format carried (JSON-ready dicts), or
+            None when the model has no output format.
     """
 
     text: str
     latency_s: float
     raw: dict[str, object]
+    raw_text: str | None = None
+    segments: list[dict[str, object]] | None = None
 
 
 class ASRAdapter(Protocol):

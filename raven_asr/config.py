@@ -364,6 +364,10 @@ class ModelSpec:
     # self-hosted endpoint the client cannot see which weights are loaded, so it
     # stays None rather than asserting a pin nobody checked.
     revision: str | None = None
+    # How the server wraps the transcript, when it does (raven_asr.output_formats).
+    # None: the response text is the transcript. Otherwise the adapter parses it,
+    # ``prediction`` holds the spoken text and ``raw_prediction`` the server's.
+    output_format: str | None = None
 
 
 # ── Self-hosted endpoints ────────────────────────────────────────────────────
@@ -403,6 +407,14 @@ VLLM_SERVED_MODELS: Final[dict[str, str]] = {
 }
 
 
+#: HF repo id -> output format, for the models whose server answers with more
+#: than the transcript (raven_asr.output_formats). MOSS interleaves timestamps
+#: and speaker tags with the words; scored raw, each one is an inserted word.
+OUTPUT_FORMATS: Final[dict[str, str]] = {
+    "OpenMOSS-Team/MOSS-Transcribe-Diarize": "moss-timed-speakers",
+}
+
+
 def _self_hosted(model_id: str, label: str, url_env: str) -> ModelSpec:
     return ModelSpec(
         model_id=model_id,
@@ -410,6 +422,7 @@ def _self_hosted(model_id: str, label: str, url_env: str) -> ModelSpec:
         label=label,
         base_url_env=url_env,
         api_key_env=BENCH_STT_API_KEY_ENV,
+        output_format=OUTPUT_FORMATS.get(model_id),
     )
 
 

@@ -147,3 +147,48 @@ def test_missing_endpoint_env_names_the_variable(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("VLLM_BENCH_URL", raising=False)
     with pytest.raises(RuntimeError, match="VLLM_BENCH_URL"):
         VllmOpenAIAdapter(provider_id="p", model_id="m", base_url_env="VLLM_BENCH_URL")
+
+
+def test_a_model_with_an_output_format_is_parsed_and_its_raw_kept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MOSS markup leaves the adapter as spoken text, the server's string beside it."""
+    served = "[0.48][S01]guten tag[3.12][3.12][S02]hallo[4.0]"
+    monkeypatch.setenv("VLLM_BENCH_URL", "http://bench.invalid/v1/")
+    moss = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
+    adapter = VllmOpenAIAdapter(
+        provider_id="moss-transcribe-diarize", model_id=moss,
+        base_url_env="VLLM_BENCH_URL", api_key_env=None,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"text": served, "x_raven": {"model": moss}})
+        ),
+        output_format="moss-timed-speakers",
+    )
+
+    async def go():
+        try:
+            return await adapter.atranscribe(np.zeros(16_000, dtype=np.float32), 16_000)
+        finally:
+            await adapter.aclose()
+
+    result = asyncio.run(go())
+    assert result.text == "guten tag hallo"
+    assert result.raw_text == served
+    assert [s["speaker"] for s in result.segments] == ["S01", "S02"]
+
+
+def test_a_plain_model_records_no_raw_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = _adapter(
+        monkeypatch,
+        lambda request: httpx.Response(200, json={"text": " [0.5] hallo ", "x_raven": {"model": MODEL}}),
+    )
+
+    async def go():
+        try:
+            return await adapter.atranscribe(np.zeros(16_000, dtype=np.float32), 16_000)
+        finally:
+            await adapter.aclose()
+
+    result = asyncio.run(go())
+    # No output format: the server's text is the transcript, untouched.
+    assert (result.text, result.raw_text, result.segments) == ("[0.5] hallo", None, None)
