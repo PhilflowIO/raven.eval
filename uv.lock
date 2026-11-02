@@ -1046,6 +1046,23 @@ wheels = [
 ]
 
 [[package]]
+name = "fastapi"
+version = "0.162.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "opentelemetry-api" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/eb/2cf8c80abf09b2800aef0a83b41066fbfda8ee5495b7a08b9d1af40f7046/fastapi-0.162.0.tar.gz", hash = "sha256:6a22c1e2e6e32e0633ee7e170f00009a29b8228b16feb219ee42f32fd8d88a8f", size = 527867, upload-time = "2026-10-23T18:47:33.264Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/4f/3f2c25c9b43970b5e9a08beb5e04776247edea684ddc0930f4f02f0bb6cb/fastapi-0.162.0-py3-none-any.whl", hash = "sha256:3785963de305dd09912426cb81f2d230fce98ab3521cdfe97265c8d14983128c", size = 148912, upload-time = "2026-10-23T18:47:31.734Z" },
+]
+
+[[package]]
 name = "filelock"
 version = "3.32.2"
 source = { registry = "https://pypi.org/simple" }
@@ -4385,6 +4402,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-multipart"
+version = "0.0.33"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/b7/15b905f6142a9a8a68f66900788da1a32e4d4254452783b37ad1eccb0506/python_multipart-0.0.33.tar.gz", hash = "sha256:b8112424a6abd162ec08d390565dd113ad699f2fe6fef3c987b8bbcbfe9e390d", size = 50499, upload-time = "2026-10-31T14:23:47.461Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/1b/6b1b4164ec734cac911460ab599bfbe46afedd42c5c9627fe4235942c314/python_multipart-0.0.33-py3-none-any.whl", hash = "sha256:8f16c07b36add9da6b2ee87d3efcaf0a45a6de9c3d0a5dd94e9ccf7675a7bc45", size = 32253, upload-time = "2026-10-31T14:23:46.33Z" },
+]
+
+[[package]]
 name = "pytorch-lightning"
 version = "2.6.5"
 source = { registry = "https://pypi.org/simple" }
@@ -4599,7 +4625,9 @@ asr = [
     { name = "websockets" },
 ]
 dev = [
+    { name = "fastapi" },
     { name = "pytest" },
+    { name = "python-multipart" },
 ]
 diar = [
     { name = "datasets" },
@@ -4655,6 +4683,7 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'diarizen'" },
     { name = "diarizen", marker = "extra == 'diarizen'", git = "https://github.com/BUTSpeechFIT/DiariZen?rev=a60b18151dbbe246e4199d8ef5cd2ece3872ea94" },
     { name = "einops", marker = "extra == 'diarizen'" },
+    { name = "fastapi", marker = "extra == 'dev'" },
     { name = "httpx", marker = "extra == 'asr'" },
     { name = "httpx", marker = "extra == 'diar-hosted'" },
     { name = "huggingface-hub", marker = "extra == 'asr'" },
@@ -4677,6 +4706,7 @@ requires-dist = [
     { name = "pyannote-metrics", specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "python-multipart", marker = "extra == 'dev'" },
     { name = "pyyaml" },
     { name = "pyyaml", marker = "extra == 'asr'" },
     { name = "sacrebleu", specifier = ">=2.4,<3" },
@@ -5418,6 +5448,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/e3/ce8d38cb2d70e05ffeddc28bb09bad77cfef979eb0a299c9117f7ed4e6a9/standard_sunau-3.13.0.tar.gz", hash = "sha256:b319a1ac95a09a2378a8442f403c66f4fd4b36616d6df6ae82b8e536ee790908", size = 9368, upload-time = "2024-10-30T16:01:41.626Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/34/ae/e3707f6c1bc6f7aa0df600ba8075bfb8a19252140cd595335be60e25f9ee/standard_sunau-3.13.0-py3-none-any.whl", hash = "sha256:53af624a9529c41062f4c2fd33837f297f3baa196b0cfceffea6555654602622", size = 7364, upload-time = "2024-10-30T16:01:28.003Z" },
+]
+
+[[package]]
+name = "starlette"
+version = "1.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-15-raven-eval-core-diar' and extra == 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diarizen' and extra == 'extra-15-raven-eval-core-sortformer')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/48/bb/3d8757f21e9a53d9035c9eb039a777047139a16bfdbedfc7a58241c3d914/starlette-1.10.0.tar.gz", hash = "sha256:b8399098d4c1e3522734f7235dc79b1fc967f96cf139c81e0fa30479e0685f9b", size = 2734356, upload-time = "2026-10-24T15:04:12.342Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/2e/947cfe02def9371c07cd5bf5b6b61c829e9aecb9904db02a66cfafbc1eec/starlette-1.10.0-py3-none-any.whl", hash = "sha256:478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4", size = 80571, upload-time = "2026-10-24T15:04:10.371Z" },
 ]
 
 [[package]]

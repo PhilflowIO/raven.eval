@@ -34,7 +34,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+# fastapi + python-multipart: the tests drive serving/'s NeMo server and shim
+# in-process (TestClient) with mocked engines. Light on purpose — the engines
+# themselves (vLLM, NeMo, torch) never enter this repo's install; each gets its
+# own environment from serving/*/requirements.txt on the GPU host.
+dev = ["pytest", "fastapi", "python-multipart"]
 # Tier-2 harness (raven_asr): download public HF datasets, run remote/GPU
 # inference, score. Heavier than the Tier-1 core — install only to re-run from
 # raw audio. Adapters talk to their APIs over httpx directly (websockets for the
