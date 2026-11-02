@@ -99,6 +99,7 @@ def build(
     if engine == "transformers":
         extra.update({
             "MOONSHINE_MODEL": recipe["model"],
+            "MOONSHINE_REVISION": recipe["revision"],
             "MOONSHINE_HOST": host,
             "MOONSHINE_PORT": port,
             "MOONSHINE_GPU_MEM_FRACTION": gpu_mem,
@@ -110,9 +111,12 @@ def build(
     seqs = _knob(env, "RAVEN_SERVE_MAX_NUM_SEQS", recipe.get("max_num_seqs", 16))
     snap = snapshot or SNAPSHOT_PLACEHOLDER
     if recipe.get("serve_from_snapshot"):
+        # The snapshot was downloaded at the recipe's revision (_fetch).
         target = [snap, "--served-model-name", recipe["model"]]
     else:
-        target = [recipe["model"]]
+        # --revision also pins tokenizer and processor (vLLM defaults
+        # --tokenizer-revision to it).
+        target = [recipe["model"], "--revision", recipe["revision"]]
     argv = [vllm, "serve", *target, "--host", host, "--port", port,
             "--gpu-memory-utilization", gpu_mem, "--max-num-seqs", seqs]
     if "dtype" in recipe:
@@ -146,20 +150,19 @@ def _hf_cache(env: dict[str, str]) -> Path:
     return Path(home) / "hub"
 
 
-def _cached(model: str, env: dict[str, str]) -> bool:
-    """A complete snapshot of ``model`` is in the HF cache (no partial blobs)."""
+def _cached(model: str, env: dict[str, str], revision: str | None = None) -> bool:
+    """A complete snapshot of ``model`` (at ``revision``, if given) is in the HF cache."""
     repo = _hf_cache(env) / f"models--{model.replace('/', '--')}"
     snapshots = repo / "snapshots"
-    return (
-        snapshots.is_dir()
-        and any(snapshots.iterdir())
-        and not any(repo.rglob("*.incomplete"))
+    present = (snapshots / revision).is_dir() if revision else (
+        snapshots.is_dir() and any(snapshots.iterdir())
     )
+    return present and not any(repo.rglob("*.incomplete"))
 
 
 def _disk_floor(recipe: dict[str, Any], env: dict[str, str]) -> None:
     floor = env.get("RAVEN_SERVE_MIN_FREE_GB", "").strip()
-    if not floor or _cached(recipe["model"], env):
+    if not floor or _cached(recipe["model"], env, recipe.get("revision")):
         return
     cache = _hf_cache(env)
     cache.mkdir(parents=True, exist_ok=True)
@@ -179,7 +182,9 @@ def _fetch(recipe: dict[str, Any]) -> tuple[str | None, str | None]:
         from huggingface_hub import snapshot_download
 
         snapshot = snapshot_download(
-            recipe["model"], ignore_patterns=list(recipe.get("snapshot_ignore", []))
+            recipe["model"],
+            revision=recipe.get("revision"),
+            ignore_patterns=list(recipe.get("snapshot_ignore", [])),
         )
     if recipe.get("checkpoint_file"):
         from huggingface_hub import hf_hub_download

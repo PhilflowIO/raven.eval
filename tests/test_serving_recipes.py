@@ -68,6 +68,7 @@ def test_engines_are_pinned_exactly() -> None:
 def test_vllm_command_is_the_recipe() -> None:
     argv, env = _build("mistralai/Voxtral-Mini-3B-2507")
     assert argv[:3] == ["/venv/bin/vllm", "serve", "mistralai/Voxtral-Mini-3B-2507"]
+    assert _flag(argv, "--revision") == "3060fe34b35ba5d44202ce9ff3c097642914f8f3"
     assert _flag(argv, "--gpu-memory-utilization") == "0.85"
     assert _flag(argv, "--max-num-seqs") == "16"
     assert _flag(argv, "--dtype") == "bfloat16"
@@ -75,6 +76,36 @@ def test_vllm_command_is_the_recipe() -> None:
     assert _flag(argv, "--host") == "127.0.0.1"
     assert env["RAVEN_SERVING_RECIPE"] == "voxtral-mini-3b-2507"
     assert env["VLLM_MAX_AUDIO_CLIP_FILESIZE_MB"] == "512"
+
+
+def test_every_vllm_and_transformers_recipe_pins_a_full_commit() -> None:
+    for rid, r in RECIPES.items():
+        if r["engine"] in recipe.REVISION_ENGINES:
+            assert re.fullmatch(r"[0-9a-f]{40}", r["revision"]), rid
+        else:
+            assert "revision" not in r, rid
+
+
+def test_granite_serves_the_checkpoint_vllm_028_can_load() -> None:
+    """The 2026-10-21 re-upload (e69efe37) renamed the text-model weights to
+    ``language_model.model.model.*``; vLLM 0.28.0 has no mapper for that and
+    refuses to start. The pin is the checkpoint the September sweep served."""
+    argv, _ = _build("ibm-granite/granite-speech-4.1-2b-plus")
+    assert argv[2] == "ibm-granite/granite-speech-4.1-2b-plus"
+    assert _flag(argv, "--revision") == "1454e6e1e33845ca9280ff65f52cf1141ba6e6e2"
+    assert "vllm[audio]==0.28.0" in (SERVING / "vllm" / "requirements.txt").read_text()
+
+
+@pytest.mark.parametrize("revision", [None, "main", "1454e6e1", "1454E6E1E33845CA9280FF65F52CF1141BA6E6E2"])
+def test_a_vllm_recipe_without_a_full_commit_is_refused(
+    tmp_path: Path, revision: str | None
+) -> None:
+    bad = tmp_path / "r.toml"
+    pin = "" if revision is None else f'revision = "{revision}"\n'
+    bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "vllm"\nweights_gb = 1\n'
+                   f'gpu_mem = 0.5\nchunking = "none"\n{pin}')
+    with pytest.raises(recipe.RecipeError, match="revision"):
+        recipe.load_recipes(bad)
 
 
 def test_host_values_come_from_env_only() -> None:
@@ -98,7 +129,35 @@ def test_phi4_mounts_only_the_speech_lora_from_its_snapshot() -> None:
 def test_whisper_v3_serves_its_filtered_snapshot_under_the_model_id() -> None:
     argv, _ = _build("openai/whisper-large-v3")
     assert argv[2:5] == ["/snap", "--served-model-name", "openai/whisper-large-v3"]
+    assert "--revision" not in argv  # the snapshot itself is the pinned commit
     assert _flag(argv, "--dtype") == "float16"
+
+
+def test_snapshots_are_downloaded_at_the_recipe_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import huggingface_hub
+
+    calls: list[dict[str, object]] = []
+
+    def fake_snapshot_download(repo_id: str, **kw: object) -> str:
+        calls.append({"repo_id": repo_id, **kw})
+        return "/snap"
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
+    for rid in ("openai-whisper-large-v3", "phi-4-multimodal"):
+        assert launch._fetch(RECIPES[rid]) == ("/snap", None)
+        assert calls[-1]["repo_id"] == RECIPES[rid]["model"]
+        assert calls[-1]["revision"] == RECIPES[rid]["revision"]
+
+
+def test_the_disk_check_looks_for_the_pinned_snapshot(tmp_path: Path) -> None:
+    repo = tmp_path / "hub" / "models--a--b" / "snapshots"
+    (repo / ("0" * 40)).mkdir(parents=True)
+    env = {"HF_HOME": str(tmp_path)}
+    assert launch._cached("a/b", env, "0" * 40)
+    assert not launch._cached("a/b", env, "1" * 40)
+    assert launch._cached("a/b", env)
 
 
 def test_nemo_command_and_batching_come_from_the_recipe() -> None:
@@ -118,6 +177,7 @@ def test_the_transformers_stand_in_binds_where_the_engine_would() -> None:
     argv, env = _build("moonshine-ai/moonshine-streaming-small-de", RAVEN_SERVE_PORT="18273")
     assert argv == [PY, str(SERVING / "vllm" / "moonshine_shim.py")]
     assert env["MOONSHINE_PORT"] == "18273" and env["MOONSHINE_GPU_MEM_FRACTION"] == "0.4"
+    assert env["MOONSHINE_REVISION"] == "56473ba32b22b484fdfc7eb03d34c393ff494197"
 
 
 @pytest.mark.parametrize("visible", ["", "0,1", "all"])
@@ -162,6 +222,11 @@ def test_malformed_recipes_are_refused(tmp_path: Path) -> None:
     bad = tmp_path / "r.toml"
     bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "nemo"\nweights_gb = 1\n'
                    'gpu_mem = 0.5\nchunking = "none"\ndtype = "float16"\n')
+    with pytest.raises(recipe.RecipeError, match="do not apply"):
+        recipe.load_recipes(bad)
+    # NeMo's from_pretrained takes no revision: a pin there would be a lie.
+    bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "nemo"\nweights_gb = 1\n'
+                   'gpu_mem = 0.5\nchunking = "none"\nrevision = "' + "0" * 40 + '"\n')
     with pytest.raises(recipe.RecipeError, match="do not apply"):
         recipe.load_recipes(bad)
 

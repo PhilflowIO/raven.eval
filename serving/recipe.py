@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -44,15 +45,23 @@ ENGINE_FILES: dict[str, tuple[str, ...]] = {
 REQUIRED_KEYS = frozenset({"model", "engine", "weights_gb", "gpu_mem", "chunking"})
 ENGINE_KEYS: dict[str, frozenset[str]] = {
     "vllm": frozenset({
-        "dtype", "max_num_seqs", "max_model_len", "trust_remote_code", "args",
-        "snapshot_ignore", "serve_from_snapshot", "lora_modules", "notes",
+        "revision", "dtype", "max_num_seqs", "max_model_len", "trust_remote_code",
+        "args", "snapshot_ignore", "serve_from_snapshot", "lora_modules", "notes",
     }),
-    "transformers": frozenset({"max_num_seqs", "notes"}),
+    "transformers": frozenset({"revision", "max_num_seqs", "notes"}),
     "nemo": frozenset({
         "checkpoint_file", "max_batch", "batch_wait_ms", "batch_max_audio_s",
         "longform", "notes",
     }),
 }
+
+
+#: Engines whose recipes must pin the HF commit they serve. A repo id alone is a
+#: moving target: a re-upload under the same id swaps the weights (and can break
+#: loading) without anything in the recipe changing. The NeMo leg loads through
+#: ``ASRModel.from_pretrained``, which takes no revision, so it is not pinned yet.
+REVISION_ENGINES = frozenset({"vllm", "transformers"})
+_REVISION = re.compile(r"[0-9a-f]{40}")
 
 
 class RecipeError(ValueError):
@@ -77,6 +86,11 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
         unknown = recipe.keys() - REQUIRED_KEYS - ENGINE_KEYS[engine]
         if unknown:
             raise RecipeError(f"recipe {rid!r}: keys {sorted(unknown)} do not apply to {engine}")
+        if engine in REVISION_ENGINES and not _REVISION.fullmatch(str(recipe.get("revision", ""))):
+            raise RecipeError(
+                f"recipe {rid!r}: revision must be the full 40-hex HF commit the "
+                f"recipe serves, got {recipe.get('revision')!r}"
+            )
         model = recipe["model"]
         if model in models:
             raise RecipeError(f"model {model!r} has two recipes: {models[model]!r} and {rid!r}")

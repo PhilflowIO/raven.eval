@@ -8,6 +8,11 @@
 #
 # Common keys
 #   model        HF repo id. The server serves and reports exactly this id.
+#   revision     the full HF commit the weights, tokenizer and processor are loaded
+#                at. Required for vllm and transformers recipes: a repo id alone moves
+#                whenever the publisher re-uploads, and the recipe would then serve
+#                other weights than it was measured with. (NeMo recipes cannot pin
+#                yet: ASRModel.from_pretrained takes no revision.)
 #   engine       vllm | nemo | transformers (a stand-in for a model vLLM cannot load)
 #   weights_gb   download size, for the optional free-disk check (RAVEN_SERVE_MIN_FREE_GB)
 #   gpu_mem      default VRAM budget as a fraction of the card (RAVEN_SERVE_GPU_MEM
@@ -86,6 +91,7 @@ notes = "The repo is not from_pretrained-loadable; the named .nemo checkpoint is
 
 [recipes."cohere-transcribe-03-2026"]
 model = "CohereLabs/cohere-transcribe-03-2026"
+revision = "d552dadc2922ba6f6c1f994f8db904d52dcaf942"
 engine = "vllm"
 weights_gb = 5
 gpu_mem = 0.4
@@ -97,6 +103,7 @@ notes = "Gated repo: accept the license and export HF_TOKEN. vLLM defaults the l
 
 [recipes."granite-speech-4.1-2b-plus"]
 model = "ibm-granite/granite-speech-4.1-2b-plus"
+revision = "1454e6e1e33845ca9280ff65f52cf1141ba6e6e2"
 engine = "vllm"
 weights_gb = 5
 gpu_mem = 0.4
@@ -104,10 +111,11 @@ max_num_seqs = 16
 dtype = "bfloat16"
 max_model_len = 2048
 chunking = "engine: vLLM's transcription endpoint splits audio longer than the model's clip limit"
-notes = "max_model_len 2048 is the model card's own flag for smaller cards; a clip that busts it fails loudly with a context-length error."
+notes = "max_model_len 2048 is the model card's own flag for smaller cards; a clip that busts it fails loudly with a context-length error. revision pins the checkpoint that was main from 2026-06-16 until 2026-10-21, the one the September sweep served. The 2026-10-21 re-upload is a re-trained model (YaRN RoPE, text-model weights renamed to language_model.model.model.*) that vLLM loads only from 0.33.0 on (vllm-project/vllm#63050); measuring it is a new model entry on a newer engine, not a silent swap."
 
 [recipes."phi-4-multimodal"]
 model = "microsoft/Phi-4-multimodal-instruct"
+revision = "93f923e1a7727d1c4f446756212d9d3e8fcc5d81"
 engine = "vllm"
 weights_gb = 13
 gpu_mem = 0.75
@@ -123,6 +131,7 @@ notes = "No vLLM transcription endpoint: the shim sends a chat completion to the
 
 [recipes."moss-transcribe-diarize"]
 model = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
+revision = "10304d926740cf5a5cee05a268086e3265197910"
 engine = "vllm"
 weights_gb = 2
 gpu_mem = 0.4
@@ -135,6 +144,7 @@ notes = "The output carries speaker and timestamp markup ([0.48][S01]text[1.66])
 
 [recipes."qwen3-asr-1.7b"]
 model = "Qwen/Qwen3-ASR-1.7B"
+revision = "7278e1e70fe206f11671096ffdd38061171dd6e5"
 engine = "vllm"
 weights_gb = 5
 gpu_mem = 0.4
@@ -146,6 +156,7 @@ notes = "Short-audio-tuned. vLLM ships the model's config class, so no remote co
 
 [recipes."voxtral-mini-3b-2507"]
 model = "mistralai/Voxtral-Mini-3B-2507"
+revision = "3060fe34b35ba5d44202ce9ff3c097642914f8f3"
 engine = "vllm"
 weights_gb = 10
 gpu_mem = 0.85
@@ -157,6 +168,7 @@ notes = "The model card's serve command. Mistral-format loading reads consolidat
 
 [recipes."primeline-whisper-large-v3-german"]
 model = "primeline/whisper-large-v3-german"
+revision = "361f11341446497fa2acf351bf63780060922a16"
 engine = "vllm"
 weights_gb = 4
 gpu_mem = 0.4
@@ -167,6 +179,7 @@ notes = "float16 = the checkpoint's dtype; a bfloat16 cast would round every wei
 
 [recipes."primeline-whisper-large-v3-turbo-german"]
 model = "primeline/whisper-large-v3-turbo-german"
+revision = "9e7012dad9247f07553aac8a99c4d50ad7c3d36d"
 engine = "vllm"
 weights_gb = 2
 gpu_mem = 0.4
@@ -177,6 +190,7 @@ notes = "bfloat16 = the checkpoint's dtype."
 
 [recipes."openai-whisper-large-v3"]
 model = "openai/whisper-large-v3"
+revision = "06f233fe06e710322aca913c1bc4249a0d71fce1"
 engine = "vllm"
 weights_gb = 4
 gpu_mem = 0.4
@@ -191,6 +205,7 @@ notes = "The repo has no standard safetensors index, so vLLM would download ever
 
 [recipes."moonshine-streaming-small-de"]
 model = "moonshine-ai/moonshine-streaming-small-de"
+revision = "56473ba32b22b484fdfc7eb03d34c393ff494197"
 engine = "transformers"
 weights_gb = 1
 gpu_mem = 0.4
