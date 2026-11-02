@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import re
+import signal
 import sys
-from collections.abc import Iterable, Iterator
+import time
+from collections.abc import AsyncIterator, Iterable, Iterator
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 from raven_eval_core.entities import entity_hit_rate
 from tqdm import tqdm
@@ -25,6 +29,7 @@ from raven_eval_core.run_manifest import (
     same_run_conditions,
 )
 
+from . import throughput
 from .adapters.base import ASRAdapter, ServedModelMismatchError
 from .config import (
     FLOZI_REFERENCE_WER,
@@ -266,6 +271,9 @@ class _PredictionLog:
     ) -> None:
         self.path = out_dir / f"predictions_{_safe(subset)}.jsonl"
         self.progress_path = out_dir / f".progress_{_safe(subset)}.json"
+        # The passes that produced this log. They describe these transcripts, so
+        # they are kept and discarded with them, never apart.
+        self.throughput_path = throughput.throughput_path(out_dir, _safe(subset))
         self._manifest = manifest
         self._fh: Any = None
         self.prior: dict[str, dict[str, Any]] = {}
@@ -284,6 +292,10 @@ class _PredictionLog:
             )
             self.path.unlink(missing_ok=True)
             self.progress_path.unlink(missing_ok=True)
+        if not self.prior:
+            # No transcript of this subset will be resumed, so no earlier pass
+            # describes the work this run's summary will report.
+            self.throughput_path.unlink(missing_ok=True)
 
     def _same_conditions(self) -> bool:
         try:
@@ -356,18 +368,80 @@ class _PredictionLog:
 
 
 @dataclass
+class _PassMeter:
+    """What one lane transcribed in this pass, and over how much wall time.
+
+    The clock starts at the lane's first request, not at the pass: a resumed
+    pass may first skip through hours of clips the log already answers.
+    """
+
+    n_requests: int = 0
+    n_ok: int = 0
+    audio_s: float = 0.0
+    started_mono: float | None = None
+    started_at: datetime | None = None
+
+    def start(self) -> None:
+        if self.started_mono is None:
+            self.started_mono = time.monotonic()
+            self.started_at = datetime.now(timezone.utc)
+
+    def count(self, outcome: _Outcome) -> None:
+        self.n_requests += 1
+        if outcome.error is None:
+            self.n_ok += 1
+            # A failed request transcribed nothing; a fast failure is not speed.
+            self.audio_s += outcome.duration_s
+
+    def record(
+        self, *, concurrency: int, adapter: str, interrupted: bool
+    ) -> dict[str, Any] | None:
+        """The pass line, or None if this lane requested nothing in the pass."""
+        if self.started_mono is None or self.started_at is None or not self.n_requests:
+            return None
+        return {
+            "started_at": _iso(self.started_at),
+            "finished_at": _iso(datetime.now(timezone.utc)),
+            "wall_s": round(time.monotonic() - self.started_mono, 3),
+            "n_requests": self.n_requests,
+            "n_ok": self.n_ok,
+            "audio_s": round(self.audio_s, 3),
+            "concurrency": concurrency,
+            "adapter": adapter,
+            "hardware": throughput.hardware_label(),
+            "interrupted": interrupted,
+        }
+
+
+def _iso(ts: datetime) -> str:
+    return ts.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+@dataclass
 class _Lane:
-    """One model's share of a subset pass: its adapter, pool and log."""
+    """One model's share of a subset pass: its adapter, pool, log and meter."""
 
     key: str
     adapter: ASRAdapter
     concurrency: int
     log: _PredictionLog
+    #: The adapter kind (``ModelSpec.adapter``), recorded with the pass.
+    adapter_name: str = ""
     outcomes: dict[str, _Outcome] = field(default_factory=dict)
+    meter: _PassMeter = field(default_factory=_PassMeter)
     semaphore: asyncio.Semaphore = field(init=False)
 
     def __post_init__(self) -> None:
         self.semaphore = asyncio.Semaphore(self.concurrency)
+
+    def record_pass(self, *, interrupted: bool) -> None:
+        """Append this lane's pass to its subset's throughput log, if it did work."""
+        line = self.meter.record(
+            concurrency=self.concurrency, adapter=self.adapter_name,
+            interrupted=interrupted,
+        )
+        if line is not None:
+            throughput.append_pass(self.log.throughput_path, line)
 
 
 async def _run_pool(samples: Iterable[Sample], lanes: list[_Lane], desc: str) -> list[str]:
@@ -393,9 +467,11 @@ async def _run_pool(samples: Iterable[Sample], lanes: list[_Lane], desc: str) ->
     }
 
     async def _one(lane: _Lane, sample: Sample) -> None:
+        lane.meter.start()
         async with lane.semaphore:
             outcome = await _attempt(lane.adapter, sample)
         lane.log.append(outcome)
+        lane.meter.count(outcome)
         lane.outcomes[outcome.sample_id] = outcome
         pbars[lane.key].update(1)
 
@@ -463,13 +539,25 @@ async def _run_subset_lanes(
     streaming: bool = False,
     revision: str | None = None,
 ) -> dict[str, _RunResult]:
-    """One pass over ``subset`` for every lane; a result per lane key."""
+    """One pass over ``subset`` for every lane; a result per lane key.
+
+    Every lane's pass is appended to its throughput log however the pass ends —
+    a pass cut short (SIGTERM, a served-model mismatch) is flagged
+    ``interrupted`` and still counts what it transcribed.
+    """
     loader, internal_subset = _iter_loader_for_subset(
         subset, streaming=streaming, revision=revision
     )
-    order = await _run_pool(
-        loader.iter_samples(internal_subset, limit=limit), lanes, subset
-    )
+    try:
+        order = await _run_pool(
+            loader.iter_samples(internal_subset, limit=limit), lanes, subset
+        )
+    except BaseException:
+        for lane in lanes:
+            lane.record_pass(interrupted=True)
+        raise
+    for lane in lanes:
+        lane.record_pass(interrupted=False)
     # The tally is final only now that the iterator is exhausted.
     dropped = _dropped_rows(loader)
     return {
@@ -480,6 +568,64 @@ async def _run_subset_lanes(
         )
         for lane in lanes
     }
+
+
+class RunTerminated(Exception):
+    """The run received SIGTERM and stopped after recording its partial pass."""
+
+    def __init__(self, signum: int) -> None:
+        super().__init__(f"terminated by signal {signum}")
+        self.signum = signum
+
+
+@contextlib.asynccontextmanager
+async def _stop_on_sigterm() -> AsyncIterator[None]:
+    """Turn SIGTERM into a cancellation of the run, so its pass is recorded.
+
+    By default SIGTERM ends the process where it stands, and the interrupted
+    pass's throughput is lost with it. Here it cancels the running task: the
+    pool cancels its requests, every lane appends its pass flagged
+    ``interrupted``, adapters close, and :class:`RunTerminated` leaves the event
+    loop. :func:`_exit_like_signal` then ends the process by the same signal,
+    so a supervisor sees exactly the exit it saw before.
+
+    Outside the main thread no handler can be installed and nothing changes.
+    """
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    received: list[int] = []
+
+    def _on_sigterm() -> None:
+        if not received and task is not None:
+            received.append(signal.SIGTERM)
+            logger.warning("SIGTERM: recording the interrupted pass, then exiting")
+            task.cancel()
+
+    try:
+        loop.add_signal_handler(signal.SIGTERM, _on_sigterm)
+        installed = True
+    except (NotImplementedError, RuntimeError, ValueError):
+        installed = False
+    try:
+        yield
+    except asyncio.CancelledError:
+        if not received:
+            raise
+        if task is not None:
+            task.uncancel()
+        raise RunTerminated(received[0]) from None
+    finally:
+        if installed:
+            loop.remove_signal_handler(signal.SIGTERM)
+
+
+def _exit_like_signal(signum: int) -> NoReturn:
+    """End this process by ``signum`` with its default action, as if never caught."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+    raise SystemExit(128 + signum)  # pragma: no cover - only if the kill is ignored
 
 
 async def _close_adapter(adapter: ASRAdapter) -> None:
@@ -585,6 +731,13 @@ def _write_outputs(
 ) -> Path:
     yaml_path = out_dir / "model-index.yaml"
     write_yaml(yaml_path, build_model_index(model_id=spec.model_id, results=entries))
+    results = _compare_against_flozi(spec.model_id, entries)
+    for row in results:
+        # Measured on this machine, not re-derivable from the predictions; null
+        # for a subset whose passes predate throughput recording.
+        row["throughput"] = throughput.summarize(throughput.read_passes(
+            throughput.throughput_path(out_dir, _safe(str(row["subset"])))
+        ))
     summary = {
         "schema_version": SCHEMA_VERSION,
         "model_id": spec.model_id,
@@ -592,7 +745,7 @@ def _write_outputs(
         "adapter": spec.adapter,
         "model_revision": spec.revision,
         "limit_per_subset": limit,
-        "results": _compare_against_flozi(spec.model_id, entries),
+        "results": results,
         "run_manifest": manifest,
     }
     (out_dir / "summary.json").write_text(
@@ -744,42 +897,44 @@ async def run_async(
     manifest = _run_manifest(spec, limit, revision)
     resumable = _resumable(out_dir, manifest)
 
-    try:
-        for subset in subsets:
-            marker = out_dir / f".done_{_safe(subset)}.json"
-            if marker.exists() and not resumable:
-                logger.warning(
-                    "subset %s was finished under a different commit, lockfile "
-                    "or config than this run; re-running it instead of "
-                    "resuming", subset
-                )
-            elif marker.exists():
-                try:
-                    cached = json.loads(marker.read_text(encoding="utf-8"))
-                    entries.append(ResultEntry(**cached))
-                    logger.info(
-                        "subset %s already done (resumed from %s)", subset, marker
-                    )
-                    continue
-                except (json.JSONDecodeError, TypeError) as exc:
+    async with _stop_on_sigterm():
+        try:
+            for subset in subsets:
+                marker = out_dir / f".done_{_safe(subset)}.json"
+                if marker.exists() and not resumable:
                     logger.warning(
-                        "ignoring corrupt marker %s: %s; re-running subset",
-                        marker, exc,
+                        "subset %s was finished under a different commit, lockfile "
+                        "or config than this run; re-running it instead of "
+                        "resuming", subset
                     )
+                elif marker.exists():
+                    try:
+                        cached = json.loads(marker.read_text(encoding="utf-8"))
+                        entries.append(ResultEntry(**cached))
+                        logger.info(
+                            "subset %s already done (resumed from %s)", subset, marker
+                        )
+                        continue
+                    except (json.JSONDecodeError, TypeError) as exc:
+                        logger.warning(
+                            "ignoring corrupt marker %s: %s; re-running subset",
+                            marker, exc,
+                        )
 
-            lane = _Lane(
-                key=model_key, adapter=adapter, concurrency=effective_concurrency,
-                log=_PredictionLog(out_dir, subset, manifest),
-            )
-            results = await _run_subset_lanes(
-                [lane], subset, limit, streaming=streaming, revision=revision,
-            )
-            _record_subset(
-                out_dir=out_dir, spec=spec, result=results[model_key],
-                entries=entries, limit=limit, manifest=manifest, revision=revision,
-            )
-    finally:
-        await _close_adapter(adapter)
+                lane = _Lane(
+                    key=model_key, adapter=adapter, concurrency=effective_concurrency,
+                    log=_PredictionLog(out_dir, subset, manifest),
+                    adapter_name=spec.adapter,
+                )
+                results = await _run_subset_lanes(
+                    [lane], subset, limit, streaming=streaming, revision=revision,
+                )
+                _record_subset(
+                    out_dir=out_dir, spec=spec, result=results[model_key],
+                    entries=entries, limit=limit, manifest=manifest, revision=revision,
+                )
+        finally:
+            await _close_adapter(adapter)
 
     return _write_outputs(out_dir, spec, entries, limit, manifest)
 
@@ -794,18 +949,25 @@ def run(
     concurrency: int | None = None,
     revision: str | None = None,
 ) -> Path:
-    """Sync wrapper around :func:`run_async` — kept for test/ad-hoc callers."""
-    return asyncio.run(
-        run_async(
-            model_key=model_key,
-            subsets=subsets,
-            limit=limit,
-            out_dir=out_dir,
-            streaming=streaming,
-            concurrency=concurrency,
-            revision=revision,
+    """Sync wrapper around :func:`run_async` — the path ``reproduce`` drives.
+
+    On SIGTERM the interrupted pass is recorded, then the process ends by
+    SIGTERM as it would have without the handler.
+    """
+    try:
+        return asyncio.run(
+            run_async(
+                model_key=model_key,
+                subsets=subsets,
+                limit=limit,
+                out_dir=out_dir,
+                streaming=streaming,
+                concurrency=concurrency,
+                revision=revision,
+            )
         )
-    )
+    except RunTerminated as exc:
+        _exit_like_signal(exc.signum)
 
 
 async def run_multi_async(
@@ -886,36 +1048,38 @@ async def run_multi_async(
         (k, e.subset_arg) for k, es in entries.items() for e in es
     }
 
-    try:
-        for key in model_keys:
-            adapters[key] = _make_adapter(specs[key])
-        for subset in subsets:
-            pending = [k for k in model_keys if (k, subset) not in done_pairs]
-            if not pending:
-                logger.info(
-                    "subset %s already done for all requested models; skipping",
-                    subset,
+    async with _stop_on_sigterm():
+        try:
+            for key in model_keys:
+                adapters[key] = _make_adapter(specs[key])
+            for subset in subsets:
+                pending = [k for k in model_keys if (k, subset) not in done_pairs]
+                if not pending:
+                    logger.info(
+                        "subset %s already done for all requested models; skipping",
+                        subset,
+                    )
+                    continue
+                lanes = [
+                    _Lane(
+                        key=k, adapter=adapters[k], concurrency=concurrency[k],
+                        log=_PredictionLog(out_dirs[k], subset, manifests[k]),
+                        adapter_name=specs[k].adapter,
+                    )
+                    for k in pending
+                ]
+                results = await _run_subset_lanes(
+                    lanes, subset, limit, streaming=streaming, revision=revision,
                 )
-                continue
-            lanes = [
-                _Lane(
-                    key=k, adapter=adapters[k], concurrency=concurrency[k],
-                    log=_PredictionLog(out_dirs[k], subset, manifests[k]),
-                )
-                for k in pending
-            ]
-            results = await _run_subset_lanes(
-                lanes, subset, limit, streaming=streaming, revision=revision,
-            )
-            for k in pending:
-                _record_subset(
-                    out_dir=out_dirs[k], spec=specs[k], result=results[k],
-                    entries=entries[k], limit=limit, manifest=manifests[k],
-                    revision=revision,
-                )
-    finally:
-        for adapter in adapters.values():
-            await _close_adapter(adapter)
+                for k in pending:
+                    _record_subset(
+                        out_dir=out_dirs[k], spec=specs[k], result=results[k],
+                        entries=entries[k], limit=limit, manifest=manifests[k],
+                        revision=revision,
+                    )
+        finally:
+            for adapter in adapters.values():
+                await _close_adapter(adapter)
 
     yaml_paths: dict[str, Path] = {}
     for k in model_keys:
@@ -1013,6 +1177,8 @@ def main(argv: list[str] | None = None) -> int:
         except ServedModelMismatchError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 3
+        except RunTerminated as exc:
+            _exit_like_signal(exc.signum)
         for k, p in paths.items():
             print(f"[{k}] wrote {p}")
         return 0
@@ -1037,6 +1203,8 @@ def main(argv: list[str] | None = None) -> int:
     except ServedModelMismatchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
+    except RunTerminated as exc:
+        _exit_like_signal(exc.signum)
     print(f"wrote {yaml_path}")
     return 0
 
