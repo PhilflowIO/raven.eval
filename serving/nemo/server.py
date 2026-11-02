@@ -17,9 +17,12 @@
 """OpenAI-compatible /v1/audio/transcriptions server for arbitrary NeMo ASR models.
 
 Serves whatever `BENCH_MODEL` names — e.g. `nvidia/parakeet-tdt-0.6b-v3` or
-`nvidia/canary-1b-v2` — loaded either from the HF/NGC hub via
-`ASRModel.from_pretrained` or from a local checkpoint via
-`ASRModel.restore_from` when `BENCH_MODEL_PATH` is set.
+`nvidia/canary-1b-v2` — restored from a local .nemo checkpoint via
+`ASRModel.restore_from` when `BENCH_MODEL_PATH` is set (launch.py downloads it
+at the recipe's pinned revision and names that revision in
+`BENCH_MODEL_REVISION`), or, for a server started by hand without one, pulled
+from the hub via `ASRModel.from_pretrained` — which takes no revision, so it
+loads whatever the repo's main is and /health reports `model_revision: null`.
 
 Model families:
   * Parakeet / FastConformer-TDT (EncDecRNNTBPEModel & friends): plain
@@ -82,6 +85,12 @@ BENCH_MODEL = os.environ.get("BENCH_MODEL", "nvidia/parakeet-tdt-0.6b-v3")
 # back to a hub pull, because a bench that silently measured a different
 # artifact than the one named is worse than a bench that failed loudly.
 BENCH_MODEL_PATH = os.environ.get("BENCH_MODEL_PATH", "")
+# The HF commit BENCH_MODEL_PATH was downloaded at (launch.py passes the recipe's
+# pin). Reported only alongside a local checkpoint: a from_pretrained pull
+# follows the repo's main, whatever this says.
+BENCH_MODEL_REVISION = (
+    (os.environ.get("BENCH_MODEL_REVISION") or None) if BENCH_MODEL_PATH else None
+)
 DEVICE = os.environ.get("BENCH_DEVICE", "cuda")
 GPU_MEM_FRACTION = float(os.environ.get("BENCH_GPU_MEM_FRACTION", "0.5"))
 # Long-form local attention for the Parakeet family (ignored for Canary, whose
@@ -259,8 +268,9 @@ def _load_model() -> None:
             _load_seconds = time.monotonic() - t0
             _model = m
             logger.info(
-                "loaded %s (%s, canary=%s) in %.1fs",
-                BENCH_MODEL, type(m).__name__, _is_canary, _load_seconds,
+                "loaded %s@%s (%s, canary=%s) in %.1fs",
+                BENCH_MODEL, BENCH_MODEL_REVISION or "main", type(m).__name__,
+                _is_canary, _load_seconds,
             )
         except Exception as exc:  # noqa: BLE001 — surface GPU/NeMo errors via /health
             _load_error = f"{type(exc).__name__}: {exc}"
@@ -484,6 +494,7 @@ def health() -> JSONResponse:
             "model_load_seconds": round(_load_seconds, 2) if _load_seconds else None,
             "model": BENCH_MODEL,
             "model_path": BENCH_MODEL_PATH or None,
+            "model_revision": BENCH_MODEL_REVISION,
             "engine": _engine_version(),
             "recipe": RECIPE,
             "canary": _is_canary,

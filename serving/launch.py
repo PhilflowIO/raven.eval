@@ -73,8 +73,9 @@ def build(
     """``(argv, extra_env)`` for one recipe; pure, so it is testable without an engine.
 
     ``snapshot`` is the local snapshot path for recipes that serve from one or
-    mount LoRA modules out of one; ``checkpoint`` the local .nemo path for recipes with
-    ``checkpoint_file``. Both are resolved by :func:`_fetch` before a real launch.
+    mount LoRA modules out of one; ``checkpoint`` the local .nemo path (every NeMo
+    recipe names its ``checkpoint_file``). Both are resolved by :func:`_fetch`
+    before a real launch.
     """
     host = _knob(env, "RAVEN_SERVE_HOST", DEFAULT_HOST)
     port = _knob(env, "RAVEN_SERVE_PORT", DEFAULT_PORT)
@@ -85,7 +86,10 @@ def build(
     if engine == "nemo":
         extra.update({
             "BENCH_MODEL": recipe["model"],
+            # The .nemo downloaded at the recipe's revision (_fetch); the server
+            # restores exactly this file and never pulls from the hub itself.
             "BENCH_MODEL_PATH": checkpoint or "",
+            "BENCH_MODEL_REVISION": recipe["revision"],
             "BENCH_GPU_MEM_FRACTION": gpu_mem,
             "BENCH_LONGFORM": "true" if recipe.get("longform", True) else "false",
             "NEMO_MAX_BATCH": str(recipe.get("max_batch", 16)),
@@ -189,7 +193,9 @@ def _fetch(recipe: dict[str, Any]) -> tuple[str | None, str | None]:
     if recipe.get("checkpoint_file"):
         from huggingface_hub import hf_hub_download
 
-        checkpoint = hf_hub_download(recipe["model"], recipe["checkpoint_file"])
+        checkpoint = hf_hub_download(
+            recipe["model"], recipe["checkpoint_file"], revision=recipe["revision"]
+        )
     return snapshot, checkpoint
 
 
