@@ -4,21 +4,23 @@
 #
 # NeMo is exact: nemotron-3.5-asr-streaming needs the 3.0 line, and server.py
 # works around 3.0.0 behaviour (the offline transcribe path cannot force a
-# locale for that model). torch is resolved by NeMo; the server reports both
-# versions in x_raven.engine, so a different torch shows up in every result.
+# locale for that model). Every other package is pinned too: an open pin lets a
+# rebuild serve different kernels under the same recipe hash. The versions are
+# the ones the first full self-hosted run was measured with; the server still
+# reports torch + NeMo in x_raven.engine.
 #
 # numba >= 0.61 must be resolved BEFORE nemo_toolkit: otherwise NeMo[asr]
 # backtracks resampy to numba 0.53.1, which caps Python below 3.10 and breaks a
 # Python 3.12 environment.
 #
 #   uv venv --python 3.12 <venv>
-#   uv pip install --python <venv>/bin/python "numba>=0.61.0"
+#   uv pip install --python <venv>/bin/python "numba==0.67.0"
 #   uv pip install --python <venv>/bin/python -r serving/nemo/requirements.txt
-numba>=0.61.0
+numba==0.67.0
 nemo_toolkit[asr]==3.0.0
-torch
+torch==2.13.0
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
-huggingface_hub>=0.27.1
-soundfile
+huggingface_hub==1.29.0
+soundfile==0.14.0
