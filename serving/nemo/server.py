@@ -122,9 +122,40 @@ BATCH_MAX_AUDIO_S = float(os.environ.get("NEMO_BATCH_MAX_AUDIO_S", "40"))
 # to looking its model up. None when this file runs outside a raven.eval
 # checkout — the response then says so instead of guessing.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from recipe import decoding as _recipe_decoding  # noqa: E402
 from recipe import identity as _recipe_identity  # noqa: E402
 
 RECIPE = _recipe_identity(os.environ.get("RAVEN_SERVING_RECIPE") or BENCH_MODEL)
+# The recipe's decoding table (x_raven.decoding). This server never changes a
+# checkpoint's decoding; it checks the restored model against the table and
+# refuses to serve when they differ (decoding_mismatch), so what a response
+# reports is what decoded it.
+DECODING = _recipe_decoding(os.environ.get("RAVEN_SERVING_RECIPE") or BENCH_MODEL)
+
+
+def decoding_mismatch(cfg, expected: dict | None) -> str:
+    """How a checkpoint's ``cfg.decoding`` differs from the recipe table, or ``""``.
+
+    ``cfg`` is the model's decoding config (OmegaConf or dict). Transducers are
+    read at ``greedy.max_symbols``, Canary at ``beam.{beam_size,len_pen,
+    max_generation_delta}`` — where NeMo keeps them.
+    """
+    if expected is None:
+        return ""
+    get = (lambda node, key: node.get(key) if hasattr(node, "get") else None)
+    strategy = get(cfg, "strategy")
+    if strategy != expected.get("strategy"):
+        return f"strategy {strategy!r} != recipe {expected.get('strategy')!r}"
+    where = {"max_symbols": "greedy", "beam_size": "beam", "len_pen": "beam",
+             "max_generation_delta": "beam"}
+    for key, section in where.items():
+        if key not in expected:
+            continue
+        node = get(cfg, section)
+        got = get(node, key) if node is not None else None
+        if got is None or float(got) != float(expected[key]):
+            return f"{section}.{key} {got!r} != recipe {expected[key]!r}"
+    return ""
 BATCHING = {"max_batch": MAX_BATCH, "wait_ms": BATCH_WAIT_MS, "max_audio_s": BATCH_MAX_AUDIO_S}
 _engine: str | None = None
 
@@ -237,6 +268,10 @@ def _load_model() -> None:
             else:
                 m = nemo_asr.models.ASRModel.from_pretrained(
                     model_name=BENCH_MODEL, map_location=DEVICE
+                )
+            if problem := decoding_mismatch(m.cfg.get("decoding"), DECODING):
+                raise RuntimeError(
+                    f"checkpoint decoding differs from its recipe: {problem}"
                 )
             _is_canary = _model_is_canary(m)
             if _is_nemotron:
@@ -750,6 +785,7 @@ def _respond(
             "engine": _engine_version(),
             "recipe": RECIPE,
             "batching": BATCHING,
+            "decoding": DECODING,
         },
     }
     if timestamps:

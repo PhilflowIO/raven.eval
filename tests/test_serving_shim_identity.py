@@ -24,9 +24,11 @@ SERVING = Path(__file__).resolve().parents[1] / "serving"
 SHIM = SERVING / "vllm" / "shim.py"
 
 
-def _upstream(served: list[str], calls: list[str]):
+def _upstream(served: list[str], calls: list[str], bodies: list[bytes] | None = None):
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request.url.path)
+        if bodies is not None and request.method == "POST":
+            bodies.append(request.read())
         if request.url.path == "/v1/models":
             return httpx.Response(200, json={"data": [{"id": m} for m in served]})
         if request.url.path == "/health":
@@ -147,8 +149,53 @@ def test_the_transformers_stand_in_reports_its_own_engine(load_shim, monkeypatch
     assert x["batching"] == {"max_num_seqs": 1}
 
 
-def test_an_unknown_model_reports_no_recipe(load_shim):
-    mod, _ = load_shim(["someone/unlisted-model"])
-    x = _post(mod, "someone/unlisted-model").json()["x_raven"]
-    assert x["engine"] == "vllm 0.28.0"
-    assert x["recipe"] is None and x["batching"] is None
+def test_an_unknown_model_is_refused_rather_than_decoded_under_engine_defaults(load_shim):
+    """No recipe, no max_tokens: the engine default would decide loop cost again."""
+    mod, calls = load_shim(["someone/unlisted-model"])
+    r = _post(mod, "someone/unlisted-model")
+    assert r.status_code == 503 and "decoding.max_tokens" in r.text
+    assert "/v1/audio/transcriptions" not in calls
+
+
+def test_reports_the_recipe_decoding(load_shim):
+    mod, _ = load_shim(["Qwen/Qwen3-ASR-1.7B"])
+    x = _post(mod, "Qwen/Qwen3-ASR-1.7B").json()["x_raven"]
+    assert x["decoding"] == {"mode": "greedy", "max_tokens": 1024}
+
+
+def _load_recording(load_shim, served: str):
+    mod, calls = load_shim([served])
+    bodies: list[bytes] = []
+    mod._http = httpx.AsyncClient(transport=_upstream([served], calls, bodies))
+    return mod, bodies
+
+
+def test_passthrough_pins_greedy_and_the_recipe_cap_upstream(load_shim):
+    mod, bodies = _load_recording(load_shim, "Qwen/Qwen3-ASR-1.7B")
+    assert _post(mod, "Qwen/Qwen3-ASR-1.7B").status_code == 200
+    (body,) = bodies
+    for name, value in (("temperature", b"0.0"), ("repetition_penalty", b"1.0"),
+                        ("max_completion_tokens", b"1024")):
+        assert f'name="{name}"'.encode() in body
+        assert value in body.split(f'name="{name}"'.encode())[1][:40]
+
+
+def test_chat_translate_pins_greedy_and_the_recipe_cap_upstream(load_shim):
+    import json as _json
+
+    mod, bodies = _load_recording(load_shim, "microsoft/Phi-4-multimodal-instruct")
+    assert _post(mod, "microsoft/Phi-4-multimodal-instruct").status_code == 200
+    payload = _json.loads(bodies[0])
+    assert (payload["temperature"], payload["repetition_penalty"], payload["max_tokens"]) == (
+        0.0, 1.0, 1024)
+
+
+def test_a_sampling_temperature_is_refused(load_shim):
+    mod, calls = load_shim(["Qwen/Qwen3-ASR-1.7B"])
+    r = TestClient(mod.app).post(
+        "/v1/audio/transcriptions",
+        files={"file": ("a.wav", b"RIFF....", "audio/wav")},
+        data={"model": "Qwen/Qwen3-ASR-1.7B", "temperature": "0.7"},
+    )
+    assert r.status_code == 400
+    assert "/v1/audio/transcriptions" not in calls

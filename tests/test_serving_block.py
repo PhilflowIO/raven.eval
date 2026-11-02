@@ -31,6 +31,7 @@ BLOCK_A = {
     "engine": "vllm 0.28.0",
     "recipe": {"id": "primeline-whisper-large-v3-german", "sha256": "a" * 64},
     "batching": {"max_num_seqs": 16},
+    "decoding": {"mode": "greedy", "max_tokens": 1024},
 }
 BLOCK_B = {**BLOCK_A, "engine": "vllm 0.29.0"}
 
@@ -212,3 +213,19 @@ def test_promote_carries_the_block_into_the_artifact(
     assert row["serving"] == BLOCK_A
     tp = [json.loads(x) for x in (dest / f"throughput_{SUBSET}.jsonl").read_text().splitlines()]
     assert tp[0]["serving"] == BLOCK_A
+
+
+def test_a_block_recorded_before_decoding_was_reported_is_still_well_formed() -> None:
+    legacy = {k: v for k, v in BLOCK_A.items() if k != "decoding"}
+    assert serving.serving_problem({"serving": legacy}) == ""
+    assert serving.serving_problem({"serving": {**BLOCK_A, "decoding": "greedy"}}) != ""
+
+
+def test_a_change_of_output_cap_is_a_change_of_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = {**BLOCK_A, "decoding": {"mode": "greedy", "max_tokens": 4096}}
+    samples = _samples(4)
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _Server([BLOCK_A, other])))
+    with pytest.raises(serving.ServingChangedError, match="changed mid-run"):
+        _run(tmp_path)

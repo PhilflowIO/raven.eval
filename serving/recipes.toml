@@ -21,6 +21,25 @@
 #   chunking     what happens to audio longer than the model takes in one pass, and
 #                where. The harness sends one utterance per request and never chunks.
 #   notes        why a value is what it is, where that is not obvious
+#   decoding     how the model decodes and how long its output may get (recipe.py,
+#                DECODING_KEYS). mode is "greedy" everywhere. Servers report the
+#                table as x_raven.decoding; every run records it.
+#
+# Output length. vLLM and the transformers stand-in get max_tokens = 1024. The
+# longest reference in any WER dataset here is 686 UTF-8 bytes (voxpopuli-de);
+# every tokenizer these models use spends at least one byte per token, so no
+# faithful transcript of any utterance needs more than 686 tokens, MOSS's
+# timestamp and speaker markup included (its longest non-looping answer on the
+# 2026-11 sweep: 652 characters). In Phi-4's tokenizer that reference is 145
+# tokens, so 1024 is ~1.5x the byte bound and ~7x the real length. What the cap
+# does decide is how much a looping answer costs: until now it was the engine's
+# default (max_model_len, a generation_config max_new_tokens, or the shim's 4096
+# for Phi-4) and differed from model to model by up to 30x.
+# vLLM takes the smallest of max_tokens, max_model_len and the model's own
+# generation_config limit, so for Whisper (max_length 448) 448 still applies.
+# vLLM splits audio longer than a model's clip limit and the cap holds per piece.
+# NeMo models generate under their checkpoint's decoding config, which the server
+# checks against the table and never changes.
 #
 # vllm keys: dtype, max_num_seqs (default; RAVEN_SERVE_MAX_NUM_SEQS overrides),
 #   max_model_len, trust_remote_code, args (further `vllm serve` flags, verbatim),
@@ -35,7 +54,8 @@
 # Every vLLM model is reached through vllm/shim.py, which forwards to vLLM's own
 # /v1/audio/transcriptions, except Phi-4-multimodal, whose vLLM class has no
 # transcription endpoint: the shim turns the request into a chat completion for
-# the speech LoRA. Decoding is greedy everywhere (temperature 0, sent by the shim).
+# the speech LoRA. Decoding is greedy everywhere: the shim sends temperature 0,
+# repetition_penalty 1.0 and the recipe's max_tokens with every request.
 
 # ── NeMo ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +63,7 @@
 model = "nvidia/parakeet-tdt-0.6b-v3"
 revision = "541d1f99c6b0c3cd0b11a95167540bb8edefd82b"
 engine = "nemo"
+decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }
 checkpoint_file = "parakeet-tdt-0.6b-v3.nemo"
 weights_gb = 3
 gpu_mem = 0.5
@@ -57,6 +78,7 @@ notes = "Auto-detects the language and cannot be forced to German; responses car
 model = "nvidia/canary-1b-v2"
 revision = "d455706339a6b32e1aa40f82c713a482a0c938e2"
 engine = "nemo"
+decoding = { mode = "greedy", strategy = "beam", beam_size = 1, len_pen = 0.0, max_generation_delta = 50 }
 checkpoint_file = "canary-1b-v2.nemo"
 weights_gb = 4
 gpu_mem = 0.5
@@ -71,6 +93,7 @@ notes = "Forced to German with source_lang = target_lang = de, pnc = yes."
 model = "nvidia/nemotron-3.5-asr-streaming-0.6b"
 revision = "ea30d66debe3740a08b573244286791d423d6b3e"
 engine = "nemo"
+decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }
 checkpoint_file = "nemotron-3.5-asr-streaming-0.6b.nemo"
 weights_gb = 3
 gpu_mem = 0.5
@@ -85,6 +108,7 @@ notes = "A transducer (library_name nemo), not servable by vLLM. Prompt mode for
 model = "primeline/parakeet-primeline"
 revision = "3f1a9bcb611dfeda53fe74fe5f1a3d5701e8023e"
 engine = "nemo"
+decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }
 checkpoint_file = "2_95_WER.nemo"
 weights_gb = 3
 gpu_mem = 0.5
@@ -101,6 +125,7 @@ notes = "The repo is not from_pretrained-loadable; the named .nemo checkpoint is
 model = "CohereLabs/cohere-transcribe-03-2026"
 revision = "d552dadc2922ba6f6c1f994f8db904d52dcaf942"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 5
 gpu_mem = 0.4
 max_num_seqs = 16
@@ -113,6 +138,7 @@ notes = "Gated repo: accept the license and export HF_TOKEN. vLLM defaults the l
 model = "ibm-granite/granite-speech-4.1-2b-plus"
 revision = "e69efe37f97b6283c61f5a8dadda2b3eb67765d6"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 5
 gpu_mem = 0.4
 max_num_seqs = 16
@@ -125,6 +151,7 @@ notes = "max_model_len 2048 is the model card's own flag for smaller cards; a cl
 model = "microsoft/Phi-4-multimodal-instruct"
 revision = "93f923e1a7727d1c4f446756212d9d3e8fcc5d81"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 13
 gpu_mem = 0.75
 max_num_seqs = 16
@@ -141,6 +168,7 @@ notes = "No vLLM transcription endpoint: the shim sends a chat completion to the
 model = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
 revision = "10304d926740cf5a5cee05a268086e3265197910"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 2
 gpu_mem = 0.4
 max_num_seqs = 2
@@ -154,6 +182,7 @@ notes = "The output carries speaker and timestamp markup ([0.48][S01]text[1.66])
 model = "Qwen/Qwen3-ASR-1.7B"
 revision = "7278e1e70fe206f11671096ffdd38061171dd6e5"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 5
 gpu_mem = 0.4
 max_num_seqs = 16
@@ -166,6 +195,7 @@ notes = "Short-audio-tuned. vLLM ships the model's config class, so no remote co
 model = "mistralai/Voxtral-Mini-3B-2507"
 revision = "3060fe34b35ba5d44202ce9ff3c097642914f8f3"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 10
 gpu_mem = 0.85
 max_num_seqs = 16
@@ -178,6 +208,7 @@ notes = "The model card's serve command. Mistral-format loading reads consolidat
 model = "primeline/whisper-large-v3-german"
 revision = "361f11341446497fa2acf351bf63780060922a16"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 4
 gpu_mem = 0.4
 max_num_seqs = 16
@@ -189,6 +220,7 @@ notes = "float16 = the checkpoint's dtype; a bfloat16 cast would round every wei
 model = "primeline/whisper-large-v3-turbo-german"
 revision = "9e7012dad9247f07553aac8a99c4d50ad7c3d36d"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 2
 gpu_mem = 0.4
 max_num_seqs = 16
@@ -200,6 +232,7 @@ notes = "bfloat16 = the checkpoint's dtype."
 model = "openai/whisper-large-v3"
 revision = "06f233fe06e710322aca913c1bc4249a0d71fce1"
 engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 4
 gpu_mem = 0.4
 max_num_seqs = 16
@@ -215,8 +248,9 @@ notes = "The repo has no standard safetensors index, so vLLM would download ever
 model = "moonshine-ai/moonshine-streaming-small-de"
 revision = "56473ba32b22b484fdfc7eb03d34c393ff494197"
 engine = "transformers"
+decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 1
 gpu_mem = 0.4
 max_num_seqs = 1
-chunking = "none: the whole clip in one generate(); max_new_tokens capped by the model card's formula"
+chunking = "none: the whole clip in one generate(); max_new_tokens is the smaller of the model card's formula (6.5 tokens per second of audio + 2) and decoding.max_tokens"
 notes = "Encoder-decoder outside Whisper; vLLM has no class for it. vllm/moonshine_shim.py serves it with transformers, attention_mask always passed, one generate() at a time."

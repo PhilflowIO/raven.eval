@@ -115,6 +115,13 @@ def test_granite_serves_the_retrained_checkpoint_on_an_engine_that_maps_it() -> 
     assert tuple(int(x) for x in vllm.split(".")[:2]) >= (0, 33), vllm
 
 
+_DECODING = {
+    "vllm": 'decoding = { mode = "greedy", max_tokens = 1024 }',
+    "transformers": 'decoding = { mode = "greedy", max_tokens = 1024 }',
+    "nemo": 'decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }',
+}
+
+
 @pytest.mark.parametrize("engine", ["vllm", "transformers", "nemo"])
 @pytest.mark.parametrize("revision", [None, "main", "1454e6e1", "1454E6E1E33845CA9280FF65F52CF1141BA6E6E2"])
 def test_a_recipe_without_a_full_commit_is_refused(
@@ -124,7 +131,7 @@ def test_a_recipe_without_a_full_commit_is_refused(
     pin = "" if revision is None else f'revision = "{revision}"\n'
     ckpt = 'checkpoint_file = "m.nemo"\n' if engine == "nemo" else ""
     bad.write_text(f'[recipes."x"]\nmodel = "a/b"\nengine = "{engine}"\nweights_gb = 1\n'
-                   f'gpu_mem = 0.5\nchunking = "none"\n{pin}{ckpt}')
+                   f'gpu_mem = 0.5\nchunking = "none"\n{_DECODING[engine]}\n{pin}{ckpt}')
     with pytest.raises(recipe.RecipeError, match="revision"):
         recipe.load_recipes(bad)
 
@@ -279,7 +286,8 @@ def test_the_hash_moves_with_the_recipe_and_its_files_only(
 def test_malformed_recipes_are_refused(tmp_path: Path) -> None:
     bad = tmp_path / "r.toml"
     nemo = ('[recipes."x"]\nmodel = "a/b"\nengine = "nemo"\nweights_gb = 1\n'
-            'gpu_mem = 0.5\nchunking = "none"\nrevision = "' + "0" * 40 + '"\n')
+            'gpu_mem = 0.5\nchunking = "none"\nrevision = "' + "0" * 40 + '"\n'
+            + _DECODING["nemo"] + "\n")
     bad.write_text(nemo + 'checkpoint_file = "m.nemo"\ndtype = "float16"\n')
     with pytest.raises(recipe.RecipeError, match="do not apply"):
         recipe.load_recipes(bad)
@@ -300,3 +308,35 @@ def test_nothing_private_lands_in_serving() -> None:
         if path.is_file() and path.suffix in {".py", ".toml", ".txt", ".md", ".sh"}:
             hits = pattern.findall(path.read_text(encoding="utf-8"))
             assert not hits, f"{path.relative_to(SERVING)}: {hits}"
+
+
+def test_every_recipe_decodes_greedily_and_bounds_its_output() -> None:
+    """Issue #62: decoding mode and output length are part of every recipe."""
+    for rid, r in recipe.load_recipes().items():
+        dec = r["decoding"]
+        assert dec["mode"] == "greedy", rid
+        if r["engine"] in ("vllm", "transformers"):
+            assert dec["max_tokens"] == 1024, rid
+        else:
+            assert dec["strategy"] in ("greedy_batch", "beam"), rid
+            if dec["strategy"] == "beam":
+                assert dec["beam_size"] == 1, rid  # beam of one = greedy
+            else:
+                assert dec["max_symbols"] > 0, rid
+
+
+@pytest.mark.parametrize(
+    ("decoding", "match"),
+    [
+        ('decoding = { mode = "sample", max_tokens = 1024 }', "mode"),
+        ('decoding = { mode = "greedy" }', "max_tokens"),
+        ('decoding = { mode = "greedy", max_tokens = 0 }', "positive"),
+        ('decoding = { mode = "greedy", max_tokens = 1024, top_k = 5 }', "do not apply"),
+    ],
+)
+def test_a_malformed_decoding_table_is_refused(tmp_path: Path, decoding: str, match: str) -> None:
+    bad = tmp_path / "r.toml"
+    bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "vllm"\nweights_gb = 1\n'
+                   f'gpu_mem = 0.5\nchunking = "none"\nrevision = "{"a" * 40}"\n{decoding}\n')
+    with pytest.raises(recipe.RecipeError, match=match):
+        recipe.load_recipes(bad)
