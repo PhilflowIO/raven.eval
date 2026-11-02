@@ -28,6 +28,10 @@ Environment (everything a host decides, nothing a model decides):
     RAVEN_SERVE_MIN_FREE_GB   if set, refuse to start a download unless the HF
                               cache keeps this much free beyond the weights
     HF_HOME, HF_TOKEN         as usual for huggingface_hub
+
+Set by the recipe, never by the host: VLLM_PLUGINS (the recipe's ``vllm_plugins``,
+empty for all others) and, for a quantized scheme, the kernel environment
+(``recipe.VLLM_SCHEME_ENV``).
 """
 
 from __future__ import annotations
@@ -152,6 +156,11 @@ def build(
     extra["VLLM_MAX_AUDIO_CLIP_FILESIZE_MB"] = env.get(
         "VLLM_MAX_AUDIO_CLIP_FILESIZE_MB", VLLM_MAX_AUDIO_MB
     )
+    # Exactly the plugins the recipe names (recipe.VLLM_PLUGINS); "" loads none.
+    # Unset, vLLM would load every plugin installed in the environment, so a
+    # plugin installed for one model would patch every other model's engine.
+    # It overrides the host's value on purpose.
+    extra["VLLM_PLUGINS"] = ",".join(recipe.get("vllm_plugins", []))
     return argv, extra
 
 

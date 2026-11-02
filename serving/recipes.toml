@@ -85,7 +85,9 @@
 #   never --dtype or --tensor-parallel-size, which precision owns),
 #   snapshot_ignore (patterns left out of the snapshot download), serve_from_snapshot
 #   (serve the local snapshot under the model id instead of letting vLLM download),
-#   lora_modules (name = directory inside the snapshot)
+#   lora_modules (name = directory inside the snapshot), vllm_plugins (the vLLM
+#   plugins this model needs, recipe.VLLM_PLUGINS; the launcher sets VLLM_PLUGINS to
+#   exactly this list, empty for every other model)
 # transformers keys: model_class (required: the transformers class that loads the
 #   model; vllm/transformers_server.py serves only the classes it lists), max_num_seqs
 # nemo keys: checkpoint_file (required: the .nemo inside the HF repo; the launcher

@@ -35,6 +35,23 @@
 #
 # soundfile comes with vllm[audio]; fastapi, uvicorn and httpx come with vllm
 # too, but the shim imports them directly, so they are named here.
+#
+# NeMo Speech is installed here as a vLLM plugin, not as a second engine: its
+# entry point `nemo_speechlm` (vllm.general_plugins) registers the SpeechLM
+# architectures (Nemotron3_5TranscribeForConditionalGeneration) with this same
+# vLLM. A recipe loads it only when it names it (`vllm_plugins`); launch.py sets
+# VLLM_PLUGINS for every vLLM recipe, so all other models start with no plugin.
+# Pinned to a fork commit, not a release: NeMo pins its `vllm` extra to 0.32.0,
+# and on 0.33.0 the plugin aborted `vllm serve` because vLLM moved the chat
+# parser it adapts (runtime_compat.py vs vllm/renderers/chat_utils/
+# chat_message.py). The fork commit is NeMo main e5d79d5a plus that one fix,
+# proposed upstream as https://github.com/NVIDIA-NeMo/Speech/pull/16505; move
+# back to an NVIDIA-NeMo/Speech commit or release once it is merged (#78). The
+# `vllm` extra is NOT installed (it would pull vllm 0.32.0); peft is the rest of
+# it. Resolved with the lines above (uv pip compile, Python 3.12, x86_64 Linux,
+# 2026-11-02): vllm, torch, transformers, flashinfer, librosa and numpy stay
+# exactly as without NeMo; only fsspec (2025.12.0) and packaging (24.2) resolve
+# lower.
 --extra-index-url https://flashinfer.ai/whl/cu130
 --extra-index-url https://flashinfer.ai/whl
 vllm[audio]==0.33.0
@@ -47,3 +64,5 @@ fastapi>=0.115
 uvicorn>=0.30
 httpx>=0.27
 python-multipart>=0.0.9
+nemo_toolkit[asr] @ git+https://github.com/PhilflowIO/Speech.git@821e036741a60332ca90b160243d88d13a90ec84
+peft==0.21.2

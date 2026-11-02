@@ -683,3 +683,32 @@ def test_every_recipe_reports_its_precision() -> None:
     assert p == {"weights": "fp16", "activations": "fp16", "scheme": "none",
                  "tensor_parallel": 1, "checkpoint": {"source": "published", "dtype": "fp16"}}
     assert recipe.precision("no/such-model") is None
+
+
+def test_every_vllm_engine_loads_exactly_the_plugins_its_recipe_names() -> None:
+    """NeMo Speech is installed in the vLLM environment as a plugin for the
+    Nemotron-Transcribe models. vLLM loads every installed plugin unless
+    VLLM_PLUGINS says otherwise, so the launcher sets it for every vLLM recipe:
+    empty for all models that name none."""
+    for rid, r in RECIPES.items():
+        if r["engine"] != "vllm":
+            continue
+        _, env = launch.build(r, rid, {"VLLM_PLUGINS": "nemo_speechlm"}, python=PY)
+        assert env["VLLM_PLUGINS"] == ",".join(r.get("vllm_plugins", [])), rid
+
+
+def test_a_recipe_names_only_installed_plugins(tmp_path: Path) -> None:
+    ckpt = ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+            f'tensor_parallel = 1, checkpoint = {_CKPT} }}')
+    ok = recipe.load_recipes(_with_precision(tmp_path, ckpt, args='vllm_plugins = ["nemo_speechlm"]\n'))
+    _, env = launch.build(ok["x"], "x", {}, python=PY)
+    assert env["VLLM_PLUGINS"] == "nemo_speechlm"
+    for bad, why in (('["nemo_speechlm", "nemo_speechlm"]', "twice"),
+                     ('["some_plugin"]', "not installed"),
+                     ('"nemo_speechlm"', "list")):
+        with pytest.raises(recipe.RecipeError, match=why):
+            recipe.load_recipes(_with_precision(tmp_path, ckpt, args=f"vllm_plugins = {bad}\n"))
+    with pytest.raises(recipe.RecipeError, match="do not apply"):
+        recipe.load_recipes(_with_precision(
+            tmp_path, ckpt, engine="nemo",
+            args='vllm_plugins = ["nemo_speechlm"]\n'))

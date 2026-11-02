@@ -286,6 +286,17 @@ def require_key(authorization: str = Header(default="")) -> None:
 #       added otherwise — no language: the card says the model "requires no
 #       explicit language setting". The answer is a JSON list of speaker turns;
 #       the harness parses it (raven_asr.output_formats "vibevoice-json").
+#   * nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B (and builds of it) — family
+#       "nemotron-transcribe". Served by NeMo Speech's vLLM plugin
+#       (vllm_plugins = ["nemo_speechlm"]): a chat model with no transcription
+#       endpoint, no SupportsTranscription and no language parameter. The request
+#       is the card's own: one user message, the instruction text plus the audio
+#       as an audio_url data URL, no system message, reasoning off
+#       (chat_template_kwargs enable_thinking = false). The instruction is the
+#       card's "Exact ASR Benchmark Prompts" verbatim-transcription prompt, which
+#       its multilingual Common Voice / MLS numbers use; it says "Language: as
+#       spoken", so the model is NOT forced to German (a language= field is not
+#       forwarded; the card documents no language-forcing wording).
 # --------------------------------------------------------------------------
 
 # UNVERIFIED: "Transcribe the audio clip into text." is the ASR instruction
@@ -297,10 +308,18 @@ PHI4_DEFAULT_PROMPT = os.environ.get(
     "SHIM_PROMPT", "Transcribe the audio clip into text."
 )
 
+#: The card's verbatim ASR benchmark instruction (README "Exact ASR Benchmark
+#: Prompts", "Verbatim Transcription"), word for word.
+NEMOTRON_TRANSCRIBE_PROMPT = (
+    "Audio transcription. Language: as spoken. Wording: verbatim, including fillers "
+    "and repetitions. Formatting: punctuation and capitalization. Output: transcript only."
+)
+
 FAMILY_BY_PREFIX: list[tuple[str, str]] = [
     ("phi-4-multimodal", "phi4mm"),
     ("phi4", "phi4mm"),
     ("vibevoice", "vibevoice"),
+    ("nemotron-3.5-transcribe", "nemotron-transcribe"),
     # granite / cohere / moss fall through to "passthrough" (the default).
 ]
 
@@ -366,7 +385,40 @@ def _build_vibevoice(
     }
 
 
-CHAT_BUILDERS = {"phi4mm": _build_phi4mm, "vibevoice": _build_vibevoice}
+def _build_nemotron_transcribe(
+    *,
+    model: str,
+    audio_b64: str,
+    audio_format: str,
+    language: str,
+    user_prompt: str,
+    max_tokens: int,
+) -> dict[str, Any]:
+    del language  # "Language: as spoken"; see the routing table above
+    return {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt or NEMOTRON_TRANSCRIBE_PROMPT},
+                    {
+                        "type": "audio_url",
+                        "audio_url": {"url": f"data:audio/{audio_format};base64,{audio_b64}"},
+                    },
+                ],
+            }
+        ],
+        "chat_template_kwargs": {"enable_thinking": False},
+        **_greedy(max_tokens, "max_tokens"),
+    }
+
+
+CHAT_BUILDERS = {
+    "phi4mm": _build_phi4mm,
+    "vibevoice": _build_vibevoice,
+    "nemotron-transcribe": _build_nemotron_transcribe,
+}
 
 
 def _greedy(max_tokens: int, length_field: str) -> dict[str, Any]:
