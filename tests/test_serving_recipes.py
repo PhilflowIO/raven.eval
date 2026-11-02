@@ -60,9 +60,26 @@ def test_every_recipe_says_how_long_audio_is_handled() -> None:
 def test_engines_are_pinned_exactly() -> None:
     vllm_req = (SERVING / "vllm" / "requirements.txt").read_text()
     nemo_req = (SERVING / "nemo" / "requirements.txt").read_text()
-    for pin in ("vllm[audio]==", "flashinfer-python==", "flashinfer-jit-cache==", "librosa=="):
+    for pin in ("vllm[audio]==", "flashinfer-python==", "flashinfer-jit-cache==",
+                "transformers==", "librosa=="):
         assert pin in vllm_req, pin
     assert re.search(r"^nemo_toolkit\[asr\]==\S+$", nemo_req, re.MULTILINE)
+
+
+def _pins(text: str) -> dict[str, str]:
+    return dict(re.findall(r"^([A-Za-z0-9_.\-]+)(?:\[[^\]]*\])?==(\S+)$", text, re.MULTILINE))
+
+
+def test_flashinfer_kernels_are_prebuilt_for_the_pinned_flashinfer_and_cuda() -> None:
+    """The host has no CUDA toolkit: a jit-cache of another flashinfer version or
+    CUDA line is refused or misses, and the sampler then JIT-compiles and dies."""
+    text = (SERVING / "vllm" / "requirements.txt").read_text()
+    pins = _pins(text)
+    version, _, cuda = pins["flashinfer-jit-cache"].partition("+")
+    assert version == pins["flashinfer-python"]
+    assert re.fullmatch(r"cu\d{3}", cuda), cuda
+    index = re.search(r"^--extra-index-url (\S+)$", text, re.MULTILINE)
+    assert index and index.group(1).rstrip("/").endswith(f"/whl/{cuda}")
 
 
 def test_vllm_command_is_the_recipe() -> None:
@@ -87,14 +104,11 @@ def test_every_recipe_pins_a_full_commit() -> None:
             assert r["checkpoint_file"].endswith(".nemo"), rid
 
 
-def test_granite_serves_the_checkpoint_vllm_028_can_load() -> None:
-    """The 2026-10-21 re-upload (e69efe37) renamed the text-model weights to
-    ``language_model.model.model.*``; vLLM 0.28.0 has no mapper for that and
-    refuses to start. The pin is the checkpoint the September sweep served."""
+def test_granite_serves_the_checkpoint_of_the_september_sweep() -> None:
+    """The pin is the checkpoint the September sweep served."""
     argv, _ = _build("ibm-granite/granite-speech-4.1-2b-plus")
     assert argv[2] == "ibm-granite/granite-speech-4.1-2b-plus"
     assert _flag(argv, "--revision") == "1454e6e1e33845ca9280ff65f52cf1141ba6e6e2"
-    assert "vllm[audio]==0.28.0" in (SERVING / "vllm" / "requirements.txt").read_text()
 
 
 @pytest.mark.parametrize("engine", ["vllm", "transformers", "nemo"])

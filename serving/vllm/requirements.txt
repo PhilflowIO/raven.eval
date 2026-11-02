@@ -1,23 +1,37 @@
 # Environment of the vLLM leg: the engine (`vllm serve`, started by launch.py),
 # the transformers stand-in (moonshine_shim.py) and the shim in front of both
 # (shim.py). One environment, so the shim reports the engine it was installed
-# with. Every version that decides output is exact: an unpinned
-# "vllm[audio]>=0.25" once moved a host to 0.28 without anyone asking, and 0.28's
-# FlashInfer top-k/top-p sampler JIT-compiles its kernel at warm-up — on a host
-# without a CUDA toolkit every model then died before serving.
-# flashinfer-jit-cache ships those kernels prebuilt for exactly this flashinfer +
-# CUDA 13.0 pair; bump vllm, flashinfer-python and flashinfer-jit-cache together.
+# with, and one engine for every vLLM model: a model never gets an engine of its
+# own, so all vLLM rows of a round answer to the same version.
+#
+# The engine follows the newest vLLM release; the pin exists so a run can name
+# and reproduce what served it, not to hold a model on an old engine. Bumping it
+# moves every vLLM row, so a bump is followed by re-measuring all of them.
+#
+# Every version that decides output is exact: an unpinned "vllm[audio]>=0.25"
+# once moved a host to 0.28 without anyone asking, and 0.28's FlashInfer
+# top-k/top-p sampler JIT-compiles its kernel at warm-up — on a host without a
+# CUDA toolkit every model then died before serving. flashinfer-jit-cache ships
+# those kernels prebuilt for exactly this flashinfer + CUDA 13.0 pair; bump vllm,
+# flashinfer-python and flashinfer-jit-cache together (vllm pins flashinfer-python
+# itself, and flashinfer refuses a jit-cache of another version). Since 0.7 the
+# jit-cache is a shim that pulls one provider wheel per GPU architecture; an
+# RTX 30xx (sm86) runs the sm80 provider's kernels.
+#
+# torch (2.14.0, CUDA 13.0 wheels: needs an NVIDIA driver >= 580) is pinned by
+# vllm itself. transformers is pinned here: vllm only bounds it, and it decides
+# the stand-in's output and the HF processors several vLLM models run through.
 #
 #   uv venv --python 3.12 <venv>
 #   uv pip install --python <venv>/bin/python -r serving/vllm/requirements.txt
 #
-# transformers (>= 5.2 for the moonshine streaming class) and soundfile come with
-# vllm[audio]; fastapi, uvicorn and httpx come with vllm too, but the shim imports
-# them directly, so they are named here.
+# soundfile comes with vllm[audio]; fastapi, uvicorn and httpx come with vllm
+# too, but the shim imports them directly, so they are named here.
 --extra-index-url https://flashinfer.ai/whl/cu130
-vllm[audio]==0.28.0
-flashinfer-python==0.6.16.post3
-flashinfer-jit-cache==0.6.16.post3+cu130
+vllm[audio]==0.33.0
+flashinfer-python==0.7.2.post1
+flashinfer-jit-cache==0.7.2.post1+cu130
+transformers==5.20.2
 librosa==1.0.0
 fastapi>=0.115
 uvicorn>=0.30
