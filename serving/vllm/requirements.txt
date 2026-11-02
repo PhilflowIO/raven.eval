@@ -1,0 +1,25 @@
+# Environment of the vLLM leg: the engine (`vllm serve`, started by launch.py),
+# the transformers stand-in (moonshine_shim.py) and the shim in front of both
+# (shim.py). One environment, so the shim reports the engine it was installed
+# with. Every version that decides output is exact: an unpinned
+# "vllm[audio]>=0.25" once moved a host to 0.28 without anyone asking, and 0.28's
+# FlashInfer top-k/top-p sampler JIT-compiles its kernel at warm-up — on a host
+# without a CUDA toolkit every model then died before serving.
+# flashinfer-jit-cache ships those kernels prebuilt for exactly this flashinfer +
+# CUDA 13.0 pair; bump vllm, flashinfer-python and flashinfer-jit-cache together.
+#
+#   uv venv --python 3.12 <venv>
+#   uv pip install --python <venv>/bin/python -r serving/vllm/requirements.txt
+#
+# transformers (>= 5.2 for the moonshine streaming class) and soundfile come with
+# vllm[audio]; fastapi, uvicorn and httpx come with vllm too, but the shim imports
+# them directly, so they are named here.
+--extra-index-url https://flashinfer.ai/whl/cu130
+vllm[audio]==0.28.0
+flashinfer-python==0.6.16.post3
+flashinfer-jit-cache==0.6.16.post3+cu130
+librosa==1.0.0
+fastapi>=0.115
+uvicorn>=0.30
+httpx>=0.27
+python-multipart>=0.0.9

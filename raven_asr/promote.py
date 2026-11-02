@@ -15,7 +15,8 @@ layout ``scripts/verify.py`` re-scores:
         throughput_<subset>.jsonl    (copied verbatim when the run recorded one —
                                       every pass's wall time and audio; summary.json
                                       carries the totals. A measurement of the run,
-                                      held consistent by verify, never re-scored)
+                                      held consistent by verify, never re-scored;
+                                      each pass also names the serving setup)
 
 Once committed, ``make verify`` re-computes the corpus WER/CER from the copied
 predictions with the SAME core scorer that produced ``summary.json`` and asserts
@@ -42,6 +43,8 @@ import sys
 from pathlib import Path
 
 from raven_eval_core.run_manifest import summary_problem
+
+from .serving import serving_problem
 
 
 def _safe_run_name(name: str) -> str:
@@ -277,6 +280,11 @@ def promote(
     if problem := summary_problem(summary):
         raise ValueError(f"{summary_path}: {problem}")
     _refuse_incomplete(summary, preds)
+    # The serving block travels inside summary.json; refuse one that contradicts
+    # its own passes rather than publish it for verify to fail.
+    for row in summary.get("results", []):
+        if isinstance(row, dict) and (problem := serving_problem(row)):
+            raise ValueError(f"{summary_path}: {row.get('subset')}: {problem}")
     expected = _expected_from_summary(summary)
     _add_strict_de(expected, preds)
     _add_bleu(expected, preds)
@@ -298,7 +306,7 @@ def promote(
         json.dumps(expected, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     # Carry the summary alongside for provenance (model and dataset revisions,
-    # adapter, limit, coverage counters, run manifest).
+    # adapter, limit, coverage counters, run manifest, serving setup).
     shutil.copy2(summary_path, dest / "summary.json")
     return dest
 

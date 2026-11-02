@@ -333,6 +333,14 @@ endpoint; the harness pulled the public audio from Hugging Face and scored on th
 host. Latency is therefore environment-specific (Tier-3) and deliberately not
 tabled here.
 
+**Serving.** Every self-hosted row is served from the recipe in `serving/`
+(engine pins, launch flags, the NeMo batching server, the shim), and runs
+record which recipe, engine and batching answered (`summary.json` → `serving`).
+How to stand the servers up: `docs/TIER2-KEYS.md`, "Serving self-hosted
+models". Self-hosted rows reproduce to character-level batching tolerance, not
+bit-exactly: server-side batching changed 2 of 862 FLEURS transcripts of
+Parakeet-TDT-0.6B-v3 by one character (WER unchanged, CER +0.0008 pp).
+
 
 
 > Raven's internal private-meeting WER/DER numbers are measured on a corpus that

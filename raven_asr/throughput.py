@@ -45,6 +45,10 @@ PASS_FIELDS = (
     "concurrency", "adapter", "hardware", "interrupted",
 )
 
+#: Fields a pass line may carry beyond PASS_FIELDS. ``serving`` names the setup
+#: that answered (raven_asr.serving); lines from before it have none.
+OPTIONAL_PASS_FIELDS = ("serving",)
+
 # Relative + absolute slack for re-deriving a rounded ratio from rounded inputs.
 _REL_TOL = 1e-3
 _ABS_TOL = 1e-3
@@ -68,6 +72,10 @@ def append_pass(path: Path, record: dict[str, Any]) -> None:
     fsynced rather than left in a buffer the exit could drop.
     """
     line = {f: record[f] for f in PASS_FIELDS}
+    # Optional, so pass lines written before it existed still read as passes.
+    for f in OPTIONAL_PASS_FIELDS:
+        if f in record:
+            line[f] = record[f]
     with path.open("a", encoding="utf-8") as fh:
         if fh.tell() and not _ends_with_newline(path):
             fh.write("\n")  # never glue a line onto a torn one
