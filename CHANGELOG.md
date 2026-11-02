@@ -24,6 +24,20 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Added
+- **Engine groundwork for Nemotron-3.5-Transcribe-30B-A4B** (#78; its recipes
+  follow with the quantized checkpoint). NeMo Speech's `nemo_speechlm` vLLM
+  plugin is installed into the one vLLM 0.33.0 environment, pinned to a fork
+  commit (`PhilflowIO/Speech@821e0367`) that adapts the plugin to vLLM 0.33's
+  moved chat parser (upstream: NVIDIA-NeMo/Speech#16505). A vLLM recipe names
+  the plugins it needs (`vllm_plugins`), and the launcher sets `VLLM_PLUGINS`
+  to exactly that list for every vLLM model, so no other model's engine loads
+  the plugin. The shim gains the card's chat request for the model
+  (`nemotron-transcribe` family: verbatim benchmark instruction, audio_url,
+  reasoning off). `serving/quantize/nemotron_transcribe_w8a16.py` is the
+  committed recipe for the int8 per-channel weight-only build of the language
+  model (llm-compressor 0.15.0 model-free, CPU; audio encoder, CTC head, router,
+  embeddings and lm_head unchanged bf16), with its own pinned environment. Every
+  vLLM recipe hash changes (launcher and vLLM requirements).
 - **Voxtral-Small-24B-2507**, quantized and split over two cards (#79):
   RedHat AI's FP8 build (`RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic`,
   per-channel FP8 on the language model's MLP layers; encoder, attention and
