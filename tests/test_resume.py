@@ -127,7 +127,9 @@ def _lines(out: Path) -> list[dict[str, Any]]:
 
 
 def _scores(out: Path) -> list[dict[str, Any]]:
-    return json.loads((out / "summary.json").read_text())["results"]
+    """Each result row without its throughput — a timing, not a score."""
+    rows = json.loads((out / "summary.json").read_text())["results"]
+    return [{k: v for k, v in row.items() if k != "throughput"} for row in rows]
 
 
 def test_a_rerun_requests_only_failed_utterances_and_writes_each_once(
