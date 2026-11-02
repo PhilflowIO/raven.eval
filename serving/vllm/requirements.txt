@@ -1,5 +1,5 @@
 # Environment of the vLLM leg: the engine (`vllm serve`, started by launch.py),
-# the transformers stand-in (moonshine_shim.py) and the shim in front of both
+# the transformers stand-in (transformers_server.py) and the shim in front of both
 # (shim.py). One environment, so the shim reports the engine it was installed
 # with, and one engine for every vLLM model: a model never gets an engine of its
 # own, so all vLLM rows of a round answer to the same version.

@@ -107,10 +107,11 @@ def test_parsed_output_scores_like_the_plain_transcript():
     assert corpus_wer_pct([ref], ["[0.48][S01]guten tag[3.12][S02]hallo"]) > 0
 
 
-def test_moss_is_bound_to_its_parser_and_no_other_model_is():
+def test_moss_and_vibevoice_are_bound_to_their_parsers_and_no_other_model_is():
     assert KNOWN_MODELS["OpenMOSS-Team/MOSS-Transcribe-Diarize"].output_format == (
         "moss-timed-speakers"
     )
+    assert KNOWN_MODELS["microsoft/VibeVoice-ASR-HF"].output_format == "vibevoice-json"
     assert {m for m, s in KNOWN_MODELS.items() if s.output_format} == set(OUTPUT_FORMATS)
     for fmt in OUTPUT_FORMATS.values():
         assert parser_for(fmt) is not None

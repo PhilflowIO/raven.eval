@@ -199,3 +199,33 @@ def test_a_sampling_temperature_is_refused(load_shim):
     )
     assert r.status_code == 400
     assert "/v1/audio/transcriptions" not in calls
+
+
+def test_vibevoice_gets_the_audio_alone_so_its_template_writes_the_instruction(load_shim):
+    """VibeVoice-ASR runs on vLLM's Transformers backend, which has no transcription
+    endpoint. Its chat template turns a text part into "extra info" context, so the
+    request carries the audio and nothing else — no language, no instruction."""
+    import json as _json
+
+    mod, bodies = _load_recording(load_shim, "microsoft/VibeVoice-ASR-HF")
+    r = _post(mod, "microsoft/VibeVoice-ASR-HF")
+    assert r.status_code == 200
+    payload = _json.loads(bodies[0])
+    assert payload["model"] == "microsoft/VibeVoice-ASR-HF"
+    (message,) = payload["messages"]
+    assert [part["type"] for part in message["content"]] == ["input_audio"]
+    assert message["content"][0]["input_audio"]["format"] == "wav"
+    assert (payload["temperature"], payload["repetition_penalty"], payload["max_tokens"]) == (
+        0.0, 1.0, 1024)
+    assert r.json()["x_raven"]["recipe"] == _recipe("vibevoice-asr")
+
+
+@pytest.mark.parametrize("model", [
+    "openai/whisper-large-v3-turbo", "ibm-granite/granite-speech-5.0-2b",
+    "mistralai/Voxtral-Mini-4B-Realtime-2602",
+    "ibm-granite/granite-speech-5.0-470m-turboctc",
+])
+def test_the_new_transcription_models_pass_through(load_shim, model):
+    mod, calls = load_shim([model])
+    assert _post(mod, model).status_code == 200
+    assert "/v1/audio/transcriptions" in calls and "/v1/chat/completions" not in calls

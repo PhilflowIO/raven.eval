@@ -28,11 +28,13 @@ RECIPES_FILE = SERVING_DIR / "recipes.toml"
 #: Engines a recipe may name, and the files each one runs through. A change to
 #: any of them changes what a request goes through, so each is part of the hash
 #: of every recipe on that engine. ``transformers`` is the stand-in server for a
-#: model vLLM cannot load; it sits behind the same shim as the vLLM models.
+#: model vLLM cannot load (``vllm/transformers_server.py``, one file for every
+#: such model; the recipe's ``model_class`` says which transformers class loads
+#: it); it sits behind the same shim as the vLLM models.
 ENGINE_FILES: dict[str, tuple[str, ...]] = {
     "vllm": ("recipe.py", "launch.py", "vllm/shim.py", "vllm/requirements.txt"),
     "transformers": (
-        "recipe.py", "launch.py", "vllm/shim.py", "vllm/moonshine_shim.py",
+        "recipe.py", "launch.py", "vllm/shim.py", "vllm/transformers_server.py",
         "vllm/requirements.txt",
     ),
     "nemo": (
@@ -53,7 +55,7 @@ ENGINE_KEYS: dict[str, frozenset[str]] = {
         "dtype", "max_num_seqs", "max_model_len", "trust_remote_code", "args",
         "snapshot_ignore", "serve_from_snapshot", "lora_modules", "notes",
     }),
-    "transformers": frozenset({"max_num_seqs", "notes"}),
+    "transformers": frozenset({"model_class", "max_num_seqs", "notes"}),
     "nemo": frozenset({
         "checkpoint_file", "max_batch", "batch_wait_ms", "batch_max_audio_s",
         "longform", "notes",
@@ -63,7 +65,12 @@ ENGINE_KEYS: dict[str, frozenset[str]] = {
 #: ``ASRModel.from_pretrained`` takes no revision, so a NeMo recipe names the
 #: .nemo file in the repo; the launcher downloads it at ``revision`` and the
 #: server restores exactly that file.
-ENGINE_REQUIRED: dict[str, frozenset[str]] = {"nemo": frozenset({"checkpoint_file"})}
+#: A transformers recipe names the class that loads its model: the stand-in
+#: serves only classes it knows how to decode (transformers_server.DECODERS).
+ENGINE_REQUIRED: dict[str, frozenset[str]] = {
+    "nemo": frozenset({"checkpoint_file"}),
+    "transformers": frozenset({"model_class"}),
+}
 _REVISION = re.compile(r"[0-9a-f]{40}")
 
 #: How every recipe decodes. Greedy only: with sampling a transcript is a draw,

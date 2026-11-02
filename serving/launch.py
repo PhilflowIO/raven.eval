@@ -32,6 +32,7 @@ Environment (everything a host decides, nothing a model decides):
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -102,13 +103,14 @@ def build(
 
     if engine == "transformers":
         extra.update({
-            "MOONSHINE_MODEL": recipe["model"],
-            "MOONSHINE_REVISION": recipe["revision"],
-            "MOONSHINE_HOST": host,
-            "MOONSHINE_PORT": port,
-            "MOONSHINE_GPU_MEM_FRACTION": gpu_mem,
+            "TRANSFORMERS_MODEL": recipe["model"],
+            "TRANSFORMERS_REVISION": recipe["revision"],
+            "TRANSFORMERS_CLASS": recipe["model_class"],
+            "TRANSFORMERS_HOST": host,
+            "TRANSFORMERS_PORT": port,
+            "TRANSFORMERS_GPU_MEM_FRACTION": gpu_mem,
         })
-        return [python, str(SERVING_DIR / "vllm" / "moonshine_shim.py")], extra
+        return [python, str(SERVING_DIR / "vllm" / "transformers_server.py")], extra
 
     # vllm
     vllm = str(Path(python).parent / "vllm")
@@ -179,17 +181,45 @@ def _disk_floor(recipe: dict[str, Any], env: dict[str, str]) -> None:
         )
 
 
+def _excluded_in_snapshot(snapshot: str, patterns: list[str]) -> list[str]:
+    """Weight files in ``snapshot`` that the recipe's ``snapshot_ignore`` excludes.
+
+    snapshot_download leaves out what it is told to, but the cache keeps one
+    directory per commit: a file another tool downloaded at the same commit is
+    still in it. vLLM loads every ``*.safetensors`` of a directory without an
+    index, so an excluded weight file that is present anyway changes what is
+    served (granite-speech-5.0-2b's out_llm.safetensors fails the load). Other
+    excluded files (docs, audio samples, a .bin vLLM never reads beside
+    safetensors) change nothing and are left alone.
+    """
+    root = Path(snapshot)
+    found: list[str] = []
+    for path in root.rglob("*"):
+        if path.is_file() or path.is_symlink():
+            rel = path.relative_to(root).as_posix()
+            if rel.endswith(".safetensors") and any(fnmatch.fnmatch(rel, p) for p in patterns):
+                found.append(rel)
+    return sorted(found)
+
+
 def _fetch(recipe: dict[str, Any]) -> tuple[str | None, str | None]:
     """Download what has to be local before the engine starts: ``(snapshot, checkpoint)``."""
     snapshot = checkpoint = None
     if recipe.get("serve_from_snapshot") or recipe.get("lora_modules"):
         from huggingface_hub import snapshot_download
 
+        ignore = list(recipe.get("snapshot_ignore", []))
         snapshot = snapshot_download(
-            recipe["model"],
-            revision=recipe.get("revision"),
-            ignore_patterns=list(recipe.get("snapshot_ignore", [])),
+            recipe["model"], revision=recipe.get("revision"), ignore_patterns=ignore,
         )
+        if recipe.get("serve_from_snapshot") and (
+            stray := _excluded_in_snapshot(snapshot, ignore)
+        ):
+            raise LaunchError(
+                f"the snapshot at {snapshot} holds files the recipe excludes "
+                f"({', '.join(stray)}); vLLM would load them. Remove them from the "
+                "snapshot (they are cache symlinks) and start again."
+            )
     if recipe.get("checkpoint_file"):
         from huggingface_hub import hf_hub_download
 
@@ -236,7 +266,11 @@ def main(argv: list[str] | None = None) -> int:
     except LaunchError as exc:
         print(f"[launch] refusing {rid}: {exc}", file=sys.stderr)
         return 1
-    snapshot, checkpoint = _fetch(recipe)
+    try:
+        snapshot, checkpoint = _fetch(recipe)
+    except LaunchError as exc:
+        print(f"[launch] refusing {rid}: {exc}", file=sys.stderr)
+        return 1
     cmd, extra = build(recipe, rid, env, python=sys.executable,
                        snapshot=snapshot, checkpoint=checkpoint)
     env.update(extra)

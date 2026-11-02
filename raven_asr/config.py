@@ -397,6 +397,7 @@ NEMO_SERVED_MODELS: Final[dict[str, str]] = {
     # library_name "nemo" on the HF card: NeMo server despite "streaming".
     "nvidia/nemotron-3.5-asr-streaming-0.6b": "nvidia-nemotron-3.5-asr-streaming-0.6b",
     "primeline/parakeet-primeline": "primeline-parakeet",
+    "nvidia/nemotron-labs-unified-asr-0.6b": "nvidia-nemotron-labs-unified-asr-0.6b",
 }
 #: HF repo id -> result-directory label, for models on the vLLM server.
 VLLM_SERVED_MODELS: Final[dict[str, str]] = {
@@ -410,14 +411,21 @@ VLLM_SERVED_MODELS: Final[dict[str, str]] = {
     "primeline/whisper-large-v3-german": "primeline-whisper-large-v3-german",
     "primeline/whisper-large-v3-turbo-german": "primeline-whisper-large-v3-turbo-german",
     "openai/whisper-large-v3": "openai-whisper-large-v3",
+    "openai/whisper-large-v3-turbo": "openai-whisper-large-v3-turbo",
+    "ibm-granite/granite-speech-5.0-2b": "granite-speech-5.0-2b",
+    "ibm-granite/granite-speech-5.0-470m-turboctc": "granite-speech-5.0-470m-turboctc",
+    "mistralai/Voxtral-Mini-4B-Realtime-2602": "voxtral-mini-4b-realtime-2602",
+    "microsoft/VibeVoice-ASR-HF": "vibevoice-asr",
 }
 
 
 #: HF repo id -> output format, for the models whose server answers with more
 #: than the transcript (raven_asr.output_formats). MOSS interleaves timestamps
 #: and speaker tags with the words; scored raw, each one is an inserted word.
+#: VibeVoice-ASR answers with a JSON list of timed speaker turns.
 OUTPUT_FORMATS: Final[dict[str, str]] = {
     "OpenMOSS-Team/MOSS-Transcribe-Diarize": "moss-timed-speakers",
+    "microsoft/VibeVoice-ASR-HF": "vibevoice-json",
 }
 
 
@@ -432,7 +440,7 @@ def _self_hosted(model_id: str, label: str, url_env: str) -> ModelSpec:
     )
 
 
-#: The 14 self-hosted models, keyed by HF repo id. Of these, only the models in
+#: The 20 self-hosted models, keyed by HF repo id. Of these, only the models in
 #: FLOZI_REFERENCE_WER carry a flozi-published anchor; the others deliberately
 #: have none (no published number on that dataset to sanity-check against).
 SELF_HOSTED_MODELS: Final[dict[str, ModelSpec]] = {
