@@ -13,11 +13,14 @@ report, in every response's ``x_raven``:
     decoding  the recipe's decoding table: mode ("greedy") and the output-length
               bound — max_tokens for vLLM and the transformers stand-in, the
               checkpoint's checked decoding config for NeMo
+    precision the recipe's precision table: weights, activations, scheme
+              ("none" or the quantization scheme), checkpoint (where the served
+              weights come from and the format it stores) and tensor_parallel
 
-These four are the run's *serving block*. The adapter pins the first block it
+These five are the run's *serving block*. The adapter pins the first block it
 sees; every later response must carry the same one. A different block means the
 endpoint changed under the run — a restart on another engine, another recipe
-revision, another batch size — and the run aborts exactly like a served-model
+revision, another batch size, another precision — and the run aborts exactly like a served-model
 mismatch (:class:`ServingChangedError`, ``reproduce`` exit 3).
 
 Why abort rather than record and mark the row "not comparable": a WER is the
@@ -42,10 +45,17 @@ import json
 from typing import Any
 
 #: The ``x_raven`` keys that make up the serving block, in recorded order.
-SERVING_KEYS = ("engine", "recipe", "batching", "decoding")
-#: The block as recorded before servers reported their decoding. Still well
-#: formed in a committed artifact; a live run always records all four keys.
-LEGACY_SERVING_KEYS = ("engine", "recipe", "batching")
+SERVING_KEYS = ("engine", "recipe", "batching", "decoding", "precision")
+#: The block as recorded before servers reported their precision, and before
+#: that their decoding. Still well formed in a committed artifact; a live run
+#: always records all five keys.
+LEGACY_SERVING_KEYS = (
+    ("engine", "recipe", "batching", "decoding"),
+    ("engine", "recipe", "batching"),
+)
+#: What a reported precision table must carry (serving/recipe.py validates the
+#: values; an artifact is only held to the shape).
+PRECISION_KEYS = ("weights", "activations", "scheme", "checkpoint", "tensor_parallel")
 
 
 class ServedModelMismatchError(RuntimeError):
@@ -72,6 +82,53 @@ def from_x_raven(x_raven: object) -> dict[str, Any] | None:
     if not isinstance(x_raven, dict) or not any(k in x_raven for k in SERVING_KEYS):
         return None
     return {k: x_raven.get(k) for k in SERVING_KEYS}
+
+
+def precision_problem(prec: object) -> str:
+    """Why a reported precision table is malformed, or ``""`` (None is allowed)."""
+    if prec is None:
+        return ""
+    if not isinstance(prec, dict) or set(prec) != set(PRECISION_KEYS):
+        return f"expected null or an object with keys {list(PRECISION_KEYS)}"
+    if not all(isinstance(prec[k], str) and prec[k] for k in ("weights", "activations", "scheme")):
+        return "weights, activations and scheme must be non-empty strings"
+    tp = prec["tensor_parallel"]
+    if not (isinstance(tp, int) and not isinstance(tp, bool) and tp >= 1):
+        return "tensor_parallel must be a positive integer"
+    ckpt = prec["checkpoint"]
+    if not (isinstance(ckpt, dict) and isinstance(ckpt.get("source"), str)
+            and isinstance(ckpt.get("dtype"), str)):
+        return "checkpoint must be an object with a source and a dtype"
+    return ""
+
+
+def precision_label(prec: dict[str, Any]) -> str:
+    """How a precision table reads in a published table: ``bf16``,
+    ``fp16 (cast from bf16)``, ``fp8-e4m3 fp8-w8a16-marlin, TP 2``.
+
+    The weights' format first; the scheme when there is one; a cast when the
+    weights are served in another format than the checkpoint stores; the GPU
+    split when there is one.
+    """
+    label = str(prec["weights"])
+    if prec["scheme"] != "none":
+        label += f" {prec['scheme']}"
+    stored = (prec.get("checkpoint") or {}).get("dtype")
+    if prec["scheme"] == "none" and stored and stored != prec["weights"]:
+        label += f" (cast from {stored})"
+    if prec["tensor_parallel"] > 1:
+        label += f", TP {prec['tensor_parallel']}"
+    return label
+
+
+def missing_precision(block: dict[str, Any] | None) -> bool:
+    """A live block that names its recipe but not its precision.
+
+    Such a server runs code from before precision was reported. Its results
+    could not say what number format they were measured in, so the adapter
+    refuses it at the first answer instead of recording them.
+    """
+    return block is not None and block.get("recipe") is not None and block.get("precision") is None
 
 
 def describe(block: dict[str, Any] | None) -> str:
@@ -112,9 +169,11 @@ def serving_problem(row: dict[str, Any]) -> str:
     block = row["serving"]
     if block is not None:
         if not isinstance(block, dict) or set(block) not in (
-            set(SERVING_KEYS), set(LEGACY_SERVING_KEYS)
+            set(SERVING_KEYS), *(set(k) for k in LEGACY_SERVING_KEYS)
         ):
             return f"serving: expected null or an object with keys {list(SERVING_KEYS)}"
+        if problem := precision_problem(block.get("precision")):
+            return f"serving.precision: {problem}"
         dec = block.get("decoding")
         if dec is not None and not (isinstance(dec, dict) and isinstance(dec.get("mode"), str)):
             return "serving.decoding: expected null or an object with a mode"

@@ -47,6 +47,7 @@ import contextlib
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -55,13 +56,22 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
+# serving/recipe.py (stdlib only), for the precision check at load.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from recipe import FLOAT_FORMATS, weights_mismatch  # noqa: E402
+
 logger = logging.getLogger("transformers-server")
 logging.basicConfig(level=logging.INFO)
 
-# launch.py passes all three from the recipe: model id, HF commit, class.
+# launch.py passes these from the recipe: model id, HF commit, class, and the
+# torch dtype of precision.weights.
 MODEL_ID = os.environ.get("TRANSFORMERS_MODEL", "")
 REVISION = os.environ.get("TRANSFORMERS_REVISION") or None  # None = the repo's main
 MODEL_CLASS = os.environ.get("TRANSFORMERS_CLASS", "")
+# Loaded in exactly this dtype, never transformers' default: the recipe declares
+# it (precision.weights), the shim reports it, and _load refuses a model whose
+# parameters then sit mostly in another one.
+DTYPE = os.environ.get("TRANSFORMERS_DTYPE", "")
 # Bind where the vLLM engine would bind (launch.py sets both) — see header.
 BIND_HOST = os.environ.get("TRANSFORMERS_HOST", "127.0.0.1")
 BIND_PORT = int(os.environ.get("TRANSFORMERS_PORT", "8000"))
@@ -97,6 +107,12 @@ def _load() -> None:
             import transformers  # noqa: PLC0415 — heavy, load once
             from transformers import AutoProcessor
 
+            declared = {v: k for k, v in FLOAT_FORMATS.items()}.get(DTYPE)
+            if declared is None:
+                raise ValueError(
+                    f"TRANSFORMERS_DTYPE={DTYPE!r}: launch.py passes the recipe's "
+                    f"precision.weights as one of {sorted(FLOAT_FORMATS.values())}"
+                )
             if MODEL_CLASS not in DECODERS:
                 raise ValueError(
                     f"TRANSFORMERS_CLASS={MODEL_CLASS!r}: this server decodes only "
@@ -111,9 +127,16 @@ def _load() -> None:
                 device = "cpu"
             t0 = time.monotonic()
             model = getattr(transformers, MODEL_CLASS).from_pretrained(
-                MODEL_ID, revision=REVISION
+                MODEL_ID, revision=REVISION, dtype=getattr(torch, DTYPE)
             ).eval()
             model.to(device)
+            counts: dict[str, int] = {}
+            for p in model.parameters():
+                if p.is_floating_point():
+                    name = str(p.dtype).removeprefix("torch.")
+                    counts[name] = counts.get(name, 0) + p.numel()
+            if problem := weights_mismatch(counts, declared):
+                raise RuntimeError(f"loaded precision differs from the recipe: {problem}")
             processor = AutoProcessor.from_pretrained(MODEL_ID, revision=REVISION)
             _model, _processor = model, processor
             logger.info(

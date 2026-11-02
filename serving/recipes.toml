@@ -28,6 +28,36 @@
 #                DECODING_KEYS). mode is "greedy" everywhere. Servers report the
 #                table as x_raven.decoding; every run records it.
 #
+#   precision    the number format of the served weights and of the computation,
+#                and where the weights come from (recipe.py, PRECISION_KEYS):
+#                weights, activations, scheme ("none" = plain floating point,
+#                else the quantization scheme), checkpoint (source "published" /
+#                "vendor" / "self", and the dtype the checkpoint stores, so a cast
+#                is on record) and tensor_parallel (GPUs per model instance; the
+#                launcher wants exactly that many). Servers report the table as
+#                x_raven.precision; every run records it, and a change aborts the
+#                run like any other change of the serving block.
+#
+# Precision of the recipes below (2026-11-02), read from each checkpoint at its
+# pinned commit (safetensors headers; for NeMo the .nemo's size against its
+# parameter count and the repo's fp32 safetensors) and from how the engine loads
+# it with these flags:
+#   vLLM          --dtype is precision.activations, so weights and computation
+#                 are in that format; nothing is left to vLLM's "auto".
+#   NeMo 3.0.0    restore_from keeps the stored fp32 and transcribe() runs no
+#                 autocast: fp32 throughout (PyTorch defaults, i.e. TF32 for
+#                 cuDNN convolutions on Ampere and later). The server checks the
+#                 restored parameters against precision.weights and refuses to
+#                 serve when they differ.
+#   transformers  the stand-in loads with dtype = precision.weights (the same
+#                 format transformers 5's default dtype="auto" reads from
+#                 config.json) and checks the loaded parameters the same way;
+#                 modules a model keeps in fp32 by design (turboctc's conv norms)
+#                 stay fp32.
+# Every recipe so far serves its checkpoint's own format except
+# primeline-whisper-large-v3-german (bf16 checkpoint served as fp16; see its notes and
+# issue #82).
+#
 # Output length. vLLM and the transformers stand-in get max_tokens = 1024. The
 # longest reference in any WER dataset here is 686 UTF-8 bytes (voxpopuli-de);
 # every tokenizer these models use spends at least one byte per token, so no
@@ -47,8 +77,9 @@
 # in a single forward pass: there is no generation loop, so max_tokens bounds
 # nothing there and the stand-in does not apply it.
 #
-# vllm keys: dtype, max_num_seqs (default; RAVEN_SERVE_MAX_NUM_SEQS overrides),
-#   max_model_len, trust_remote_code, args (further `vllm serve` flags, verbatim),
+# vllm keys: max_num_seqs (default; RAVEN_SERVE_MAX_NUM_SEQS overrides),
+#   max_model_len, trust_remote_code, args (further `vllm serve` flags, verbatim;
+#   never --dtype or --tensor-parallel-size, which precision owns),
 #   snapshot_ignore (patterns left out of the snapshot download), serve_from_snapshot
 #   (serve the local snapshot under the model id instead of letting vLLM download),
 #   lora_modules (name = directory inside the snapshot)
@@ -72,6 +103,7 @@ model = "nvidia/parakeet-tdt-0.6b-v3"
 revision = "541d1f99c6b0c3cd0b11a95167540bb8edefd82b"
 engine = "nemo"
 decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }
+precision = { weights = "fp32", activations = "fp32", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "fp32" } }
 checkpoint_file = "parakeet-tdt-0.6b-v3.nemo"
 weights_gb = 3
 gpu_mem = 0.5
@@ -87,6 +119,7 @@ model = "nvidia/canary-1b-v2"
 revision = "d455706339a6b32e1aa40f82c713a482a0c938e2"
 engine = "nemo"
 decoding = { mode = "greedy", strategy = "beam", beam_size = 1, len_pen = 0.0, max_generation_delta = 50 }
+precision = { weights = "fp32", activations = "fp32", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "fp32" } }
 checkpoint_file = "canary-1b-v2.nemo"
 weights_gb = 4
 gpu_mem = 0.5
@@ -102,6 +135,7 @@ model = "nvidia/nemotron-3.5-asr-streaming-0.6b"
 revision = "ea30d66debe3740a08b573244286791d423d6b3e"
 engine = "nemo"
 decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }
+precision = { weights = "fp32", activations = "fp32", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "fp32" } }
 checkpoint_file = "nemotron-3.5-asr-streaming-0.6b.nemo"
 weights_gb = 3
 gpu_mem = 0.5
@@ -117,6 +151,7 @@ model = "primeline/parakeet-primeline"
 revision = "3f1a9bcb611dfeda53fe74fe5f1a3d5701e8023e"
 engine = "nemo"
 decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }
+precision = { weights = "fp32", activations = "fp32", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "fp32" } }
 checkpoint_file = "2_95_WER.nemo"
 weights_gb = 3
 gpu_mem = 0.5
@@ -132,6 +167,7 @@ model = "nvidia/nemotron-labs-unified-asr-0.6b"
 revision = "023ce907267a09a308a5cb69239447cb3d0c1597"
 engine = "nemo"
 decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }
+precision = { weights = "fp32", activations = "fp32", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "fp32" } }
 checkpoint_file = "nemotron-labs-unified-asr-0.6b.nemo"
 weights_gb = 3
 gpu_mem = 0.5
@@ -149,10 +185,10 @@ model = "CohereLabs/cohere-transcribe-03-2026"
 revision = "d552dadc2922ba6f6c1f994f8db904d52dcaf942"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 5
 gpu_mem = 0.4
 max_num_seqs = 16
-dtype = "bfloat16"
 trust_remote_code = true
 chunking = "engine: vLLM's transcription endpoint splits audio longer than the model's clip limit"
 notes = "Gated repo: accept the license and export HF_TOKEN. vLLM defaults the language to en for this model; the harness sends language=de."
@@ -162,10 +198,10 @@ model = "ibm-granite/granite-speech-4.1-2b-plus"
 revision = "e69efe37f97b6283c61f5a8dadda2b3eb67765d6"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 5
 gpu_mem = 0.4
 max_num_seqs = 16
-dtype = "bfloat16"
 max_model_len = 2048
 chunking = "engine: vLLM's transcription endpoint splits audio longer than the model's clip limit"
 notes = "max_model_len 2048 is the model card's own flag for smaller cards; a clip that busts it fails loudly with a context-length error. revision is IBM's 2026-10-21 re-upload, a re-trained model (YaRN RoPE, factor 4) and not the checkpoint the September sweep served (1454e6e1). Its text-model weights sit at language_model.model.model.*, which vLLM maps onto GraniteSpeechPlusForConditionalGeneration from 0.33.0 on (vllm-project/vllm#63050). The card now recommends beam search (4 beams, repetition_penalty 2.0); the transcription endpoint decodes greedily like every other model here."
@@ -175,10 +211,10 @@ model = "microsoft/Phi-4-multimodal-instruct"
 revision = "93f923e1a7727d1c4f446756212d9d3e8fcc5d81"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 13
 gpu_mem = 0.75
 max_num_seqs = 16
-dtype = "bfloat16"
 trust_remote_code = true
 max_model_len = 8192
 snapshot_ignore = ["vision-lora/*"]
@@ -192,10 +228,10 @@ model = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
 revision = "10304d926740cf5a5cee05a268086e3265197910"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 2
 gpu_mem = 0.4
 max_num_seqs = 2
-dtype = "bfloat16"
 trust_remote_code = true
 max_model_len = 8192
 chunking = "engine: vLLM's transcription endpoint; max_model_len 8192 instead of the declared 131072, whose KV cache does not fit a 0.4 budget"
@@ -206,10 +242,10 @@ model = "Qwen/Qwen3-ASR-1.7B"
 revision = "7278e1e70fe206f11671096ffdd38061171dd6e5"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 5
 gpu_mem = 0.4
 max_num_seqs = 16
-dtype = "bfloat16"
 max_model_len = 16384
 chunking = "engine: vLLM's transcription endpoint; max_model_len 16384 instead of the declared 65536, whose KV cache does not fit a 0.4 budget"
 notes = "Short-audio-tuned. vLLM ships the model's config class, so no remote code."
@@ -219,10 +255,10 @@ model = "mistralai/Voxtral-Mini-3B-2507"
 revision = "3060fe34b35ba5d44202ce9ff3c097642914f8f3"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 10
 gpu_mem = 0.85
 max_num_seqs = 16
-dtype = "bfloat16"
 args = ["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral"]
 chunking = "engine: vLLM's transcription endpoint; 32k-token context (~30 min of audio)"
 notes = "The model card's serve command. Mistral-format loading reads consolidated.safetensors (9.35 GB) instead of the HF shards. Below ~0.75 of a 24 GB card vLLM finds no memory for the KV cache."
@@ -232,22 +268,22 @@ model = "primeline/whisper-large-v3-german"
 revision = "361f11341446497fa2acf351bf63780060922a16"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "fp16", activations = "fp16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 4
 gpu_mem = 0.4
 max_num_seqs = 16
-dtype = "float16"
 chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
-notes = "float16 = the checkpoint's dtype; a bfloat16 cast would round every weight."
+notes = "Served in float16 (vLLM --dtype float16), as every run of this recipe so far. That is a cast: config.json says float16, but model.safetensors at the pinned commit stores bfloat16 (all 1259 tensors), so precision.checkpoint.dtype is bf16. bf16 -> fp16 keeps every weight inside fp16's normal range exactly (fp16 has the longer mantissa) and loses precision only below 6.1e-5."
 
 [recipes."primeline-whisper-large-v3-turbo-german"]
 model = "primeline/whisper-large-v3-turbo-german"
 revision = "9e7012dad9247f07553aac8a99c4d50ad7c3d36d"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 2
 gpu_mem = 0.4
 max_num_seqs = 16
-dtype = "bfloat16"
 chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
 notes = "bfloat16 = the checkpoint's dtype."
 
@@ -256,10 +292,10 @@ model = "openai/whisper-large-v3"
 revision = "06f233fe06e710322aca913c1bc4249a0d71fce1"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "fp16", activations = "fp16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "fp16" } }
 weights_gb = 4
 gpu_mem = 0.4
 max_num_seqs = 16
-dtype = "float16"
 serve_from_snapshot = true
 snapshot_ignore = ["*fp32*", "*.bin", "*.msgpack"]
 chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
@@ -270,10 +306,10 @@ model = "openai/whisper-large-v3-turbo"
 revision = "41f01f3fe87f28c78e2fbf8b568835947dd65ed9"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "fp16", activations = "fp16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "fp16" } }
 weights_gb = 2
 gpu_mem = 0.4
 max_num_seqs = 16
-dtype = "float16"
 chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
 notes = "float16 = the checkpoint's dtype. The repo holds one model.safetensors, so vLLM downloads nothing else. German: the card lists de among Whisper's languages, and 'Whisper large-v3-turbo is a finetuned version of a pruned Whisper large-v3 ... the number of decoding layers have reduced from 32 to 4' — https://huggingface.co/openai/whisper-large-v3-turbo"
 
@@ -282,10 +318,10 @@ model = "ibm-granite/granite-speech-5.0-2b"
 revision = "205b95148be9cf83419180314066c2beba862a00"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 5
 gpu_mem = 0.4
 max_num_seqs = 16
-dtype = "bfloat16"
 max_model_len = 2048
 serve_from_snapshot = true
 snapshot_ignore = ["out_llm.safetensors", "*.wav", "assets/*"]
@@ -297,10 +333,10 @@ model = "mistralai/Voxtral-Mini-4B-Realtime-2602"
 revision = "2769294da9567371363522aac9bbcfdd19447add"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 9
 gpu_mem = 0.6
 max_num_seqs = 16
-dtype = "bfloat16"
 max_model_len = 16384
 args = ["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral", "--compilation-config", "{\"cudagraph_mode\": \"PIECEWISE\"}"]
 chunking = "none: vLLM's transcription endpoint sends the whole file as one offline request (no clip limit for this class); max_model_len 16384 text positions at 80 ms each hold ~21 min, instead of the declared 131072, whose RoPE tables only cost memory here"
@@ -311,10 +347,10 @@ model = "microsoft/VibeVoice-ASR-HF"
 revision = "f22241c2062b3b25272bf117397e03d73381037a"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 17
 gpu_mem = 0.92
 max_num_seqs = 4
-dtype = "bfloat16"
 max_model_len = 16384
 args = ["--limit-mm-per-prompt", "{\"audio\":1}"]
 chunking = "none: the whole clip goes into one chat request; the card's 64K context holds 60 min, max_model_len 16384 holds ~15 min of audio plus the answer"
@@ -328,6 +364,7 @@ revision = "56473ba32b22b484fdfc7eb03d34c393ff494197"
 engine = "transformers"
 model_class = "MoonshineStreamingForConditionalGeneration"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "fp32", activations = "fp32", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "fp32" } }
 weights_gb = 1
 gpu_mem = 0.4
 max_num_seqs = 1
@@ -340,6 +377,7 @@ revision = "1dd23f46f6d4e6eae2531982ba2e33220086dd97"
 engine = "transformers"
 model_class = "GraniteSpeech5ForCTC"
 decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 1
 gpu_mem = 0.4
 max_num_seqs = 1

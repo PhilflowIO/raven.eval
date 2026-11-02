@@ -163,6 +163,16 @@ def test_reports_the_recipe_decoding(load_shim):
     assert x["decoding"] == {"mode": "greedy", "max_tokens": 1024}
 
 
+def test_reports_the_recipe_precision(load_shim):
+    mod, _ = load_shim(["primeline/whisper-large-v3-german"])
+    x = _post(mod, "primeline/whisper-large-v3-german").json()["x_raven"]
+    # Served as fp16, from a checkpoint that stores bf16: the cast is on record.
+    assert x["precision"] == {
+        "weights": "fp16", "activations": "fp16", "scheme": "none", "tensor_parallel": 1,
+        "checkpoint": {"source": "published", "dtype": "bf16"},
+    }
+
+
 def _load_recording(load_shim, served: str):
     mod, calls = load_shim([served])
     bodies: list[bytes] = []
