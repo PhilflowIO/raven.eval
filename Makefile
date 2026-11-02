@@ -46,13 +46,15 @@ rescore:            ## Maintenance: add newly published fields to committed expe
 	uv run python -m raven_diar.rescore $(if $(DRY),--dry-run,)
 	uv run python -m raven_asr.rescore $(if $(DRY),--dry-run,)
 
-# Re-derive a finished run's predictions from the server output they record,
-# for a model whose output format was learnt after it ran (MOSS's timestamp and
-# speaker markup): prediction = spoken text, raw_prediction = server output, and
-# every score re-computed. No inference. Refuses a model without a parser. Run it
-# on results/ before promote — committed artifacts are never rewritten.
+# Re-derive a finished run's predictions from the server output they record:
+# parse a model's output format learnt after it ran (MOSS's timestamp and speaker
+# markup), and cut output to the recipe's decoding.max_tokens on the model's own
+# tokenizer (flagged capped_post_hoc, exact: false). prediction = what is scored,
+# raw_prediction = server output, every score re-computed. No inference. Refuses
+# a model with neither. Run it on results/ before promote — committed artifacts
+# are never rewritten.
 #   make reparse RESULTS=results/<run>/moss-transcribe-diarize
-reparse:            ## Maintenance: re-parse a run's recorded raw output, re-score (no inference).
+reparse:            ## Maintenance: re-parse + cap a run's recorded raw output, re-score (no inference).
 	uv run --extra asr python -m raven_asr.reparse $(RESULTS)
 
 # --- Tier 2: full re-run on public datasets (your own keys / GPU) ------------

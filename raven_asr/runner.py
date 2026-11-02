@@ -890,7 +890,7 @@ def rescore_recorded(
     out_dir: Path,
     spec: ModelSpec,
     subsets: Iterable[str],
-    post_hoc_step: dict[str, Any],
+    post_hoc_steps: list[dict[str, Any]],
 ) -> None:
     """Re-score ``subsets`` of a finished run from their (rewritten) predictions.
 
@@ -898,7 +898,7 @@ def rescore_recorded(
     every score derived from them is derived again, by the same functions a run
     uses — the resume markers, ``summary.json`` and ``model-index.yaml`` alike.
     What the run measured and cannot be re-derived (throughput, serving, the
-    run manifest, the dataset pin) is kept as recorded. ``post_hoc_step`` is
+    run manifest, the dataset pin) is kept as recorded. ``post_hoc_steps`` are
     appended to the summary's ``post_hoc`` list.
     """
     summary_path = out_dir / "summary.json"
@@ -930,7 +930,7 @@ def rescore_recorded(
                      if x.strip()]
             entry = _scored(ResultEntry(**json.loads(marker.read_text(encoding="utf-8"))), lines)
             marker.write_text(json.dumps(asdict(entry)), encoding="utf-8")
-    steps = list(summary.get("post_hoc") or []) + [post_hoc_step]
+    steps = list(summary.get("post_hoc") or []) + list(post_hoc_steps)
     _write_outputs(
         out_dir, spec, entries, summary.get("limit_per_subset"),
         summary.get("run_manifest"), post_hoc=steps,

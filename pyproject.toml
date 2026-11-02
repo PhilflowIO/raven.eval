@@ -59,6 +59,10 @@ asr = [
     # apps take 16 kHz; the Swiss corpora are 44.1 kHz). In this extra, not
     # `modal`, so the conversion is tested wherever the harness is.
     "soxr",
+    # The post-hoc output-length cap (raven_asr.reparse) cuts recorded output on
+    # the model's own tokenizer.json at the recipe revision; huggingface-hub
+    # above fetches it.
+    "tokenizers",
 ]
 modal = ["modal"]
 # Tier-2 DER harness (raven_diar): run the pinned diarizer over public audio and
