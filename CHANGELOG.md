@@ -80,6 +80,10 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   contract (`benchmark.config.yaml`) is unchanged; no committed artifact moves.
 
 ### Changed
+- `primeline/whisper-large-v3-german` is served in **bf16**, the format its
+  `model.safetensors` stores, instead of an fp16 cast (#82). The recipe hash
+  changes; earlier rows of this model carry `fp16 (cast from bf16)` and are
+  superseded by its run-4 re-measurement.
 - The vLLM serving engine moves from 0.28.0 to 0.33.0 (FlashInfer 0.7.2.post1
   with its prebuilt CUDA 13.0 kernels, torch 2.14.0, transformers 5.20.2 now
   pinned too), one engine for every vLLM model. vLLM rows measured on 0.28.0

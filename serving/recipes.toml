@@ -54,9 +54,8 @@
 #                 config.json) and checks the loaded parameters the same way;
 #                 modules a model keeps in fp32 by design (turboctc's conv norms)
 #                 stay fp32.
-# Every recipe so far serves its checkpoint's own format except
-# primeline-whisper-large-v3-german (bf16 checkpoint served as fp16; see its notes and
-# issue #82).
+# Every recipe serves its checkpoint's own format. primeline-whisper-large-v3-german
+# served an fp16 cast of its bf16 checkpoint until 2026-11-02 (#82, see its notes).
 #
 # Output length. vLLM and the transformers stand-in get max_tokens = 1024. The
 # longest reference in any WER dataset here is 686 UTF-8 bytes (voxpopuli-de);
@@ -268,12 +267,12 @@ model = "primeline/whisper-large-v3-german"
 revision = "361f11341446497fa2acf351bf63780060922a16"
 engine = "vllm"
 decoding = { mode = "greedy", max_tokens = 1024 }
-precision = { weights = "fp16", activations = "fp16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 4
 gpu_mem = 0.4
 max_num_seqs = 16
 chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
-notes = "Served in float16 (vLLM --dtype float16), as every run of this recipe so far. That is a cast: config.json says float16, but model.safetensors at the pinned commit stores bfloat16 (all 1259 tensors), so precision.checkpoint.dtype is bf16. bf16 -> fp16 keeps every weight inside fp16's normal range exactly (fp16 has the longer mantissa) and loses precision only below 6.1e-5."
+notes = "Served in bfloat16, the format model.safetensors stores at the pinned commit (all 1259 tensors; config.json says float16, which is why vLLM's \"auto\" would cast). Runs before 2026-11-02 served an fp16 cast (vLLM --dtype float16); those rows carry precision fp16 (cast from bf16) and are superseded by the run-4 re-measurement (#82)."
 
 [recipes."primeline-whisper-large-v3-turbo-german"]
 model = "primeline/whisper-large-v3-turbo-german"

@@ -483,8 +483,9 @@ _MEASURED_PRECISION = {
     "moss-transcribe-diarize": ("bf16", "bf16"),
     "qwen3-asr-1.7b": ("bf16", "bf16"),
     "voxtral-mini-3b-2507": ("bf16", "bf16"),
-    # config.json says float16, model.safetensors stores bfloat16: a cast.
-    "primeline-whisper-large-v3-german": ("fp16", "bf16"),
+    # config.json says float16, model.safetensors stores bfloat16; served as
+    # stored since #82 (an fp16 cast before).
+    "primeline-whisper-large-v3-german": ("bf16", "bf16"),
     "primeline-whisper-large-v3-turbo-german": ("bf16", "bf16"),
     "openai-whisper-large-v3": ("fp16", "fp16"),
     "openai-whisper-large-v3-turbo": ("fp16", "fp16"),
