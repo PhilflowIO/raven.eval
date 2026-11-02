@@ -233,11 +233,24 @@ def require_key(authorization: str = Header(default="")) -> None:
 #       voxtral.py:324-327 (SupportsTranscription); vLLM docs Transcription
 #       table lists it as "Voxtral (Mistral format)" — the launcher carries
 #       the mandatory --tokenizer-mode/--config-format/--load-format mistral.
-#   * moonshine-ai/moonshine-streaming-small-de
-#       NOT vLLM — served by moonshine_shim.py on the engine bind (vLLM
-#       cannot serve non-Whisper encoder-decoder ASR). Passthrough works
-#       unchanged because
-#       the stand-in speaks the same /v1/audio/transcriptions + /v1/models.
+#   * openai/whisper-large-v3-turbo — WhisperForConditionalGeneration, as above.
+#   * ibm-granite/granite-speech-5.0-2b
+#       config.json architectures = GraniteSpeechForConditionalGeneration, the
+#       class of granite_speech.py at v0.33.0 (SupportsTranscription; its
+#       get_generation_prompt asks "can you transcribe the speech into a
+#       written format?" and names no language).
+#   * mistralai/Voxtral-Mini-4B-Realtime-2602
+#       voxtral_realtime.py at v0.33.0: VoxtralRealtimeGeneration subclasses
+#       VoxtralForConditionalGeneration (SupportsTranscription) and overrides
+#       get_generation_prompt with mistral-common's StreamingMode.OFFLINE —
+#       the whole file in one request, the transcription delay read from the
+#       checkpoint's tekken.json (480 ms at the pinned commit). The /v1/realtime
+#       websocket is not needed for file transcription.
+#   * moonshine-ai/moonshine-streaming-small-de,
+#     ibm-granite/granite-speech-5.0-470m-turboctc
+#       NOT vLLM — served by transformers_server.py on the engine bind (vLLM
+#       has no class for either). Passthrough works unchanged because the
+#       stand-in speaks the same /v1/audio/transcriptions + /v1/models.
 #
 # CHAT-TRANSLATE:
 #   * microsoft/Phi-4-multimodal-instruct — family "phi4mm".
@@ -252,6 +265,19 @@ def require_key(authorization: str = Header(default="")) -> None:
 #       text — the API server injects them from the content parts (same docs
 #       page; the literal placeholder string is only for the offline
 #       raw-prompt path).
+#   * microsoft/VibeVoice-ASR-HF — family "vibevoice".
+#       vLLM 0.33.0 serves VibeVoiceAsrForConditionalGeneration through its
+#       Transformers modeling backend (registry.py _TRANSFORMERS_SUPPORTED_MODELS;
+#       tests/models/registry.py names this repo), which has no transcription
+#       endpoint. The request carries ONLY the audio part: the repo's
+#       chat_template.jinja then writes the model's own instruction ("This is a
+#       <|AUDIO_DURATION|> seconds audio, please transcribe it with these keys:
+#       Start time, End time, Speaker ID, Content"; the processor fills in the
+#       duration). A text part would become "extra info" context in that
+#       template, so a request prompt is passed as exactly that and nothing is
+#       added otherwise — no language: the card says the model "requires no
+#       explicit language setting". The answer is a JSON list of speaker turns;
+#       the harness parses it (raven_asr.output_formats "vibevoice-json").
 # --------------------------------------------------------------------------
 
 # UNVERIFIED: "Transcribe the audio clip into text." is the ASR instruction
@@ -266,6 +292,7 @@ PHI4_DEFAULT_PROMPT = os.environ.get(
 FAMILY_BY_PREFIX: list[tuple[str, str]] = [
     ("phi-4-multimodal", "phi4mm"),
     ("phi4", "phi4mm"),
+    ("vibevoice", "vibevoice"),
     # granite / cohere / moss fall through to "passthrough" (the default).
 ]
 
@@ -308,7 +335,30 @@ def _build_phi4mm(
     }
 
 
-CHAT_BUILDERS = {"phi4mm": _build_phi4mm}
+def _build_vibevoice(
+    *,
+    model: str,
+    audio_b64: str,
+    audio_format: str,
+    language: str,
+    user_prompt: str,
+    max_tokens: int,
+) -> dict[str, Any]:
+    del language  # the model takes none; see the routing table above
+    content: list[dict[str, Any]] = []
+    if user_prompt:
+        content.append({"type": "text", "text": user_prompt})
+    content.append(
+        {"type": "input_audio", "input_audio": {"data": audio_b64, "format": audio_format}}
+    )
+    return {
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+        **_greedy(max_tokens, "max_tokens"),
+    }
+
+
+CHAT_BUILDERS = {"phi4mm": _build_phi4mm, "vibevoice": _build_vibevoice}
 
 
 def _greedy(max_tokens: int, length_field: str) -> dict[str, Any]:

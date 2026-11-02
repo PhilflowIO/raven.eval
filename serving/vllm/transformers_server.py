@@ -1,10 +1,11 @@
-# transformers server for moonshine-ai/moonshine-streaming-small-de (recipe
-# engine "transformers"). vLLM cannot serve this model — encoder-decoder
-# seq2seq outside Whisper was removed with vLLM's V0 deprecation and there is
-# no moonshine registry entry — so this file stands in for the vLLM engine on
-# the engine bind: shim.py forwards its PASSTHROUGH multipart here unchanged,
-# Bearer auth stays in exactly one place, and the harness never learns the
-# backend changed. It and a vLLM engine never share a bind at the same time.
+# transformers server for the models vLLM cannot load (recipe engine
+# "transformers"). It stands in for the vLLM engine on the engine bind: shim.py
+# forwards its PASSTHROUGH multipart here unchanged, Bearer auth stays in exactly
+# one place, and the harness never learns the backend changed. It and a vLLM
+# engine never share a bind at the same time. One file for every such model; the
+# recipe's `model_class` names the transformers class that loads it, and
+# DECODERS below says how that class turns audio into text. A class without an
+# entry is refused at start, never guessed.
 #
 # Serving contract mirrored from vLLM so shim.py needs zero changes:
 #   POST /v1/audio/transcriptions   multipart, returns {"text": ...}
@@ -14,8 +15,11 @@
 #   GET  /version                   {"version", "engine"} — shim.py reports
 #                                   "engine" as x_raven.engine
 #
-# Model-card contract (https://huggingface.co/moonshine-ai/moonshine-streaming-small-de,
-# "Usage", verified 2026-09-01):
+# MoonshineStreamingForConditionalGeneration — moonshine-ai/moonshine-streaming-small-de.
+# vLLM has no moonshine class (encoder-decoder seq2seq outside Whisper went with
+# vLLM's V0). Model-card contract
+# (https://huggingface.co/moonshine-ai/moonshine-streaming-small-de, "Usage",
+# verified 2026-09-01):
 #   * MoonshineStreamingForConditionalGeneration.from_pretrained + AutoProcessor
 #     (transformers >= 5.2 — models/moonshine_streaming exists at tag v5.2.0,
 #     absent at v5.1.0; serving/vllm/requirements.txt satisfies this).
@@ -26,8 +30,17 @@
 #   * Cap max_new_tokens (repetition-loop guard); the card's own formula is
 #     max_new_tokens = int((seq_lens * 6.5 / 16000).max()) + 2.
 #   * 16 kHz input; the processor pads to whole 80-sample frames itself.
-"""Minimal /v1/audio/transcriptions server for moonshine-streaming-small-de."""
-
+#
+# GraniteSpeech5ForCTC — ibm-granite/granite-speech-5.0-470m-turboctc. A CTC
+# conformer; vLLM 0.33.0 registers no CTC architecture for it. Model-card
+# contract (https://huggingface.co/ibm-granite/granite-speech-5.0-470m-turboctc,
+# "Usage with transformers", verified 2026-11-02): transformers >= 5.16.0,
+# AutoProcessor at 16 kHz, inputs moved to the model's device AND dtype,
+# model.generate(**inputs) (one forward pass, argmax per frame, padded frames
+# masked — modeling_granite_speech5.py at v5.20.2), processor.batch_decode(...,
+# skip_special_tokens=True), whose ParakeetTokenizer collapses the CTC repeats
+# and blanks. Non-autoregressive: one label per 80 ms encoder frame, no loop, so
+# decoding.max_tokens has nothing to bound here and is not applied.
 from __future__ import annotations
 
 import contextlib
@@ -42,27 +55,25 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
-logger = logging.getLogger("moonshine-shim")
+logger = logging.getLogger("transformers-server")
 logging.basicConfig(level=logging.INFO)
 
-MODEL_ID = os.environ.get(
-    "MOONSHINE_MODEL", "moonshine-ai/moonshine-streaming-small-de"
-)
-# The HF commit to load (launch.py passes the recipe's pin); None = the repo's main.
-REVISION = os.environ.get("MOONSHINE_REVISION") or None
+# launch.py passes all three from the recipe: model id, HF commit, class.
+MODEL_ID = os.environ.get("TRANSFORMERS_MODEL", "")
+REVISION = os.environ.get("TRANSFORMERS_REVISION") or None  # None = the repo's main
+MODEL_CLASS = os.environ.get("TRANSFORMERS_CLASS", "")
 # Bind where the vLLM engine would bind (launch.py sets both) — see header.
-BIND_HOST = os.environ.get("MOONSHINE_HOST", "127.0.0.1")
-BIND_PORT = int(os.environ.get("MOONSHINE_PORT", "8000"))
-DEVICE = os.environ.get("MOONSHINE_DEVICE", "cuda")  # "cuda"/"cpu", never an index
+BIND_HOST = os.environ.get("TRANSFORMERS_HOST", "127.0.0.1")
+BIND_PORT = int(os.environ.get("TRANSFORMERS_PORT", "8000"))
+DEVICE = os.environ.get("TRANSFORMERS_DEVICE", "cuda")  # "cuda"/"cpu", never an index
 # Same house discipline as nemo/server.py: cap this process's VRAM share
-# before load. 0.4 mirrors the vLLM default budget; the 0.45 GB model is far
-# below it either way.
-GPU_MEM_FRACTION = float(os.environ.get("MOONSHINE_GPU_MEM_FRACTION", "0.4"))
-MAX_UPLOAD_MB = int(os.environ.get("MOONSHINE_MAX_UPLOAD_MB", "512"))
+# before load (launch.py passes the recipe's gpu_mem).
+GPU_MEM_FRACTION = float(os.environ.get("TRANSFORMERS_GPU_MEM_FRACTION", "0.4"))
+MAX_UPLOAD_MB = int(os.environ.get("TRANSFORMERS_MAX_UPLOAD_MB", "512"))
 FFMPEG = os.environ.get("FFMPEG_BIN", "ffmpeg")
 SAMPLE_RATE = 16000
 
-app = FastAPI(title="raven.eval moonshine server", version="1.1.0")
+app = FastAPI(title="raven.eval transformers server", version="2.0.0")
 
 _model = None
 _processor = None
@@ -71,8 +82,8 @@ _load_lock = threading.Lock()
 # One generate() at a time. Requests arrive on the uvicorn threadpool;
 # a parallel bench client would otherwise run several generate() calls on the
 # one shared module concurrently — the same unguarded-model race the NeMo leg
-# had. This model is small and fast; serialising it costs little, and unlike
-# the NeMo leg it is not worth a batching queue (one model of fourteen).
+# had. These models are small and fast; serialising them costs little, and
+# unlike the NeMo leg it is not worth a batching queue.
 _infer_lock = threading.Lock()
 
 
@@ -83,10 +94,14 @@ def _load() -> None:
             return
         try:
             import torch
-            from transformers import (  # noqa: PLC0415 — heavy, load once
-                AutoProcessor,
-                MoonshineStreamingForConditionalGeneration,
-            )
+            import transformers  # noqa: PLC0415 — heavy, load once
+            from transformers import AutoProcessor
+
+            if MODEL_CLASS not in DECODERS:
+                raise ValueError(
+                    f"TRANSFORMERS_CLASS={MODEL_CLASS!r}: this server decodes only "
+                    f"{sorted(DECODERS)}"
+                )
 
             if DEVICE.startswith("cuda") and torch.cuda.is_available():
                 torch.cuda.init()
@@ -95,7 +110,7 @@ def _load() -> None:
             else:
                 device = "cpu"
             t0 = time.monotonic()
-            model = MoonshineStreamingForConditionalGeneration.from_pretrained(
+            model = getattr(transformers, MODEL_CLASS).from_pretrained(
                 MODEL_ID, revision=REVISION
             ).eval()
             model.to(device)
@@ -126,7 +141,7 @@ def health() -> JSONResponse:
             "model": MODEL_ID,
             "model_loaded": loaded,
             "model_load_error": _load_error,
-            "backend": "transformers-moonshine (NOT vLLM)",
+            "backend": f"transformers {MODEL_CLASS} (NOT vLLM)",
         },
     )
 
@@ -182,11 +197,9 @@ def _normalize(path: str) -> str:
     return out
 
 
-def _transcribe(wav_path: str, max_tokens: int | None = None) -> str:
-    import soundfile as sf
+def _moonshine(audio, max_tokens: int | None) -> str:
     import torch
 
-    audio, sr = sf.read(wav_path, dtype="float32", always_2d=False)
     inputs = _processor(audio, return_tensors="pt", sampling_rate=SAMPLE_RATE)
     # Model-card repetition-loop guard: ~6.5 tokens per second of audio + 2.
     seq_lens = inputs.attention_mask.sum(dim=-1)
@@ -201,11 +214,39 @@ def _transcribe(wav_path: str, max_tokens: int | None = None) -> str:
     return _processor.batch_decode(generated, skip_special_tokens=True)[0].strip()
 
 
+def _ctc(audio, max_tokens: int | None) -> str:
+    del max_tokens  # one forward pass, no loop to bound (see header)
+    import torch
+
+    inputs = _processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
+    # BatchFeature.to casts only the floating tensors (the features) to the
+    # model's dtype; the attention mask keeps its type.
+    inputs = inputs.to(_model.device, dtype=_model.dtype)
+    with _infer_lock, torch.no_grad():
+        ids = _model.generate(**inputs)
+    return _processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+
+
+#: transformers class -> how a loaded model of that class transcribes one
+#: 16 kHz mono float32 clip. The recipe's model_class picks the entry.
+DECODERS = {
+    "MoonshineStreamingForConditionalGeneration": _moonshine,
+    "GraniteSpeech5ForCTC": _ctc,
+}
+
+
+def _transcribe(wav_path: str, max_tokens: int | None = None) -> str:
+    import soundfile as sf
+
+    audio, _sr = sf.read(wav_path, dtype="float32", always_2d=False)
+    return DECODERS[MODEL_CLASS](audio, max_tokens)
+
+
 @app.post("/v1/audio/transcriptions")
 async def transcriptions(
     file: UploadFile = File(...),
-    model: str = Form(""),  # noqa: ARG001 — OpenAI-compat field; MOONSHINE_MODEL rules
-    language: str = Form("de"),  # noqa: ARG001 — German-only model, nothing to force
+    model: str = Form(""),  # noqa: ARG001 — OpenAI-compat field; TRANSFORMERS_MODEL rules
+    language: str = Form("de"),  # noqa: ARG001 — neither class takes a language
     response_format: str = Form("json"),
     temperature: float = Form(0.0),  # noqa: ARG001 — greedy decode only
     max_completion_tokens: int | None = Form(None),
@@ -222,7 +263,7 @@ async def transcriptions(
     # Spool with a hard cap (mkstemp: collision-safe; chunked read: reject
     # oversized bodies before buffering whole — same as nemo/server.py).
     suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
-    fd, tmp = tempfile.mkstemp(prefix="moonshine_upload_", suffix=suffix)
+    fd, tmp = tempfile.mkstemp(prefix="transformers_upload_", suffix=suffix)
     total = 0
     try:
         with os.fdopen(fd, "wb") as fh:
@@ -231,7 +272,7 @@ async def transcriptions(
                 if total > MAX_UPLOAD_MB * 1024 * 1024:
                     raise HTTPException(
                         status_code=413,
-                        detail=f"upload exceeds MOONSHINE_MAX_UPLOAD_MB={MAX_UPLOAD_MB} MB",
+                        detail=f"upload exceeds TRANSFORMERS_MAX_UPLOAD_MB={MAX_UPLOAD_MB} MB",
                     )
                 fh.write(chunk)
         if total == 0:

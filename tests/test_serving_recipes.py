@@ -140,7 +140,8 @@ def test_a_recipe_without_a_full_commit_is_refused(
 ) -> None:
     bad = tmp_path / "r.toml"
     pin = "" if revision is None else f'revision = "{revision}"\n'
-    ckpt = 'checkpoint_file = "m.nemo"\n' if engine == "nemo" else ""
+    ckpt = {"nemo": 'checkpoint_file = "m.nemo"\n',
+            "transformers": 'model_class = "GraniteSpeech5ForCTC"\n'}.get(engine, "")
     bad.write_text(f'[recipes."x"]\nmodel = "a/b"\nengine = "{engine}"\nweights_gb = 1\n'
                    f'gpu_mem = 0.5\nchunking = "none"\n{_DECODING[engine]}\n{pin}{ckpt}')
     with pytest.raises(recipe.RecipeError, match="revision"):
@@ -191,12 +192,14 @@ def test_snapshots_are_downloaded_at_the_recipe_revision(
 
 
 #: The commits the 2026-11 round loaded: the bench cache's refs/main for the three
-#: nvidia repos, and primeline's main (unchanged since 2026-04-24) for the fourth.
+#: nvidia repos, and primeline's main (unchanged since 2026-04-24) for the fourth —
+#: all four still each repo's main on 2026-11-02. The unified model: its main then.
 NEMO_PINS = {
     "nvidia/parakeet-tdt-0.6b-v3": "541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
     "nvidia/canary-1b-v2": "d455706339a6b32e1aa40f82c713a482a0c938e2",
     "nvidia/nemotron-3.5-asr-streaming-0.6b": "ea30d66debe3740a08b573244286791d423d6b3e",
     "primeline/parakeet-primeline": "3f1a9bcb611dfeda53fe74fe5f1a3d5701e8023e",
+    "nvidia/nemotron-labs-unified-asr-0.6b": "023ce907267a09a308a5cb69239447cb3d0c1597",
 }
 
 
@@ -251,9 +254,106 @@ def test_nemo_command_and_batching_come_from_the_recipe() -> None:
 
 def test_the_transformers_stand_in_binds_where_the_engine_would() -> None:
     argv, env = _build("moonshine-ai/moonshine-streaming-small-de", RAVEN_SERVE_PORT="18273")
-    assert argv == [PY, str(SERVING / "vllm" / "moonshine_shim.py")]
-    assert env["MOONSHINE_PORT"] == "18273" and env["MOONSHINE_GPU_MEM_FRACTION"] == "0.4"
-    assert env["MOONSHINE_REVISION"] == "56473ba32b22b484fdfc7eb03d34c393ff494197"
+    assert argv == [PY, str(SERVING / "vllm" / "transformers_server.py")]
+    assert env["TRANSFORMERS_PORT"] == "18273" and env["TRANSFORMERS_GPU_MEM_FRACTION"] == "0.4"
+    assert env["TRANSFORMERS_REVISION"] == "56473ba32b22b484fdfc7eb03d34c393ff494197"
+    assert env["TRANSFORMERS_CLASS"] == "MoonshineStreamingForConditionalGeneration"
+
+
+def test_the_ctc_model_runs_on_the_stand_in_under_its_own_class() -> None:
+    argv, env = _build("ibm-granite/granite-speech-5.0-470m-turboctc")
+    assert argv == [PY, str(SERVING / "vllm" / "transformers_server.py")]
+    assert env["TRANSFORMERS_MODEL"] == "ibm-granite/granite-speech-5.0-470m-turboctc"
+    assert env["TRANSFORMERS_CLASS"] == "GraniteSpeech5ForCTC"
+    # The multilingual 2026-10-21 release, not the English-only 947f59a.
+    assert env["TRANSFORMERS_REVISION"] == "1dd23f46f6d4e6eae2531982ba2e33220086dd97"
+
+
+def test_every_stand_in_class_is_one_the_server_decodes() -> None:
+    """The server refuses a class it has no decoder for; a recipe must not name one."""
+    import ast
+
+    tree = ast.parse((SERVING / "vllm" / "transformers_server.py").read_text())
+    decoders = next(
+        node.value for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "DECODERS" for t in node.targets)
+    )
+    known = {k.value for k in decoders.keys}  # type: ignore[union-attr]
+    for rid, r in RECIPES.items():
+        if r["engine"] == "transformers":
+            assert r["model_class"] in known, rid
+
+
+def test_a_transformers_recipe_without_a_class_is_refused(tmp_path: Path) -> None:
+    bad = tmp_path / "r.toml"
+    bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "transformers"\nweights_gb = 1\n'
+                   f'gpu_mem = 0.5\nchunking = "none"\nrevision = "{"a" * 40}"\n'
+                   + _DECODING["transformers"] + "\n")
+    with pytest.raises(recipe.RecipeError, match="model_class"):
+        recipe.load_recipes(bad)
+
+
+def test_granite_5_serves_a_snapshot_without_its_stray_output_head() -> None:
+    """out_llm.safetensors sits beside model.safetensors with no index; vLLM would
+    load both and fail on tensors no module owns."""
+    argv, _ = _build("ibm-granite/granite-speech-5.0-2b")
+    assert argv[2:5] == ["/snap", "--served-model-name", "ibm-granite/granite-speech-5.0-2b"]
+    assert "out_llm.safetensors" in RECIPES["granite-speech-5.0-2b"]["snapshot_ignore"]
+    assert _flag(argv, "--max-model-len") == "2048"
+
+
+def test_a_snapshot_still_holding_an_excluded_weight_file_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import huggingface_hub
+
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    (snap / "model.safetensors").write_bytes(b"")
+    (snap / "multilingual_sample.wav").write_bytes(b"")  # excluded, but never loaded
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *_a, **_k: str(snap))
+    r = RECIPES["granite-speech-5.0-2b"]
+    assert launch._fetch(r) == (str(snap), None)
+    (snap / "out_llm.safetensors").write_bytes(b"")  # left by an earlier full download
+    with pytest.raises(launch.LaunchError, match="out_llm.safetensors"):
+        launch._fetch(r)
+
+
+def test_voxtral_realtime_is_served_offline_with_the_card_flags() -> None:
+    argv, _ = _build("mistralai/Voxtral-Mini-4B-Realtime-2602")
+    assert _flag(argv, "--revision") == "2769294da9567371363522aac9bbcfdd19447add"
+    assert (_flag(argv, "--tokenizer-mode"), _flag(argv, "--config-format"),
+            _flag(argv, "--load-format")) == ("mistral", "mistral", "mistral")
+    assert json.loads(_flag(argv, "--compilation-config")) == {"cudagraph_mode": "PIECEWISE"}
+    assert _flag(argv, "--max-model-len") == "16384"
+
+
+def test_vibevoice_is_the_transformers_format_release_with_a_card_to_itself() -> None:
+    argv, _ = _build("microsoft/VibeVoice-ASR-HF")
+    assert argv[2] == "microsoft/VibeVoice-ASR-HF"
+    assert _flag(argv, "--revision") == "f22241c2062b3b25272bf117397e03d73381037a"
+    assert float(_flag(argv, "--gpu-memory-utilization")) >= 0.9
+    assert _flag(argv, "--max-num-seqs") == "4"
+    assert "--trust-remote-code" not in argv  # native in the pinned transformers
+
+
+def test_every_recipe_added_since_2026_11_cites_german_evidence() -> None:
+    """Issue #77: the reason a model is in a German benchmark is on record."""
+    for rid in ("openai-whisper-large-v3-turbo", "granite-speech-5.0-2b",
+                "granite-speech-5.0-470m-turboctc", "voxtral-mini-4b-realtime-2602",
+                "vibevoice-asr", "nvidia-nemotron-labs-unified-asr-0.6b"):
+        notes = RECIPES[rid]["notes"]
+        assert "German" in notes and "https://huggingface.co/" in notes, rid
+
+
+def test_the_unified_model_is_served_in_offline_mode() -> None:
+    """longform would switch it to local attention — not the offline mode its
+    card's WER tables report."""
+    r = RECIPES["nvidia-nemotron-labs-unified-asr-0.6b"]
+    assert r["longform"] is False
+    _, env = _build("nvidia/nemotron-labs-unified-asr-0.6b")
+    assert env["BENCH_LONGFORM"] == "false"
 
 
 @pytest.mark.parametrize("visible", ["", "0,1", "all"])

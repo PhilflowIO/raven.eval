@@ -1,4 +1,4 @@
-# Serving recipes of the 14 self-hosted models (raven_asr.config.SELF_HOSTED_MODELS).
+# Serving recipes of the 20 self-hosted models (raven_asr.config.SELF_HOSTED_MODELS).
 #
 # One table per model, keyed by the model's result-directory label. `launch.py`
 # turns a table into the server process; the servers report the table's id and
@@ -20,7 +20,10 @@
 #                are the smallest budget the model serves with, not a recommendation.
 #   chunking     what happens to audio longer than the model takes in one pass, and
 #                where. The harness sends one utterance per request and never chunks.
-#   notes        why a value is what it is, where that is not obvious
+#   notes        why a value is what it is, where that is not obvious, and for every
+#                model added since 2026-11 the model card's own German evidence
+#                (quote + URL), so the reason a model is in a German benchmark is
+#                on record next to how it is served
 #   decoding     how the model decodes and how long its output may get (recipe.py,
 #                DECODING_KEYS). mode is "greedy" everywhere. Servers report the
 #                table as x_raven.decoding; every run records it.
@@ -39,22 +42,27 @@
 # generation_config limit, so for Whisper (max_length 448) 448 still applies.
 # vLLM splits audio longer than a model's clip limit and the cap holds per piece.
 # NeMo models generate under their checkpoint's decoding config, which the server
-# checks against the table and never changes.
+# checks against the table and never changes. A CTC model on the transformers
+# stand-in (granite-speech-5.0-470m-turboctc) emits one label per encoder frame
+# in a single forward pass: there is no generation loop, so max_tokens bounds
+# nothing there and the stand-in does not apply it.
 #
 # vllm keys: dtype, max_num_seqs (default; RAVEN_SERVE_MAX_NUM_SEQS overrides),
 #   max_model_len, trust_remote_code, args (further `vllm serve` flags, verbatim),
 #   snapshot_ignore (patterns left out of the snapshot download), serve_from_snapshot
 #   (serve the local snapshot under the model id instead of letting vLLM download),
 #   lora_modules (name = directory inside the snapshot)
+# transformers keys: model_class (required: the transformers class that loads the
+#   model; vllm/transformers_server.py serves only the classes it lists), max_num_seqs
 # nemo keys: checkpoint_file (required: the .nemo inside the HF repo; the launcher
 #   downloads it at `revision` and the server restores exactly that file, because
 #   ASRModel.from_pretrained takes no revision), max_batch, batch_wait_ms,
 #   batch_max_audio_s, longform
 #
 # Every vLLM model is reached through vllm/shim.py, which forwards to vLLM's own
-# /v1/audio/transcriptions, except Phi-4-multimodal, whose vLLM class has no
-# transcription endpoint: the shim turns the request into a chat completion for
-# the speech LoRA. Decoding is greedy everywhere: the shim sends temperature 0,
+# /v1/audio/transcriptions, except Phi-4-multimodal and VibeVoice-ASR, whose vLLM
+# classes have no transcription endpoint: the shim turns the request into a chat
+# completion (Phi-4: for the speech LoRA). Decoding is greedy everywhere: the shim sends temperature 0,
 # repetition_penalty 1.0 and the recipe's max_tokens with every request.
 
 # ── NeMo ────────────────────────────────────────────────────────────────────
@@ -118,6 +126,21 @@ batch_max_audio_s = 40
 longform = true
 chunking = "server: local attention [256, 256]; audio over 900 s is cut into 600 s windows with 3 s overlap and stitched by timestamps"
 notes = "The repo is not from_pretrained-loadable; the named .nemo checkpoint is restored instead."
+
+[recipes."nvidia-nemotron-labs-unified-asr-0.6b"]
+model = "nvidia/nemotron-labs-unified-asr-0.6b"
+revision = "023ce907267a09a308a5cb69239447cb3d0c1597"
+engine = "nemo"
+decoding = { mode = "greedy", strategy = "greedy_batch", max_symbols = 10 }
+checkpoint_file = "nemotron-labs-unified-asr-0.6b.nemo"
+weights_gb = 3
+gpu_mem = 0.5
+max_batch = 16
+batch_wait_ms = 20
+batch_max_audio_s = 40
+longform = false
+chunking = "none in the model: offline mode, full-context attention as the checkpoint ships it (att_context_size [-1, -1]); audio over 900 s is cut into 600 s windows with 3 s overlap and stitched by timestamps"
+notes = "One checkpoint for offline and streaming; this recipe serves the OFFLINE mode the card's WER tables report: longform = false keeps the checkpoint's full-context attention instead of switching it to local attention. EncDecRNNTBPEModelWithPrompt like nemotron-3.5-asr-streaming: on NeMo 3.0.0 offline transcribe cannot force a language (target_lang is honoured only on NeMo Speech main, released as 3.1.0 later), so the server runs prompt mode auto and responses carry x_raven.language_forced = false; the card's numbers use the explicit de prompt. The checkpoint was written by NeMo 3.1.0+7be3e2bf6. German: 'Supported Languages: ... German (de)' and FLEURS (German) 'WER (offline)' 3.87 — https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
 
 # ── vLLM ────────────────────────────────────────────────────────────────────
 
@@ -242,15 +265,83 @@ snapshot_ignore = ["*fp32*", "*.bin", "*.msgpack"]
 chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
 notes = "The repo has no standard safetensors index, so vLLM would download every variant (~9.3 GB); a filtered snapshot of the fp16 weights is served under the model id instead. float16 = the checkpoint's dtype."
 
+[recipes."openai-whisper-large-v3-turbo"]
+model = "openai/whisper-large-v3-turbo"
+revision = "41f01f3fe87f28c78e2fbf8b568835947dd65ed9"
+engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
+weights_gb = 2
+gpu_mem = 0.4
+max_num_seqs = 16
+dtype = "float16"
+chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
+notes = "float16 = the checkpoint's dtype. The repo holds one model.safetensors, so vLLM downloads nothing else. German: the card lists de among Whisper's languages, and 'Whisper large-v3-turbo is a finetuned version of a pruned Whisper large-v3 ... the number of decoding layers have reduced from 32 to 4' — https://huggingface.co/openai/whisper-large-v3-turbo"
+
+[recipes."granite-speech-5.0-2b"]
+model = "ibm-granite/granite-speech-5.0-2b"
+revision = "205b95148be9cf83419180314066c2beba862a00"
+engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
+weights_gb = 5
+gpu_mem = 0.4
+max_num_seqs = 16
+dtype = "bfloat16"
+max_model_len = 2048
+serve_from_snapshot = true
+snapshot_ignore = ["out_llm.safetensors", "*.wav", "assets/*"]
+chunking = "engine: vLLM's transcription endpoint splits audio longer than the model's clip limit"
+notes = "GraniteSpeechForConditionalGeneration, a class vLLM 0.33.0 registers. The repo ships out_llm.safetensors (a 100353x1024 output head as bare weight/bias) next to model.safetensors and no index; vLLM loads every safetensors file of an index-less repo and fails on tensors no module owns, so a snapshot without it is served under the model id (launch.py refuses a snapshot that still holds it). max_model_len 2048 is the card's own serve flag. vLLM's transcription prompt names no language, as for granite-speech-4.1. German: 'multilingual automatic speech recognition (ASR) and bidirectional automatic speech translation (AST) for English, French, German, Spanish, Portuguese and Japanese' — https://huggingface.co/ibm-granite/granite-speech-5.0-2b"
+
+[recipes."voxtral-mini-4b-realtime-2602"]
+model = "mistralai/Voxtral-Mini-4B-Realtime-2602"
+revision = "2769294da9567371363522aac9bbcfdd19447add"
+engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
+weights_gb = 9
+gpu_mem = 0.6
+max_num_seqs = 16
+dtype = "bfloat16"
+max_model_len = 16384
+args = ["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral", "--compilation-config", "{\"cudagraph_mode\": \"PIECEWISE\"}"]
+chunking = "none: vLLM's transcription endpoint sends the whole file as one offline request (no clip limit for this class); max_model_len 16384 text positions at 80 ms each hold ~21 min, instead of the declared 131072, whose RoPE tables only cost memory here"
+notes = "A streaming model served OFFLINE: vLLM 0.33.0's VoxtralRealtimeGeneration answers /v1/audio/transcriptions with mistral-common's StreamingMode.OFFLINE, no websocket. The transcription delay is the checkpoint's own tekken.json transcription_delay_ms = 480 at the pinned commit — the setting of the card's FLEURS table and its recommended 'sweet spot'. Mistral-format loading reads consolidated.safetensors (8.9 GB); cudagraph_mode PIECEWISE is the card's serve flag (the class refuses FULL cudagraphs for mixed batches). German: FLEURS German 6.19 % at 480 ms delay — https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602"
+
+[recipes."vibevoice-asr"]
+model = "microsoft/VibeVoice-ASR-HF"
+revision = "f22241c2062b3b25272bf117397e03d73381037a"
+engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
+weights_gb = 17
+gpu_mem = 0.92
+max_num_seqs = 4
+dtype = "bfloat16"
+max_model_len = 16384
+args = ["--limit-mm-per-prompt", "{\"audio\":1}"]
+chunking = "none: the whole clip goes into one chat request; the card's 64K context holds 60 min, max_model_len 16384 holds ~15 min of audio plus the answer"
+notes = "Microsoft's transformers-format release of microsoft/VibeVoice-ASR: the original repo's VibeVoiceForASRTraining has no vLLM class, this one's VibeVoiceAsrForConditionalGeneration runs on vLLM 0.33.0's Transformers modeling backend (no transcription endpoint: the shim sends a chat completion with the audio and no text, so the repo's chat template writes the model's own instruction). ~8.7B parameters in bfloat16 (16.7 GB): needs a card of its own, gpu_mem 0.92 and 4 sequences. The answer is a JSON list of timed speaker turns; the harness parses it (raven_asr.output_formats 'vibevoice-json'), prediction = the turns' Content, raw_prediction = the answer. No language is sent: the card says it 'requires no explicit language setting'. German: the card's language list carries 'de # German', 'over 50 languages' — https://huggingface.co/microsoft/VibeVoice-ASR"
+
 # ── transformers stand-in (behind the same shim) ────────────────────────────
 
 [recipes."moonshine-streaming-small-de"]
 model = "moonshine-ai/moonshine-streaming-small-de"
 revision = "56473ba32b22b484fdfc7eb03d34c393ff494197"
 engine = "transformers"
+model_class = "MoonshineStreamingForConditionalGeneration"
 decoding = { mode = "greedy", max_tokens = 1024 }
 weights_gb = 1
 gpu_mem = 0.4
 max_num_seqs = 1
 chunking = "none: the whole clip in one generate(); max_new_tokens is the smaller of the model card's formula (6.5 tokens per second of audio + 2) and decoding.max_tokens"
-notes = "Encoder-decoder outside Whisper; vLLM has no class for it. vllm/moonshine_shim.py serves it with transformers, attention_mask always passed, one generate() at a time."
+notes = "Encoder-decoder outside Whisper; vLLM has no class for it. vllm/transformers_server.py serves it with transformers, attention_mask always passed, one generate() at a time."
+
+[recipes."granite-speech-5.0-470m-turboctc"]
+model = "ibm-granite/granite-speech-5.0-470m-turboctc"
+revision = "1dd23f46f6d4e6eae2531982ba2e33220086dd97"
+engine = "transformers"
+model_class = "GraniteSpeech5ForCTC"
+decoding = { mode = "greedy", max_tokens = 1024 }
+weights_gb = 1
+gpu_mem = 0.4
+max_num_seqs = 1
+chunking = "none: the whole clip in one forward pass; block attention over 128-frame blocks keeps memory linear in the clip length"
+notes = "A CTC conformer (greedy argmax per 80 ms frame, the card's 'inference is done non-autoregressively with greedy decoding'); vLLM 0.33.0 has no class for it, so vllm/transformers_server.py serves it natively in transformers 5.20.2 (the card needs >= 5.16.0), one forward pass at a time. max_tokens bounds no loop here (see the header). The pinned commit is the 2026-10-21 multilingual release, not the English-only 947f59a. German: 'a compact 470 million parameter multilingual ASR model for English, French, German, Spanish, Portuguese, Italian and Japanese' — https://huggingface.co/ibm-granite/granite-speech-5.0-470m-turboctc"

@@ -6,6 +6,10 @@ timestamps and speaker tags with the words:
 
     [4.18][S01] Für die besten Aussichten … gegenüberliegenden[10.96][10.96][S01] Ufer von …[13.81]
 
+VibeVoice-ASR answers with a JSON list of speaker turns:
+
+    [{"Start":0,"End":4.2,"Speaker":0,"Content":"Guten Tag."}, …]
+
 That markup is how one model formats its output, not speech, and scoring it
 counts every ``[4.18]`` and ``[S01]`` as an inserted word (MOSS scored ~100 %
 WER on sets it transcribes almost perfectly). It is parsed here, at the
@@ -28,12 +32,14 @@ Stdlib only: ``reparse`` and the tests import this without the ``asr`` extra.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 __all__ = [
-    "OUTPUT_PARSERS", "ParsedOutput", "Segment", "parse_moss", "parser_for",
+    "OUTPUT_PARSERS", "ParsedOutput", "Segment", "parse_moss", "parse_vibevoice",
+    "parser_for",
 ]
 
 
@@ -145,10 +151,87 @@ def parse_moss(raw: str) -> ParsedOutput:
     return ParsedOutput(text=_clean(" ".join(pieces)), segments=segments)
 
 
+#: One turn object of a VibeVoice answer: a ``{…}`` with no nested braces (the
+#: turns are flat), and the ``Content`` string of a turn the answer broke off in
+#: (``max_tokens`` reached mid-string), which has no closing quote.
+_VV_OBJECT = re.compile(r"\{[^{}]*\}")
+_VV_OPEN_CONTENT = re.compile(r'"Content"\s*:\s*"((?:[^"\\]|\\.)*)$', re.DOTALL)
+
+
+def _vv_float(value: object) -> float | None:
+    try:
+        return None if value is None or isinstance(value, bool) else float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _vv_speaker(value: object) -> str | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
+        return f"S{int(value):02d}"
+    return str(value)
+
+
+def _vv_string(body: str) -> str:
+    """A JSON string body (without quotes) decoded; a broken escape kept verbatim."""
+    try:
+        return str(json.loads(f'"{body}"'))
+    except ValueError:
+        return body
+
+
+def parse_vibevoice(raw: str) -> ParsedOutput:
+    """VibeVoice-ASR output → spoken text + speaker segments.
+
+    The model card calls the answer "a string that resembles a JSON structure"
+    (https://huggingface.co/microsoft/VibeVoice-ASR-HF, "Speaker-timestamped
+    transcription"): a list of ``{"Start", "End", "Speaker", "Content"}`` turns.
+    The spoken text is the turns' ``Content`` joined by a space, in order.
+
+    Parsed turn by turn, not as one document, so an answer cut off by the output
+    cap keeps every complete turn plus the words of the turn it broke off in. A
+    turn that is not valid JSON is skipped as a whole — it carries no Content the
+    parser could trust. An answer with no turn object at all (the model answered
+    in plain text) comes back unchanged, whitespace collapsed, with no segments.
+    """
+    pieces: list[str] = []
+    segments: list[Segment] = []
+    found = raw.strip() == "[]"  # no speech: an empty turn list, not the text "[]"
+    end = 0
+    for m in _VV_OBJECT.finditer(raw):
+        found = True
+        end = m.end()
+        try:
+            turn = json.loads(m.group(0))
+        except ValueError:
+            continue
+        if not isinstance(turn, dict):
+            continue
+        text = _clean(str(turn.get("Content") or ""))
+        if not text:
+            continue
+        pieces.append(text)
+        segments.append(Segment(
+            _vv_speaker(turn.get("Speaker")), _vv_float(turn.get("Start")),
+            _vv_float(turn.get("End")), text,
+        ))
+    if tail := _VV_OPEN_CONTENT.search(raw[end:]):
+        found = True
+        text = _clean(_vv_string(tail.group(1)))
+        if text:
+            pieces.append(text)
+            segments.append(Segment(None, None, None, text))
+    if not found:
+        return ParsedOutput(text=_clean(raw))
+    return ParsedOutput(text=_clean(" ".join(pieces)), segments=segments)
+
+
 #: Output format name → parser. The names are what ``raven_asr.config`` binds a
 #: model to; a model with no entry there returns its transcript as-is.
 OUTPUT_PARSERS: dict[str, Callable[[str], ParsedOutput]] = {
     "moss-timed-speakers": parse_moss,
+    "vibevoice-json": parse_vibevoice,
 }
 
 

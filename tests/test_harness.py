@@ -323,6 +323,7 @@ _NEMO_SERVED = {
     "nvidia/canary-1b-v2",
     "nvidia/nemotron-3.5-asr-streaming-0.6b",
     "primeline/parakeet-primeline",
+    "nvidia/nemotron-labs-unified-asr-0.6b",
 }
 _VLLM_SERVED = {
     "ibm-granite/granite-speech-4.1-2b-plus",
@@ -335,14 +336,19 @@ _VLLM_SERVED = {
     "primeline/whisper-large-v3-german",
     "primeline/whisper-large-v3-turbo-german",
     "openai/whisper-large-v3",
+    "openai/whisper-large-v3-turbo",
+    "ibm-granite/granite-speech-5.0-2b",
+    "ibm-granite/granite-speech-5.0-470m-turboctc",
+    "mistralai/Voxtral-Mini-4B-Realtime-2602",
+    "microsoft/VibeVoice-ASR-HF",
 }
 
 
-def test_all_fourteen_self_hosted_models_bind_to_their_server_type() -> None:
+def test_all_twenty_self_hosted_models_bind_to_their_server_type() -> None:
     from raven_asr.config import SELF_HOSTED_MODELS
 
     assert set(SELF_HOSTED_MODELS) == _NEMO_SERVED | _VLLM_SERVED
-    assert len(SELF_HOSTED_MODELS) == 14
+    assert len(SELF_HOSTED_MODELS) == 20
     for key in _NEMO_SERVED | _VLLM_SERVED:
         spec = KNOWN_MODELS[key]
         assert spec.adapter == "vllm_openai"
