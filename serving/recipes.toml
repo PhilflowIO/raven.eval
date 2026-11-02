@@ -111,7 +111,7 @@ notes = "Gated repo: accept the license and export HF_TOKEN. vLLM defaults the l
 
 [recipes."granite-speech-4.1-2b-plus"]
 model = "ibm-granite/granite-speech-4.1-2b-plus"
-revision = "1454e6e1e33845ca9280ff65f52cf1141ba6e6e2"
+revision = "e69efe37f97b6283c61f5a8dadda2b3eb67765d6"
 engine = "vllm"
 weights_gb = 5
 gpu_mem = 0.4
@@ -119,7 +119,7 @@ max_num_seqs = 16
 dtype = "bfloat16"
 max_model_len = 2048
 chunking = "engine: vLLM's transcription endpoint splits audio longer than the model's clip limit"
-notes = "max_model_len 2048 is the model card's own flag for smaller cards; a clip that busts it fails loudly with a context-length error. revision pins the checkpoint that was main from 2026-06-16 until 2026-10-21, the one the September sweep served. The 2026-10-21 re-upload is a re-trained model (YaRN RoPE, text-model weights renamed to language_model.model.model.*) that vLLM loads only from 0.33.0 on (vllm-project/vllm#63050); measuring it is a new model entry on a newer engine, not a silent swap."
+notes = "max_model_len 2048 is the model card's own flag for smaller cards; a clip that busts it fails loudly with a context-length error. revision is IBM's 2026-10-21 re-upload, a re-trained model (YaRN RoPE, factor 4) and not the checkpoint the September sweep served (1454e6e1). Its text-model weights sit at language_model.model.model.*, which vLLM maps onto GraniteSpeechPlusForConditionalGeneration from 0.33.0 on (vllm-project/vllm#63050). The card now recommends beam search (4 beams, repetition_penalty 2.0); the transcription endpoint decodes greedily like every other model here."
 
 [recipes."phi-4-multimodal"]
 model = "microsoft/Phi-4-multimodal-instruct"

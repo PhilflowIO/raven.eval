@@ -336,6 +336,10 @@ tabled here.
 **Serving.** Every self-hosted row is served from the recipe in `serving/`
 (engine pins, launch flags, the NeMo batching server, the shim), and runs
 record which recipe, engine and batching answered (`summary.json` → `serving`).
+All vLLM-served models share one engine, kept at the newest vLLM release, and
+each of their recipes pins the newest Hugging Face commit of its model; an engine
+bump is followed by re-measuring every vLLM model, so a row's `serving` block names
+the version it was measured on.
 How to stand the servers up: `docs/TIER2-KEYS.md`, "Serving self-hosted
 models". Self-hosted rows reproduce to character-level batching tolerance, not
 bit-exactly: server-side batching changed 2 of 862 FLEURS transcripts of

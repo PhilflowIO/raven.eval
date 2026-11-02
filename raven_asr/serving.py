@@ -6,7 +6,7 @@ measurement: server-side batching changed 2 of 862 FLEURS transcripts of
 Parakeet-TDT-0.6B-v3 by one character). The servers in ``serving/`` therefore
 report, in every response's ``x_raven``:
 
-    engine    "vllm 0.28.0" / "nemo 3.0.0 (torch ...)" / "transformers ... (torch ...)"
+    engine    "vllm 0.33.0" / "nemo 3.0.0 (torch ...)" / "transformers ... (torch ...)"
     recipe    {"id", "sha256"}: the recipe in serving/recipes.toml and a hash
               over it and every file that executes it (serving/recipe.py)
     batching  NeMo {"max_batch", "wait_ms", "max_audio_s"}; vLLM {"max_num_seqs"}

@@ -94,8 +94,12 @@ with. NeMo's `ASRModel.from_pretrained` takes no revision, so a NeMo recipe name
 its `.nemo` file instead; the launcher downloads that file at the pin and the
 server restores exactly it. Engines are pinned in
 `serving/vllm/requirements.txt` (vLLM, FlashInfer with prebuilt kernels for CUDA
-13.0, librosa) and `serving/nemo/requirements.txt` (NeMo). Neither is part of
-this repo's own install: each gets its own environment on the GPU host.
+13.0, transformers, librosa) and `serving/nemo/requirements.txt` (NeMo). Neither
+is part of this repo's own install: each gets its own environment on the GPU host.
+Every vLLM model runs on the same engine, the newest vLLM release when it was
+pinned; the pin is there so a row can name what served it, and a bump is followed
+by re-measuring every vLLM model. vLLM 0.33.0's CUDA 13.0 wheels need an NVIDIA
+driver >= 580.
 
 ```bash
 # once per engine (Python 3.12; see the header of each requirements file)
@@ -127,7 +131,7 @@ The recipes' memory defaults were sized on a 24 GB card shared with other
 work; on an empty card give vLLM more.
 
 **What a run records.** Every answer of these servers names its setup in
-`x_raven`: `engine` (`vllm 0.28.0`, `nemo 3.0.0 (torch …)`), `recipe` (`id` and
+`x_raven`: `engine` (`vllm 0.33.0`, `nemo 3.0.0 (torch …)`), `recipe` (`id` and
 a SHA-256 over that model's recipe and every file that executes it) and
 `batching` (NeMo `max_batch` / `wait_ms` / `max_audio_s`, vLLM `max_num_seqs`).
 The harness pins the first answer's block, writes it into every throughput pass
