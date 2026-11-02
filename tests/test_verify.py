@@ -86,7 +86,9 @@ def _artifact(tmp_path: Path, lines: list[dict], expected: dict) -> Path:
 _OK = {"reference": "hallo welt", "prediction": "hallo welt", "latency_s": 0.1}
 #: The committed entity score of a subset whose references hold no number.
 _NO_ENTITIES = {"entity_hit_rate_pct": None, "entity_ci_lo": None, "entity_ci_hi": None,
-                "n_entities": 0, "n_utterances_with_entities": 0}
+                "n_entities": 0, "n_utterances_with_entities": 0,
+                # The runaway count rides every subset; a perfect one has no edits.
+                "n_runaway": 0, "runaway_pct": 0.0, "runaway_edit_share_pct": None}
 _FAILED = {"reference": "guten tag", "prediction": None, "latency_s": None,
            "error": "ReadTimeout: timed out"}
 
@@ -281,6 +283,7 @@ _NUMBERS_EXPECTED = {
     "wer_pct": 1 / 7 * 100, "cer_pct": 0.0, "n_samples": 2,
     "entity_hit_rate_pct": 50.0, "n_entities": 2, "n_utterances_with_entities": 2,
     "entity_ci_lo": 0.0, "entity_ci_hi": 100.0,
+    "n_runaway": 0, "runaway_pct": 0.0, "runaway_edit_share_pct": 0.0,
 }
 
 
@@ -329,3 +332,28 @@ def test_expected_without_the_entity_score_fails(tmp_path: Path):
     all_ok, rows = verify.verify(tmp_path)
     assert not all_ok
     assert any("does not commit the entity score" in r["detail"] for r in rows)
+
+
+
+# ── Runaway count: published beside the WER, re-derived like it ───────────────
+
+
+def test_a_runaway_count_is_required_and_re_derived(tmp_path: Path):
+    lines = [_OK, {"reference": "ja", "prediction": "sehr " * 20, "latency_s": 0.1}]
+    model = _artifact(tmp_path, lines, {})
+    path = model / "predictions_S.jsonl"
+    wer, cer, n = verify.score_jsonl(path)
+    ci = verify.wer_interval(path)
+    base = {"wer_pct": wer, "cer_pct": cer, "n_samples": n, "wer_ci_lo": ci.lo,
+            "wer_ci_hi": ci.hi, **_NO_ENTITIES}
+    truthful = {**base, "n_runaway": 1, "runaway_pct": 50.0, "runaway_edit_share_pct": 100.0}
+    (model / "expected.json").write_text(json.dumps({"S": truthful}))
+    (row,) = verify.verify(tmp_path)[1]
+    assert row["status"] == "PASS", row["detail"]
+    (model / "expected.json").write_text(json.dumps({"S": {**truthful, "n_runaway": 0}}))
+    (row,) = verify.verify(tmp_path)[1]
+    assert row["status"] == "FAIL" and "n_runaway" in row["detail"]
+    missing = {k: v for k, v in truthful.items() if k != "runaway_edit_share_pct"}
+    (model / "expected.json").write_text(json.dumps({"S": missing}))
+    (row,) = verify.verify(tmp_path)[1]
+    assert row["status"] == "FAIL" and "runaway" in row["detail"]

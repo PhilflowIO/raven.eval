@@ -22,6 +22,12 @@ same ±0.05 pp, and the two counts it rests on (``n_entities``,
 ``n_utterances_with_entities``) matched exactly. A subset whose references hold
 no number commits ``null`` for the rate and must re-score to ``null``.
 
+The runaway count is required the same way: ``n_runaway`` (utterances whose
+hypothesis has more than ``wer.runaway.length_ratio`` times the reference's
+words) matched exactly, ``runaway_pct`` and ``runaway_edit_share_pct`` (their
+share of the corpus word edits) within ±0.05 pp. A loop is counted in the WER
+and named beside it.
+
 Coverage is checked before any number: a subset fails if a line records a failed
 request (``"prediction": null`` plus ``"error"``), or if the file does not hold
 exactly the ``n_samples`` lines its expected.json commits to. A WER computed over
@@ -104,11 +110,12 @@ from pathlib import Path
 from raven_eval_core.entities import entity_hit_rate
 
 from raven_asr.analysis import entity_interval, wer_interval
+from raven_asr.config import RUNAWAY_LENGTH_RATIO
 from raven_asr.serving import serving_problem
 from raven_asr.throughput import throughput_problem
 from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
-from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
+from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct, runaway_stats
 from raven_eval_core.flozi_wer import normalize_flozi as normalize_text
 from raven_eval_core.run_manifest import summary_problem
 from raven_eval_core.wer import corpus_wer_strict_de_pct
@@ -264,6 +271,35 @@ def verify_entities(pred_path: Path, exp: dict) -> tuple[dict, str]:
         problems.append(
             f"entity interval [{lo}, {hi}] vs committed "
             f"[{exp['entity_ci_lo']}, {exp['entity_ci_hi']}] (tol {TOLERANCE_PCT})"
+        )
+    return fields, " ".join(problems)
+
+
+RUNAWAY_FIELDS = ("n_runaway", "runaway_pct", "runaway_edit_share_pct")
+
+
+def verify_runaway(pred_path: Path, exp: dict) -> tuple[dict, str]:
+    """Re-derive one subset's runaway count and edit share; ``(row fields, problem)``.
+
+    Published beside every WER (``benchmark.config.yaml`` → ``wer.runaway``), so
+    required like the entity score: the count exactly, the two shares within
+    the WER tolerance.
+    """
+    missing = [f for f in RUNAWAY_FIELDS if f not in exp]
+    if missing:
+        return {}, f"expected.json does not commit the runaway count ({', '.join(missing)})"
+    refs, hyps = read_pairs(pred_path)
+    got = runaway_stats(refs, hyps, RUNAWAY_LENGTH_RATIO)
+    fields = {"n_runaway": got.n_runaway, "runaway_edit_share": got.edit_share_pct}
+    problems = []
+    if got.n_runaway != int(exp["n_runaway"]):
+        problems.append(f"n_runaway {got.n_runaway} vs committed {exp['n_runaway']}")
+    if not _within(got.runaway_pct, exp["runaway_pct"]):
+        problems.append(f"runaway_pct {got.runaway_pct} vs committed {exp['runaway_pct']}")
+    if not _within(got.edit_share_pct, exp["runaway_edit_share_pct"]):
+        problems.append(
+            f"runaway_edit_share_pct {got.edit_share_pct} vs committed "
+            f"{exp['runaway_edit_share_pct']}"
         )
     return fields, " ".join(problems)
 
@@ -506,6 +542,13 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
             row.update(entity_row)
             if entity_problem:
                 detail = (detail + " " if detail else "") + entity_problem
+                ok = False
+
+            # Loops are counted in the WER and named beside it — re-derived too.
+            runaway_row, runaway_problem = verify_runaway(pred_path, exp)
+            row.update(runaway_row)
+            if runaway_problem:
+                detail = (detail + " " if detail else "") + runaway_problem
                 ok = False
 
             # Throughput: a measurement, not reproduced — only held consistent.

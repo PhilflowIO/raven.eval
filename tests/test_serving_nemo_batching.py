@@ -255,7 +255,45 @@ def test_responses_name_the_serving_setup(server):
         "sha256": recipe_sha256("nvidia-parakeet-tdt-0.6b-v3"),
     }
     assert x["batching"] == {"max_batch": 8, "wait_ms": 50.0, "max_audio_s": 40.0}
+    assert x["decoding"] == {"mode": "greedy", "strategy": "greedy_batch", "max_symbols": 10}
     assert "engine" in x  # None until NeMo is imported; "nemo <v> (torch <v>)" after
+
+
+# The decoding configs the four pinned checkpoints carry (read from each .nemo's
+# model_config.yaml at its recipe revision).
+_TDT = {"strategy": "greedy_batch", "greedy": {"max_symbols": 10},
+        "beam": {"beam_size": 2}}
+_CANARY = {"strategy": "beam", "beam": {"beam_size": 1, "len_pen": 0.0,
+                                        "max_generation_delta": 50}}
+
+
+def test_a_checkpoint_matching_its_recipe_decoding_passes(server):
+    sys.path.insert(0, str(REPO_ROOT / "serving"))
+    from recipe import load_recipes
+
+    recipes = load_recipes()
+    for rid, cfg in (("nvidia-parakeet-tdt-0.6b-v3", _TDT), ("primeline-parakeet", _TDT),
+                     ("nvidia-nemotron-3.5-asr-streaming-0.6b", _TDT),
+                     ("nvidia-canary-1b-v2", _CANARY)):
+        assert server.decoding_mismatch(cfg, recipes[rid]["decoding"]) == "", rid
+
+
+@pytest.mark.parametrize(
+    ("rid", "cfg"),
+    [
+        ("nvidia-parakeet-tdt-0.6b-v3", {**_TDT, "strategy": "beam"}),
+        ("nvidia-parakeet-tdt-0.6b-v3", {**_TDT, "greedy": {"max_symbols": 5}}),
+        ("nvidia-parakeet-tdt-0.6b-v3", {"strategy": "greedy_batch"}),  # no max_symbols
+        ("nvidia-canary-1b-v2",
+         {**_CANARY, "beam": {"beam_size": 4, "len_pen": 0.0, "max_generation_delta": 50}}),
+    ],
+)
+def test_a_checkpoint_that_decodes_otherwise_is_refused(server, rid, cfg):
+    sys.path.insert(0, str(REPO_ROOT / "serving"))
+    from recipe import load_recipes
+
+    expected = load_recipes()[rid]["decoding"]
+    assert server.decoding_mismatch(cfg, expected) != ""
 
 
 def test_launcher_names_the_recipe_the_server_reports(monkeypatch):

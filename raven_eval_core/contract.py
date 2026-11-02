@@ -60,12 +60,20 @@ class DerContract(_Strict):
     turn_gap_merge_s: float
 
 
+class RunawayRule(_Strict):
+    rule: str
+    length_unit: str
+    length_ratio: float
+    reported: list[str]
+
+
 class WerContract(_Strict):
     scorer: str
     normalization: str
     alignment: str
     also_reported: list[str]
     uncertainty: Uncertainty
+    runaway: RunawayRule
 
 
 class BleuVariant(_Strict):

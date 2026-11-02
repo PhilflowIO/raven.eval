@@ -36,6 +36,14 @@
 #   x_raven.batching  {"max_num_seqs": n}: RAVEN_SERVE_MAX_NUM_SEQS when set —
 #                     give the shim the value the launcher got — else the
 #                     recipe's default
+#   x_raven.decoding  the recipe's decoding table: mode "greedy" and max_tokens
+#
+# DECODING is the recipe's, never the engine's default: every request upstream
+# carries temperature 0, repetition_penalty 1.0 and the recipe's max_tokens
+# (transcriptions: max_completion_tokens; chat: max_tokens). vLLM otherwise
+# fills an absent field from the model's generation_config.json and caps output
+# at max_model_len — a limit that differed by model and decided how much a
+# looping answer cost. A request asking for another temperature is refused.
 # The harness records the serving identity next to each result and aborts when
 # it changes during a run.
 #
@@ -59,6 +67,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 # The recipe registry sits one directory up (serving/recipe.py).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from recipe import RecipeError, load_recipes, resolve  # noqa: E402
+from recipe import decoding as recipe_decoding  # noqa: E402
 from recipe import identity as recipe_identity  # noqa: E402
 
 logger = logging.getLogger("raven-serving-shim")
@@ -71,9 +80,6 @@ UPSTREAM = os.environ.get("SHIM_UPSTREAM", "http://127.0.0.1:8000")
 API_KEY = os.environ.get("STT_API_KEY", "")
 # Override the family detection (passthrough|<family>); empty = detect by model id.
 FAMILY_OVERRIDE = os.environ.get("SHIM_FAMILY", "")
-# Generation cap for chat-translated transcriptions; benchmark utterances stay
-# far below it.
-MAX_TOKENS = int(os.environ.get("SHIM_MAX_TOKENS", "4096"))
 TIMEOUT_S = float(os.environ.get("SHIM_TIMEOUT_S", "600"))
 # Upload cap (bench clips are minutes, not movies): reject oversized bodies
 # before buffering them whole — same default as the NeMo server's
@@ -167,10 +173,13 @@ async def _serving(served: str | None) -> dict[str, Any]:
     """engine / recipe / batching for ``served``, looked up once per served model."""
     global _serving_cache
     if served is None:
-        return {"engine": None, "recipe": None, "batching": None}
+        return {"engine": None, "recipe": None, "batching": None, "decoding": None}
     if _serving_cache[0] != served:
         engine = await _engine_version()
-        info = {"engine": engine, "recipe": recipe_identity(served), "batching": _batching(served)}
+        info = {
+            "engine": engine, "recipe": recipe_identity(served),
+            "batching": _batching(served), "decoding": recipe_decoding(served),
+        }
         if engine is None:
             return info  # do not cache a failed lookup
         _serving_cache = (served, info)
@@ -272,7 +281,7 @@ def _build_phi4mm(
     audio_format: str,
     language: str,
     user_prompt: str,
-    temperature: float,
+    max_tokens: int,
 ) -> dict[str, Any]:
     del model  # the served LoRA module name is what matters, not the request's
     prompt = user_prompt or PHI4_DEFAULT_PROMPT
@@ -295,12 +304,30 @@ def _build_phi4mm(
                 ],
             }
         ],
-        "temperature": temperature,
-        "max_tokens": MAX_TOKENS,
+        **_greedy(max_tokens, "max_tokens"),
     }
 
 
 CHAT_BUILDERS = {"phi4mm": _build_phi4mm}
+
+
+def _greedy(max_tokens: int, length_field: str) -> dict[str, Any]:
+    """The decoding fields every upstream request carries (see DECODING above)."""
+    return {"temperature": 0.0, "repetition_penalty": 1.0, length_field: max_tokens}
+
+
+def _max_tokens(serving: dict[str, Any]) -> int:
+    """The served recipe's max_tokens; no recipe, no request — never a default."""
+    dec = serving.get("decoding")
+    if not isinstance(dec, dict) or not isinstance(dec.get("max_tokens"), int):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "the served model has no recipe with decoding.max_tokens in "
+                "serving/recipes.toml; refusing to decode under an engine default"
+            ),
+        )
+    return int(dec["max_tokens"])
 
 
 def _detect_family(model_id: str) -> str:
@@ -415,8 +442,14 @@ async def transcriptions(
         model, family, len(audio), language or "-",
     )
 
+    if temperature != 0.0:
+        raise HTTPException(
+            status_code=400,
+            detail="every recipe decodes greedily; temperature must be 0",
+        )
     served = await _served_model()
     serving = await _serving(served)
+    max_tokens = _max_tokens(serving)
     client = _client()
     if family == "passthrough":
         # Native SupportsTranscription model — forward multipart unchanged.
@@ -427,7 +460,7 @@ async def transcriptions(
             form["language"] = language
         if prompt:
             form["prompt"] = prompt
-        form["temperature"] = str(temperature)
+        form.update({k: str(v) for k, v in _greedy(max_tokens, "max_completion_tokens").items()})
         upstream = await client.post(
             f"{UPSTREAM}/v1/audio/transcriptions",
             data=form,
@@ -468,7 +501,7 @@ async def transcriptions(
         audio_format=_audio_format(file.filename, file.content_type),
         language=language,
         user_prompt=prompt,
-        temperature=temperature,
+        max_tokens=max_tokens,
     )
     upstream = await client.post(f"{UPSTREAM}/v1/chat/completions", json=payload)
     if upstream.status_code != 200:

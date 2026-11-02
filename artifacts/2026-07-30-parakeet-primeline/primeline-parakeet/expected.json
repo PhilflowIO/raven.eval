@@ -9,7 +9,10 @@
     "n_entities": 91,
     "n_utterances_with_entities": 59,
     "entity_ci_lo": 87.5,
-    "entity_ci_hi": 100.0
+    "entity_ci_hi": 100.0,
+    "n_runaway": 0,
+    "runaway_pct": 0.0,
+    "runaway_edit_share_pct": 0.0
   },
   "multilingual_librispeech": {
     "wer_pct": 3.043,
@@ -21,7 +24,10 @@
     "n_entities": 339,
     "n_utterances_with_entities": 279,
     "entity_ci_lo": 95.1009,
-    "entity_ci_hi": 98.5955
+    "entity_ci_hi": 98.5955,
+    "n_runaway": 0,
+    "runaway_pct": 0.0,
+    "runaway_edit_share_pct": 0.0
   },
   "common_voice_19_0": {
     "wer_pct": 2.5758,
@@ -33,6 +39,9 @@
     "n_entities": 295,
     "n_utterances_with_entities": 267,
     "entity_ci_lo": 96.6216,
-    "entity_ci_hi": 99.6599
+    "entity_ci_hi": 99.6599,
+    "n_runaway": 0,
+    "runaway_pct": 0.0,
+    "runaway_edit_share_pct": 0.0
   }
 }

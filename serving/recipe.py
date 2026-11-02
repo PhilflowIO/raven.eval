@@ -45,7 +45,9 @@ ENGINE_FILES: dict[str, tuple[str, ...]] = {
 #: ``revision`` is the full HF commit the recipe serves. A repo id alone is a
 #: moving target: a re-upload under the same id swaps the weights (and can break
 #: loading) without anything in the recipe changing.
-REQUIRED_KEYS = frozenset({"model", "revision", "engine", "weights_gb", "gpu_mem", "chunking"})
+REQUIRED_KEYS = frozenset({
+    "model", "revision", "engine", "weights_gb", "gpu_mem", "chunking", "decoding",
+})
 ENGINE_KEYS: dict[str, frozenset[str]] = {
     "vllm": frozenset({
         "dtype", "max_num_seqs", "max_model_len", "trust_remote_code", "args",
@@ -63,6 +65,52 @@ ENGINE_KEYS: dict[str, frozenset[str]] = {
 #: server restores exactly that file.
 ENGINE_REQUIRED: dict[str, frozenset[str]] = {"nemo": frozenset({"checkpoint_file"})}
 _REVISION = re.compile(r"[0-9a-f]{40}")
+
+#: How every recipe decodes. Greedy only: with sampling a transcript is a draw,
+#: and two runs of one recipe would not be the same measurement.
+DECODING_MODES = frozenset({"greedy"})
+#: What a recipe's ``decoding`` table carries per engine.
+#:   vllm / transformers  max_tokens — the most tokens the server may generate
+#:                        for one request. The shim sends it with every request
+#:                        (vLLM: max_completion_tokens / max_tokens), together
+#:                        with temperature 0 and repetition_penalty 1.0, so a
+#:                        generation_config.json default can never apply.
+#:   nemo                 the checkpoint's own decoding config, which the server
+#:                        does not change; it refuses to start when the restored
+#:                        checkpoint disagrees. Transducers (strategy
+#:                        greedy_batch) emit at most max_symbols tokens per
+#:                        encoder frame; Canary (strategy beam, beam_size 1 —
+#:                        greedy) at most max_generation_delta tokens beyond the
+#:                        encoder length. Those are their length bounds.
+DECODING_KEYS: dict[str, frozenset[str]] = {
+    "vllm": frozenset({"mode", "max_tokens"}),
+    "transformers": frozenset({"mode", "max_tokens"}),
+    "nemo": frozenset({"mode", "strategy", "max_symbols", "beam_size", "len_pen",
+                       "max_generation_delta"}),
+}
+DECODING_REQUIRED: dict[str, frozenset[str]] = {
+    "vllm": frozenset({"mode", "max_tokens"}),
+    "transformers": frozenset({"mode", "max_tokens"}),
+    "nemo": frozenset({"mode", "strategy"}),
+}
+
+
+def _decoding_problem(engine: str, decoding: object) -> str:
+    if not isinstance(decoding, dict):
+        return "decoding must be a table"
+    missing = DECODING_REQUIRED[engine] - decoding.keys()
+    if missing:
+        return f"decoding needs {sorted(missing)} on {engine}"
+    unknown = decoding.keys() - DECODING_KEYS[engine]
+    if unknown:
+        return f"decoding keys {sorted(unknown)} do not apply to {engine}"
+    if decoding["mode"] not in DECODING_MODES:
+        return f"decoding.mode must be one of {sorted(DECODING_MODES)}, got {decoding['mode']!r}"
+    if "max_tokens" in decoding and not (
+        isinstance(decoding["max_tokens"], int) and decoding["max_tokens"] > 0
+    ):
+        return "decoding.max_tokens must be a positive integer"
+    return ""
 
 
 class RecipeError(ValueError):
@@ -90,6 +138,8 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
         missing = ENGINE_REQUIRED.get(engine, frozenset()) - recipe.keys()
         if missing:
             raise RecipeError(f"recipe {rid!r}: {engine} needs {sorted(missing)}")
+        if problem := _decoding_problem(engine, recipe["decoding"]):
+            raise RecipeError(f"recipe {rid!r}: {problem}")
         if not _REVISION.fullmatch(str(recipe["revision"])):
             raise RecipeError(
                 f"recipe {rid!r}: revision must be the full 40-hex HF commit the "
@@ -141,5 +191,18 @@ def identity(name: str) -> dict[str, str] | None:
         recipes = load_recipes()
         rid = resolve(name, recipes)
         return {"id": rid, "sha256": recipe_sha256(rid, recipes)}
+    except (OSError, RecipeError, tomllib.TOMLDecodeError):
+        return None
+
+
+def decoding(name: str) -> dict[str, Any] | None:
+    """The ``decoding`` table of ``name``'s recipe, as servers report it, or None.
+
+    Reported in every response as ``x_raven.decoding`` and recorded with the
+    serving block, so a run names its decoding mode and output-length bound.
+    """
+    try:
+        recipes = load_recipes()
+        return dict(recipes[resolve(name, recipes)]["decoding"])
     except (OSError, RecipeError, tomllib.TOMLDecodeError):
         return None

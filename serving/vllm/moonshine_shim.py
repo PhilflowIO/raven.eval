@@ -182,7 +182,7 @@ def _normalize(path: str) -> str:
     return out
 
 
-def _transcribe(wav_path: str) -> str:
+def _transcribe(wav_path: str, max_tokens: int | None = None) -> str:
     import soundfile as sf
     import torch
 
@@ -191,6 +191,9 @@ def _transcribe(wav_path: str) -> str:
     # Model-card repetition-loop guard: ~6.5 tokens per second of audio + 2.
     seq_lens = inputs.attention_mask.sum(dim=-1)
     max_new_tokens = int((seq_lens * 6.5 / SAMPLE_RATE).max().item()) + 2
+    if max_tokens is not None:
+        # The recipe's decoding.max_tokens, sent by the shim with every request.
+        max_new_tokens = min(max_new_tokens, max_tokens)
     device = next(_model.parameters()).device
     inputs = {k: v.to(device) for k, v in inputs.items()}
     with _infer_lock, torch.no_grad():
@@ -205,6 +208,7 @@ async def transcriptions(
     language: str = Form("de"),  # noqa: ARG001 — German-only model, nothing to force
     response_format: str = Form("json"),
     temperature: float = Form(0.0),  # noqa: ARG001 — greedy decode only
+    max_completion_tokens: int | None = Form(None),
 ):
     if _model is None:
         if _load_error is not None:
@@ -235,7 +239,7 @@ async def transcriptions(
         wav = await run_in_threadpool(_normalize, tmp)
         try:
             t0 = time.monotonic()
-            text = await run_in_threadpool(_transcribe, wav)
+            text = await run_in_threadpool(_transcribe, wav, max_completion_tokens)
             wall = time.monotonic() - t0
         finally:
             if wav != tmp and os.path.exists(wav):

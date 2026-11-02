@@ -10,8 +10,11 @@ report, in every response's ``x_raven``:
     recipe    {"id", "sha256"}: the recipe in serving/recipes.toml and a hash
               over it and every file that executes it (serving/recipe.py)
     batching  NeMo {"max_batch", "wait_ms", "max_audio_s"}; vLLM {"max_num_seqs"}
+    decoding  the recipe's decoding table: mode ("greedy") and the output-length
+              bound — max_tokens for vLLM and the transformers stand-in, the
+              checkpoint's checked decoding config for NeMo
 
-These three are the run's *serving block*. The adapter pins the first block it
+These four are the run's *serving block*. The adapter pins the first block it
 sees; every later response must carry the same one. A different block means the
 endpoint changed under the run — a restart on another engine, another recipe
 revision, another batch size — and the run aborts exactly like a served-model
@@ -26,7 +29,7 @@ refused at its first answer, before anything of it is recorded
 (:func:`of_passes` primes the adapter), so the operator decides —
 restore the old setup, or clear the subset's output and measure it again.
 
-A server that reports none of the three (one started from an older copy of the
+A server that reports none of them (one started from an older copy of the
 recipe) yields a ``null`` block and one warning; its results still stand, they
 just cannot name their serving conditions.
 
@@ -39,7 +42,10 @@ import json
 from typing import Any
 
 #: The ``x_raven`` keys that make up the serving block, in recorded order.
-SERVING_KEYS = ("engine", "recipe", "batching")
+SERVING_KEYS = ("engine", "recipe", "batching", "decoding")
+#: The block as recorded before servers reported their decoding. Still well
+#: formed in a committed artifact; a live run always records all four keys.
+LEGACY_SERVING_KEYS = ("engine", "recipe", "batching")
 
 
 class ServedModelMismatchError(RuntimeError):
@@ -105,8 +111,13 @@ def serving_problem(row: dict[str, Any]) -> str:
         return ""
     block = row["serving"]
     if block is not None:
-        if not isinstance(block, dict) or set(block) != set(SERVING_KEYS):
+        if not isinstance(block, dict) or set(block) not in (
+            set(SERVING_KEYS), set(LEGACY_SERVING_KEYS)
+        ):
             return f"serving: expected null or an object with keys {list(SERVING_KEYS)}"
+        dec = block.get("decoding")
+        if dec is not None and not (isinstance(dec, dict) and isinstance(dec.get("mode"), str)):
+            return "serving.decoding: expected null or an object with a mode"
         recipe = block.get("recipe")
         if recipe is not None and not (
             isinstance(recipe, dict)

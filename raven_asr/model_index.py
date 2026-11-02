@@ -44,6 +44,12 @@ class ResultEntry:
     entity_hit_rate_pct: float | None = None
     n_entities: int = 0
     n_utterances_with_entities: int = 0
+    # Utterances whose hypothesis ran away from the audio (raven_eval_core
+    # flozi_wer.runaway_stats, rule in benchmark.config.yaml wer.runaway) and
+    # their share of the corpus word edits. None in a marker from before.
+    n_runaway: int | None = None
+    runaway_pct: float | None = None
+    runaway_edit_share_pct: float | None = None
 
 
 def build_model_index(

@@ -265,3 +265,71 @@ def evaluate(references: list[str], predictions: list[str]) -> FloziWerResult:
             references, predictions
         ),
     )
+
+
+#: Default length ratio of the runaway rule; ``benchmark.config.yaml`` →
+#: ``wer.runaway.length_ratio`` is the published value (raven_asr.config mirrors it).
+RUNAWAY_LENGTH_RATIO = 3.0
+
+
+@dataclass(frozen=True)
+class RunawayResult:
+    """Utterances whose hypothesis ran away from the audio, and what they cost.
+
+    A model that loops ("sehr, sehr, sehr, …") on a handful of clips can add more
+    insertions than every other clip has errors; the corpus WER then describes
+    the loops, not the transcription. This names them beside the WER — it never
+    replaces it: the WER stays the headline, loops included.
+
+    ``n_runaway``         utterances with hypothesis words > ratio × reference words
+    ``runaway_pct``       their share of the scored utterances, in percent
+    ``edit_share_pct``    their share of the corpus word edits, in percent
+                          (None when the corpus has no edits at all)
+    """
+
+    n_runaway: int
+    n_utterances: int
+    runaway_pct: float
+    runaway_edits: int
+    total_edits: int
+    edit_share_pct: float | None
+
+
+def runaway_stats(
+    references: list[str],
+    predictions: list[str],
+    length_ratio: float = RUNAWAY_LENGTH_RATIO,
+) -> RunawayResult:
+    """Runaway count and edit share under the published normalization and alignment.
+
+    Lengths are words after flozi-strict normalization — the units the published
+    WER counts — and the edits are exactly the per-utterance edits whose sum is
+    its numerator (:func:`utterance_word_errors`), so the edit share is a share of
+    the published number.
+    """
+    _check_aligned(references, predictions)
+    if not references:
+        return RunawayResult(0, 0, 0.0, 0, 0, None)
+    out = process_words(
+        [normalize_flozi(r) for r in references],
+        [normalize_flozi(p) for p in predictions],
+        reference_transform=wer_standardize,
+        hypothesis_transform=wer_standardize,
+    )
+    units = utterance_word_errors(references, predictions)
+    n_runaway = runaway_edits = 0
+    for ref_words, hyp_words, (edits, _) in zip(
+        out.references, out.hypotheses, units, strict=True
+    ):
+        if len(hyp_words) > length_ratio * len(ref_words):
+            n_runaway += 1
+            runaway_edits += edits
+    total = sum(e for e, _ in units)
+    return RunawayResult(
+        n_runaway=n_runaway,
+        n_utterances=len(references),
+        runaway_pct=100.0 * n_runaway / len(references),
+        runaway_edits=runaway_edits,
+        total_edits=total,
+        edit_share_pct=None if total == 0 else 100.0 * runaway_edits / total,
+    )

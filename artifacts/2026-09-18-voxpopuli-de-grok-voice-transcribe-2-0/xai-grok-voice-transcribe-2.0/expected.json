@@ -10,6 +10,9 @@
     "n_entities": 16,
     "n_utterances_with_entities": 13,
     "entity_ci_lo": 50.0,
-    "entity_ci_hi": 94.4444
+    "entity_ci_hi": 94.4444,
+    "n_runaway": 0,
+    "runaway_pct": 0.0,
+    "runaway_edit_share_pct": 0.0
   }
 }

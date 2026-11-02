@@ -187,6 +187,17 @@ def test_wer_uncertainty_matches_the_public_contract() -> None:
     assert unc["confidence"] == BOOTSTRAP_CONFIDENCE
 
 
+def test_runaway_rule_matches_the_public_contract() -> None:
+    """The runaway count beside every WER is computed under the declared rule."""
+    from raven_asr.config import RUNAWAY_LENGTH_RATIO
+    from raven_eval_core.flozi_wer import RUNAWAY_LENGTH_RATIO as CORE_DEFAULT
+
+    block = _config()["wer"]["runaway"]
+    assert block["length_ratio"] == RUNAWAY_LENGTH_RATIO == CORE_DEFAULT
+    assert "flozi-strict" in block["length_unit"]
+    assert block["reported"] == ["n_runaway", "runaway_pct", "runaway_edit_share_pct"]
+
+
 def test_region_breakdown_matches_the_public_contract() -> None:
     """``dialect_region_breakdown`` names the corpora and the floor the code applies."""
     from raven_asr.analysis import REGION_PARSERS

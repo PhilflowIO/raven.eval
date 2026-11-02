@@ -113,7 +113,8 @@ was computed from, committed under `artifacts/<run>/<model>/`:
 - `expected.json` — `{"<subset>": {"wer_pct": <float>, "cer_pct": <float>}}`,
   plus an optional `"bleu"` + `"bleu_signature"` on translation-shaped subsets,
   and the [numeric entity score](#numbers--the-error-wer-hides-numeric-entity-hit-rate)
-  (`entity_hit_rate_pct`, its interval, `n_entities`, `n_utterances_with_entities`).
+  (`entity_hit_rate_pct`, its interval, `n_entities`, `n_utterances_with_entities`),
+  and the runaway count (`n_runaway`, `runaway_pct`, `runaway_edit_share_pct`).
 
 A model whose server wraps the transcript in markup of its own —
 MOSS-Transcribe-Diarize interleaves `[4.18]` timestamps and `[S01]` speaker
@@ -126,7 +127,8 @@ Scored raw, every tag counts as an inserted word: on the 2026-11 sweep that put
 MOSS at ~100 % strict-de WER on read speech it transcribes almost perfectly. A
 run recorded before its model had a parser is re-derived from that raw text
 with `make reparse RESULTS=…` — no inference, every score recomputed, the step
-named under `post_hoc` in `summary.json`.
+named under `post_hoc` in `summary.json` (the same step applies the recipe's
+output-length cap, [below](#wer--german-asr-public-datasets)).
 
 `make verify` (→ `scripts/verify.py`) re-scores every `predictions_*.jsonl`
 with our own scorer and asserts each subset matches `expected.json` within
@@ -208,24 +210,54 @@ edits / total reference words after flozi-canonical normalization — comparable
 the `flozi00/asr-german-mixed-evals` published table, not to a mean-of-utterance
 WER. CER is on raw text.
 
-| model | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | run | flozi ref WER |
-|-------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|-----|--------------:|
-| primeline/parakeet-primeline | Tuda-De | 4.02 | [2.76, 5.55] | 2.75 | 414 | 94.51 | [87.50, 100.00] | 91 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 |
-| primeline/parakeet-primeline | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | 97.05 | [95.10, 98.60] | 339 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 |
-| primeline/parakeet-primeline | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | 98.31 | [96.62, 99.66] | 295 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 |
-| primeline/parakeet-primeline | fhnw-all-dialects | 31.04 | [30.24, 31.86] | 16.42 | 2875 | 93.28 | [88.50, 97.48] | 119 | [2026-10-02](./artifacts/2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet/) | — |
-| xai/grok-voice-transcribe-2.0 | avemio-german-mixed-test | 6.87 | [5.24, 8.76] | 3.85 | 100 | 100.00 | [100.00, 100.00] | 3 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | fleurs | 4.59 | [3.43, 5.90] | 2.57 | 100 | 93.18 | [83.78, 100.00] | 44 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | mls-de | 8.37 | [6.87, 9.95] | 10.53 | 100 | 90.00 | [66.67, 100.00] | 10 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | voxpopuli-de | 12.99 | [10.88, 15.32] | 8.39 | 100 | 75.00 | [50.00, 94.44] | 16 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | spc-test | 41.77 | [35.69, 47.99] | 23.85 | 50 | 60.00 | [20.00, 100.00] | 5 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | fhnw-all-dialects | 43.92 | [35.98, 52.24] | 22.70 | 50 | 75.00 | [50.00, 100.00] | 4 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-1.0 | avemio-german-mixed-test | 7.21 | [5.45, 9.29] | 4.41 | 100 | 66.67 | [0.00, 100.00] | 3 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | fleurs | 6.75 | [4.74, 9.56] | 9.49 | 100 | 90.91 | [80.49, 98.04] | 44 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | mls-de | 8.22 | [7.04, 9.47] | 10.45 | 100 | 90.00 | [66.67, 100.00] | 10 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | voxpopuli-de | 11.27 | [9.43, 13.21] | 7.14 | 100 | 75.00 | [50.00, 94.44] | 16 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | spc-test | 50.07 | [43.82, 55.98] | 27.01 | 50 | 80.00 | [40.00, 100.00] | 5 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | fhnw-all-dialects | 39.66 | [32.79, 46.94] | 22.16 | 50 | 75.00 | [50.00, 100.00] | 4 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+**Loops are counted, and named.** A model that loops — "sehr, sehr, sehr, …" for
+12,000 characters — on a few clips can out-insert every other error in a corpus:
+on the 2026-11 sweep Phi-4-multimodal scored 70.3 % on the first 50 `spc-test`
+utterances and 110.5 % on all 3,332, and 9 looping answers (0.27 % of the
+utterances) made 40.7 % of its word edits. The WER keeps them; it is the headline,
+loops included. Beside it, `loops` counts the utterances whose hypothesis has
+**more than 3× the reference's words** (flozi-strict words; `wer.runaway` in
+`benchmark.config.yaml`), and `loop edits %` is their share of the corpus word
+edits — the part of the WER they are. Both are committed in `expected.json`
+(`n_runaway`, `runaway_pct`, `runaway_edit_share_pct`) and re-derived by
+`make verify`.
+
+How much a loop costs depends on how long the server lets it run, so that is part
+of the serving recipe too. Every self-hosted model decodes **greedily** (the shim
+sends temperature 0 and repetition penalty 1.0 with every request; NeMo models
+are checked against their checkpoint's decoding config), and every vLLM and
+transformers recipe caps output at **`max_tokens` = 1024**: the longest reference
+in any dataset here is 686 UTF-8 bytes, no tokenizer these models use spends less
+than a byte per token, so no faithful transcript comes near it (that reference is
+145 Phi-4 tokens). Before the cap, the engine default decided — 4,096 tokens for
+Phi-4, the context window or a generation_config limit elsewhere — and a third party serving the same model with
+another default got another WER. Each run records the decoding in its `serving`
+block (`decoding`). A run measured before the cap is cut to it after the fact by
+`make reparse` (no inference), marked `capped_post_hoc` with the cap and the
+tokenizer revision under `post_hoc` in `summary.json`, and flagged
+`"exact": false`: the cut is made on the re-tokenized text, not the generated
+token ids (on the 2026-11 Phi-4 run, every loop re-tokenized to the 4,096 tokens
+the server had capped it at, once 4,095), and audio vLLM splits is capped per
+piece by a server. The next run with the cap server-side is the exact number.
+
+| model | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| primeline/parakeet-primeline | Tuda-De | 4.02 | [2.76, 5.55] | 2.75 | 414 | 94.51 | [87.50, 100.00] | 91 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 |
+| primeline/parakeet-primeline | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | 97.05 | [95.10, 98.60] | 339 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 |
+| primeline/parakeet-primeline | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | 98.31 | [96.62, 99.66] | 295 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 |
+| primeline/parakeet-primeline | fhnw-all-dialects | 31.04 | [30.24, 31.86] | 16.42 | 2875 | 93.28 | [88.50, 97.48] | 119 | 0 | 0.00 | [2026-10-02](./artifacts/2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet/) | — |
+| xai/grok-voice-transcribe-2.0 | avemio-german-mixed-test | 6.87 | [5.24, 8.76] | 3.85 | 100 | 100.00 | [100.00, 100.00] | 3 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | fleurs | 4.59 | [3.43, 5.90] | 2.57 | 100 | 93.18 | [83.78, 100.00] | 44 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | mls-de | 8.37 | [6.87, 9.95] | 10.53 | 100 | 90.00 | [66.67, 100.00] | 10 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | voxpopuli-de | 12.99 | [10.88, 15.32] | 8.39 | 100 | 75.00 | [50.00, 94.44] | 16 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | spc-test | 41.77 | [35.69, 47.99] | 23.85 | 50 | 60.00 | [20.00, 100.00] | 5 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | fhnw-all-dialects | 43.92 | [35.98, 52.24] | 22.70 | 50 | 75.00 | [50.00, 100.00] | 4 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-1.0 | avemio-german-mixed-test | 7.21 | [5.45, 9.29] | 4.41 | 100 | 66.67 | [0.00, 100.00] | 3 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | fleurs | 6.75 | [4.74, 9.56] | 9.49 | 100 | 90.91 | [80.49, 98.04] | 44 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | mls-de | 8.22 | [7.04, 9.47] | 10.45 | 100 | 90.00 | [66.67, 100.00] | 10 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | voxpopuli-de | 11.27 | [9.43, 13.21] | 7.14 | 100 | 75.00 | [50.00, 94.44] | 16 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | spc-test | 50.07 | [43.82, 55.98] | 27.01 | 50 | 80.00 | [40.00, 100.00] | 5 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | fhnw-all-dialects | 39.66 | [32.79, 46.94] | 22.16 | 50 | 75.00 | [50.00, 100.00] | 4 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
 
 **xAI Grok Voice Transcribe 2.0** (hosted, us-east-1, `language=de`, `format=true`,
 2026-09-18) was run on exactly the samples the Raven benchmark page compares every

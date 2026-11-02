@@ -23,6 +23,26 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 
 ## [Unreleased]
 
+### Added
+- Every WER is published with its **runaway count**: utterances whose hypothesis
+  has more than 3x the reference's flozi-strict words (`wer.runaway` in
+  `benchmark.config.yaml`), as `n_runaway`, `runaway_pct` and
+  `runaway_edit_share_pct` (their share of the corpus word edits) in
+  `summary.json` and `expected.json`, re-derived by `make verify`, and as the
+  `loops` / `loop edits %` columns of the WER table. The WER still counts them.
+  Every committed WER artifact gained the three fields (all zero); no existing
+  value changed.
+- The serving recipe pins **decoding and output length** for every self-hosted
+  model: `decoding = {mode = "greedy", max_tokens = 1024}` for vLLM and the
+  transformers stand-in, sent with every request together with temperature 0 and
+  repetition penalty 1.0; for NeMo the checkpoint's own decoding config, which
+  the server now refuses to serve when it differs. Servers report it as
+  `x_raven.decoding` and runs record it in the `serving` block. Rows measured
+  before were capped by engine defaults (4,096 tokens for Phi-4, the whole context window
+  elsewhere) and are not comparable on looping models; `make reparse` cuts their
+  recorded output to the cap after the fact, flagged `capped_post_hoc` and
+  `"exact": false`.
+
 ### Fixed
 - MOSS-Transcribe-Diarize's timestamp and speaker markup (`[4.18][S01] … [13.81]`)
   is parsed out of its output in the model layer (`raven_asr.output_formats`)

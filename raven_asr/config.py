@@ -68,6 +68,12 @@ BOOTSTRAP_RESAMPLES: Final[int] = 10_000
 BOOTSTRAP_SEED: Final[int] = 20260903
 BOOTSTRAP_CONFIDENCE: Final[float] = 0.95
 
+# The runaway rule published beside every WER — mirrored from
+# ``benchmark.config.yaml`` → ``wer.runaway.length_ratio`` and asserted equal by
+# ``tests/test_metric_contract.py``: an utterance whose hypothesis has more than
+# this many times the reference's words (flozi-strict) ran away from the audio.
+RUNAWAY_LENGTH_RATIO: Final[float] = 3.0
+
 # Fewest utterances a dialect region needs before its WER/BLEU is printed as a
 # number — mirrored from ``benchmark.config.yaml`` →
 # ``dialect_region_breakdown.min_n`` and asserted equal by
