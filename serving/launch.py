@@ -17,8 +17,9 @@ port); the NeMo server speaks the harness's protocol itself.
 
 Environment (everything a host decides, nothing a model decides):
 
-    CUDA_VISIBLE_DEVICES      exactly one GPU index — required. The process sees
-                              that card as device 0 and no other.
+    CUDA_VISIBLE_DEVICES      exactly precision.tensor_parallel GPU indices (one,
+                              unless the recipe splits the model) — required. The
+                              process sees those cards and no other.
     RAVEN_SERVE_HOST          bind address (default 127.0.0.1)
     RAVEN_SERVE_PORT          port (default 8000)
     RAVEN_SERVE_GPU_MEM       VRAM budget fraction (default: the recipe's gpu_mem)
@@ -42,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from recipe import SERVING_DIR, identity, load_recipes, resolve  # noqa: E402
+from recipe import FLOAT_FORMATS, SERVING_DIR, identity, load_recipes, resolve  # noqa: E402
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -109,6 +110,9 @@ def build(
             "TRANSFORMERS_HOST": host,
             "TRANSFORMERS_PORT": port,
             "TRANSFORMERS_GPU_MEM_FRACTION": gpu_mem,
+            # The server loads in exactly this dtype and refuses to serve when
+            # the loaded parameters are mostly another one.
+            "TRANSFORMERS_DTYPE": FLOAT_FORMATS[recipe["precision"]["weights"]],
         })
         return [python, str(SERVING_DIR / "vllm" / "transformers_server.py")], extra
 
@@ -125,8 +129,13 @@ def build(
         target = [recipe["model"], "--revision", recipe["revision"]]
     argv = [vllm, "serve", *target, "--host", host, "--port", port,
             "--gpu-memory-utilization", gpu_mem, "--max-num-seqs", seqs]
-    if "dtype" in recipe:
-        argv += ["--dtype", recipe["dtype"]]
+    # The computation's format; for an unquantized recipe also the weights'.
+    # A quantized checkpoint's own format comes from its config (vLLM reads the
+    # quantization_config); --dtype is then the activation format around it.
+    precision = recipe["precision"]
+    argv += ["--dtype", FLOAT_FORMATS[precision["activations"]]]
+    if precision["tensor_parallel"] > 1:
+        argv += ["--tensor-parallel-size", str(precision["tensor_parallel"])]
     if "max_model_len" in recipe:
         argv += ["--max-model-len", str(recipe["max_model_len"])]
     if recipe.get("trust_remote_code"):
@@ -141,13 +150,26 @@ def build(
     return argv, extra
 
 
-def _single_gpu(env: dict[str, str]) -> None:
+def _gpus(env: dict[str, str], count: int) -> None:
+    """CUDA_VISIBLE_DEVICES names exactly ``count`` distinct GPU indices.
+
+    ``count`` is the recipe's precision.tensor_parallel. A server that sees more
+    cards may spread over them, one that sees fewer cannot split as recorded;
+    either way its numbers would describe another setup than the one reported.
+    """
     visible = env.get("CUDA_VISIBLE_DEVICES", "").strip()
-    if not re.fullmatch(r"\d+", visible):
+    indices = visible.split(",") if visible else []
+    if not (
+        len(indices) == count
+        and all(re.fullmatch(r"\d+", i) for i in indices)
+        and len(set(indices)) == count
+    ):
         raise LaunchError(
-            f"CUDA_VISIBLE_DEVICES={visible!r}: set exactly one GPU index. A server "
-            "that sees several cards may spread over them, and its numbers then "
-            "describe a different setup than the one recorded."
+            f"CUDA_VISIBLE_DEVICES={visible!r}: set exactly {count} distinct GPU "
+            f"ind{'ex' if count == 1 else 'ices'} (precision.tensor_parallel = {count}). "
+            "A server that sees other cards than that may spread over them or "
+            "fail to split, and its numbers then describe a different setup than "
+            "the one recorded."
         )
 
 
@@ -261,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        _single_gpu(env)
+        _gpus(env, recipe["precision"]["tensor_parallel"])
         _disk_floor(recipe, env)
     except LaunchError as exc:
         print(f"[launch] refusing {rid}: {exc}", file=sys.stderr)

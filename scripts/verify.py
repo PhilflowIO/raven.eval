@@ -52,8 +52,8 @@ equals ``total_audio_s / total_wall_s`` within rounding
 (``raven_asr.throughput.throughput_problem``). A row without one, as in every
 artifact committed before throughput was recorded, is not failed for lacking it.
 
-The ``serving`` block (which recipe, engine and batching answered a self-hosted
-run — ``raven_asr.serving``) is a recording too. It is held to the passes it
+The ``serving`` block (which recipe, engine, batching, decoding and precision
+answered a self-hosted run — ``raven_asr.serving``) is a recording too. It is held to the passes it
 summarises: well formed, and equal to the block every recorded pass names. A row
 without the key, as in every artifact committed before serving was recorded,
 passes.

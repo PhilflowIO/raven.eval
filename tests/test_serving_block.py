@@ -1,7 +1,7 @@
 """Every self-hosted result names the serving setup that answered it — and only one.
 
 Pins the harness side of ``raven_asr.serving``: the adapter pins the first
-response's engine / recipe / batching, a later different block aborts the run
+response's engine / recipe / batching / decoding / precision, a later different block aborts the run
 like a served-model mismatch (exit 3, nothing recorded), a resumed subset whose
 earlier passes recorded another block is refused before its first request, a
 server that reports none records ``serving: null``, and ``promote`` / ``verify``
@@ -32,6 +32,10 @@ BLOCK_A = {
     "recipe": {"id": "primeline-whisper-large-v3-german", "sha256": "a" * 64},
     "batching": {"max_num_seqs": 16},
     "decoding": {"mode": "greedy", "max_tokens": 1024},
+    "precision": {
+        "weights": "fp16", "activations": "fp16", "scheme": "none", "tensor_parallel": 1,
+        "checkpoint": {"source": "published", "dtype": "bf16"},
+    },
 }
 BLOCK_B = {**BLOCK_A, "engine": "vllm 0.29.0"}
 
@@ -216,7 +220,7 @@ def test_promote_carries_the_block_into_the_artifact(
 
 
 def test_a_block_recorded_before_decoding_was_reported_is_still_well_formed() -> None:
-    legacy = {k: v for k, v in BLOCK_A.items() if k != "decoding"}
+    legacy = {k: v for k, v in BLOCK_A.items() if k not in ("decoding", "precision")}
     assert serving.serving_problem({"serving": legacy}) == ""
     assert serving.serving_problem({"serving": {**BLOCK_A, "decoding": "greedy"}}) != ""
 
@@ -229,3 +233,65 @@ def test_a_change_of_output_cap_is_a_change_of_setup(
     _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _Server([BLOCK_A, other])))
     with pytest.raises(serving.ServingChangedError, match="changed mid-run"):
         _run(tmp_path)
+
+
+# ── Precision (issue #81) ────────────────────────────────────────────────────
+
+_W8A16 = {
+    "weights": "fp8-e4m3", "activations": "bf16", "scheme": "fp8-w8a16-marlin",
+    "tensor_parallel": 2,
+    "checkpoint": {"source": "vendor", "repo": "org/m-fp8", "revision": "b" * 40,
+                   "dtype": "fp8-e4m3"},
+}
+
+
+def test_a_change_of_precision_mid_subset_aborts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A restart of the same recipe id on quantized weights is another setup."""
+    other = {**BLOCK_A, "precision": _W8A16}
+    samples = _samples(4)
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _Server([BLOCK_A, other])))
+    with pytest.raises(serving.ServingChangedError, match="changed mid-run"):
+        _run(tmp_path)
+
+
+def test_a_server_that_names_its_recipe_but_not_its_precision_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Serving code from before #81: its results could not name their precision."""
+    stale = {k: v for k, v in BLOCK_A.items() if k != "precision"}
+    samples = _samples(3)
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _Server([stale])))
+    with pytest.raises(serving.ServingChangedError, match="not its precision"):
+        _run(tmp_path)
+    assert not (tmp_path / f"throughput_{SUBSET}.jsonl").exists() or not _passes(tmp_path)
+
+
+def test_a_block_recorded_before_precision_was_reported_is_still_well_formed() -> None:
+    pre = {k: v for k, v in BLOCK_A.items() if k != "precision"}
+    assert serving.serving_problem({"serving": pre}) == ""
+    assert serving.serving_problem({"serving": {**BLOCK_A, "precision": None}}) == ""
+    assert serving.serving_problem({"serving": {**BLOCK_A, "precision": _W8A16}}) == ""
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "bf16",
+        {k: v for k, v in _W8A16.items() if k != "tensor_parallel"},
+        {**_W8A16, "tensor_parallel": 0},
+        {**_W8A16, "weights": ""},
+        {**_W8A16, "checkpoint": {"source": "vendor"}},
+    ],
+)
+def test_a_malformed_precision_fails_the_artifact(bad: object) -> None:
+    assert "serving.precision" in serving.serving_problem({"serving": {**BLOCK_A, "precision": bad}})
+
+
+def test_the_published_label_names_scheme_cast_and_split() -> None:
+    assert serving.precision_label(BLOCK_A["precision"]) == "fp16 (cast from bf16)"
+    assert serving.precision_label(_W8A16) == "fp8-e4m3 fp8-w8a16-marlin, TP 2"
+    plain = {**BLOCK_A["precision"], "weights": "bf16", "activations": "bf16",
+             "checkpoint": {"source": "published", "dtype": "bf16"}}
+    assert serving.precision_label(plain) == "bf16"

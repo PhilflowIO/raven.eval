@@ -256,6 +256,10 @@ def test_responses_name_the_serving_setup(server):
     }
     assert x["batching"] == {"max_batch": 8, "wait_ms": 50.0, "max_audio_s": 40.0}
     assert x["decoding"] == {"mode": "greedy", "strategy": "greedy_batch", "max_symbols": 10}
+    assert x["precision"] == {
+        "weights": "fp32", "activations": "fp32", "scheme": "none", "tensor_parallel": 1,
+        "checkpoint": {"source": "published", "dtype": "fp32"},
+    }
     assert "engine" in x  # None until NeMo is imported; "nemo <v> (torch <v>)" after
 
 
@@ -328,3 +332,32 @@ def test_health_names_the_revision_only_for_a_downloaded_checkpoint(monkeypatch,
         assert body["model_path"] == (path or None)
     finally:
         mod._batcher.stop()
+
+
+class _Param:
+    def __init__(self, dtype: str, n: int, floating: bool = True) -> None:
+        self.dtype, self.n, self.floating = f"torch.{dtype}", n, floating
+
+    def is_floating_point(self) -> bool:
+        return self.floating
+
+    def numel(self) -> int:
+        return self.n
+
+
+class _Model:
+    def __init__(self, *params: _Param) -> None:
+        self._params = params
+
+    def parameters(self):
+        return iter(self._params)
+
+
+def test_the_restored_weights_are_counted_per_dtype(server):
+    """The load check (#81) sees what NeMo restored: fp32 for every pinned .nemo."""
+    m = _Model(_Param("float32", 600), _Param("bfloat16", 10), _Param("int64", 5, floating=False))
+    assert server.numel_by_dtype(m) == {"float32": 600, "bfloat16": 10}
+    from recipe import weights_mismatch
+
+    assert weights_mismatch(server.numel_by_dtype(m), server.PRECISION["weights"]) == ""
+    assert weights_mismatch(server.numel_by_dtype(_Model(_Param("float16", 600))), "fp32") != ""

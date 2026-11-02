@@ -4,7 +4,7 @@ Pins what a third party relies on to stand the self-hosted models up the way
 they were measured: every model in ``SELF_HOSTED_MODELS`` has exactly one recipe
 on the right server type, engines are pinned exactly, the launcher builds the
 command the recipe describes (host-dependent values only from env), refuses
-anything but one GPU, and the recipe hash moves with the recipe and the files
+anything but the GPU count its precision names, and the recipe hash moves with the recipe and the files
 that execute it — and with nothing else.
 """
 
@@ -133,6 +133,11 @@ _DECODING = {
 }
 
 
+#: A valid precision table for a minimal test recipe on any engine.
+_PRECISION = ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+              'tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }')
+
+
 @pytest.mark.parametrize("engine", ["vllm", "transformers", "nemo"])
 @pytest.mark.parametrize("revision", [None, "main", "1454e6e1", "1454E6E1E33845CA9280FF65F52CF1141BA6E6E2"])
 def test_a_recipe_without_a_full_commit_is_refused(
@@ -143,7 +148,7 @@ def test_a_recipe_without_a_full_commit_is_refused(
     ckpt = {"nemo": 'checkpoint_file = "m.nemo"\n',
             "transformers": 'model_class = "GraniteSpeech5ForCTC"\n'}.get(engine, "")
     bad.write_text(f'[recipes."x"]\nmodel = "a/b"\nengine = "{engine}"\nweights_gb = 1\n'
-                   f'gpu_mem = 0.5\nchunking = "none"\n{_DECODING[engine]}\n{pin}{ckpt}')
+                   f'gpu_mem = 0.5\nchunking = "none"\n{_DECODING[engine]}\n{_PRECISION}\n{pin}{ckpt}')
     with pytest.raises(recipe.RecipeError, match="revision"):
         recipe.load_recipes(bad)
 
@@ -289,7 +294,7 @@ def test_a_transformers_recipe_without_a_class_is_refused(tmp_path: Path) -> Non
     bad = tmp_path / "r.toml"
     bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "transformers"\nweights_gb = 1\n'
                    f'gpu_mem = 0.5\nchunking = "none"\nrevision = "{"a" * 40}"\n'
-                   + _DECODING["transformers"] + "\n")
+                   + _DECODING["transformers"] + "\n" + _PRECISION + "\n")
     with pytest.raises(recipe.RecipeError, match="model_class"):
         recipe.load_recipes(bad)
 
@@ -359,8 +364,15 @@ def test_the_unified_model_is_served_in_offline_mode() -> None:
 @pytest.mark.parametrize("visible", ["", "0,1", "all"])
 def test_launch_refuses_anything_but_one_gpu(visible: str) -> None:
     with pytest.raises(launch.LaunchError):
-        launch._single_gpu({"CUDA_VISIBLE_DEVICES": visible})
-    launch._single_gpu({"CUDA_VISIBLE_DEVICES": "1"})
+        launch._gpus({"CUDA_VISIBLE_DEVICES": visible}, 1)
+    launch._gpus({"CUDA_VISIBLE_DEVICES": "1"}, 1)
+
+
+@pytest.mark.parametrize("visible", ["", "0", "0,0", "0,1,2", "0,x"])
+def test_a_split_model_gets_exactly_its_tensor_parallel_gpus(visible: str) -> None:
+    with pytest.raises(launch.LaunchError, match="tensor_parallel = 2"):
+        launch._gpus({"CUDA_VISIBLE_DEVICES": visible}, 2)
+    launch._gpus({"CUDA_VISIBLE_DEVICES": "0,1"}, 2)
 
 
 def test_print_mode_starts_nothing(capsys: pytest.CaptureFixture[str]) -> None:
@@ -398,7 +410,7 @@ def test_malformed_recipes_are_refused(tmp_path: Path) -> None:
     bad = tmp_path / "r.toml"
     nemo = ('[recipes."x"]\nmodel = "a/b"\nengine = "nemo"\nweights_gb = 1\n'
             'gpu_mem = 0.5\nchunking = "none"\nrevision = "' + "0" * 40 + '"\n'
-            + _DECODING["nemo"] + "\n")
+            + _DECODING["nemo"] + "\n" + _PRECISION + "\n")
     bad.write_text(nemo + 'checkpoint_file = "m.nemo"\ndtype = "float16"\n')
     with pytest.raises(recipe.RecipeError, match="do not apply"):
         recipe.load_recipes(bad)
@@ -448,6 +460,159 @@ def test_every_recipe_decodes_greedily_and_bounds_its_output() -> None:
 def test_a_malformed_decoding_table_is_refused(tmp_path: Path, decoding: str, match: str) -> None:
     bad = tmp_path / "r.toml"
     bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "vllm"\nweights_gb = 1\n'
-                   f'gpu_mem = 0.5\nchunking = "none"\nrevision = "{"a" * 40}"\n{decoding}\n')
+                   f'gpu_mem = 0.5\nchunking = "none"\nrevision = "{"a" * 40}"\n{decoding}\n'
+                   f'{_PRECISION}\n')
     with pytest.raises(recipe.RecipeError, match=match):
         recipe.load_recipes(bad)
+
+
+# ── precision (issue #81) ───────────────────────────────────────────────────
+
+#: What each recipe serves, read from the checkpoint at its pinned commit
+#: (safetensors headers; for NeMo the .nemo size against the parameter count)
+#: and from how its engine loads it. (weights, checkpoint's stored dtype)
+_MEASURED_PRECISION = {
+    "nvidia-parakeet-tdt-0.6b-v3": ("fp32", "fp32"),
+    "nvidia-canary-1b-v2": ("fp32", "fp32"),
+    "nvidia-nemotron-3.5-asr-streaming-0.6b": ("fp32", "fp32"),
+    "primeline-parakeet": ("fp32", "fp32"),
+    "nvidia-nemotron-labs-unified-asr-0.6b": ("fp32", "fp32"),
+    "cohere-transcribe-03-2026": ("bf16", "bf16"),
+    "granite-speech-4.1-2b-plus": ("bf16", "bf16"),
+    "phi-4-multimodal": ("bf16", "bf16"),
+    "moss-transcribe-diarize": ("bf16", "bf16"),
+    "qwen3-asr-1.7b": ("bf16", "bf16"),
+    "voxtral-mini-3b-2507": ("bf16", "bf16"),
+    # config.json says float16, model.safetensors stores bfloat16: a cast.
+    "primeline-whisper-large-v3-german": ("fp16", "bf16"),
+    "primeline-whisper-large-v3-turbo-german": ("bf16", "bf16"),
+    "openai-whisper-large-v3": ("fp16", "fp16"),
+    "openai-whisper-large-v3-turbo": ("fp16", "fp16"),
+    "granite-speech-5.0-2b": ("bf16", "bf16"),
+    "voxtral-mini-4b-realtime-2602": ("bf16", "bf16"),
+    "vibevoice-asr": ("bf16", "bf16"),
+    "moonshine-streaming-small-de": ("fp32", "fp32"),
+    "granite-speech-5.0-470m-turboctc": ("bf16", "bf16"),
+}
+
+
+def test_every_recipe_declares_the_precision_it_was_measured_in() -> None:
+    assert set(_MEASURED_PRECISION) == set(RECIPES)
+    for rid, r in RECIPES.items():
+        weights, stored = _MEASURED_PRECISION[rid]
+        p = r["precision"]
+        assert (p["weights"], p["activations"], p["scheme"]) == (weights, weights, "none"), rid
+        assert p["checkpoint"] == {"source": "published", "dtype": stored}, rid
+        assert p["tensor_parallel"] == 1, rid
+
+
+def test_the_engine_is_started_in_the_declared_precision() -> None:
+    for rid, r in RECIPES.items():
+        argv, env = launch.build(r, rid, {}, python=PY, snapshot="/snap", checkpoint="/c.nemo")
+        torch_name = recipe.FLOAT_FORMATS[r["precision"]["weights"]]
+        if r["engine"] == "vllm":
+            assert argv.count("--dtype") == 1 and _flag(argv, "--dtype") == torch_name, rid
+            assert "--tensor-parallel-size" not in argv, rid
+        elif r["engine"] == "transformers":
+            assert env["TRANSFORMERS_DTYPE"] == torch_name, rid
+
+
+def _with_precision(tmp_path: Path, precision: str, engine: str = "vllm", args: str = "") -> Path:
+    path = tmp_path / "r.toml"
+    extra = {"nemo": 'checkpoint_file = "m.nemo"\n',
+             "transformers": 'model_class = "GraniteSpeech5ForCTC"\n'}.get(engine, "")
+    path.write_text(f'[recipes."x"]\nmodel = "a/b"\nengine = "{engine}"\nweights_gb = 1\n'
+                    f'gpu_mem = 0.5\nchunking = "none"\nrevision = "{"a" * 40}"\n'
+                    f'{_DECODING[engine]}\n{extra}{args}{precision}\n')
+    return path
+
+
+_CKPT = '{ source = "published", dtype = "bf16" }'
+_W8A16 = ('precision = { weights = "fp8-e4m3", activations = "bf16", scheme = "fp8-w8a16-marlin", '
+          'tensor_parallel = 2, checkpoint = { source = "vendor", repo = "org/m-fp8", '
+          f'revision = "{"b" * 40}", dtype = "fp8-e4m3" }} }}')
+
+
+def test_a_quantized_split_recipe_is_launched_as_declared(tmp_path: Path) -> None:
+    """The shape of the W8A16 TP=2 recipes (#78/#79): weight-only FP8 from the
+    vendor's checkpoint, bf16 activations, split over two cards."""
+    recipes = recipe.load_recipes(_with_precision(tmp_path, _W8A16))
+    argv, _ = launch.build(recipes["x"], "x", {}, python=PY)
+    assert _flag(argv, "--dtype") == "bfloat16"
+    assert _flag(argv, "--tensor-parallel-size") == "2"
+    self_made = _W8A16.replace(
+        f'source = "vendor", repo = "org/m-fp8", revision = "{"b" * 40}"',
+        'source = "self", recipe = "quantize/m-w8a16.py"',
+    )
+    assert recipe.load_recipes(_with_precision(tmp_path, self_made))["x"]["precision"][
+        "checkpoint"]["source"] == "self"
+
+
+@pytest.mark.parametrize(
+    ("precision", "match"),
+    [
+        ("", "missing \\['precision'\\]"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+         f'checkpoint = {_CKPT} }}', "tensor_parallel"),
+        ('precision = { weights = "bf16", activations = "bf16", tensor_parallel = 1, '
+         f'checkpoint = {_CKPT} }}', "scheme"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+         'tensor_parallel = 1 }', "checkpoint"),
+        ('precision = { weights = "bfloat16", activations = "bf16", scheme = "none", '
+         f'tensor_parallel = 1, checkpoint = {_CKPT} }}', "weights must be one of"),
+        ('precision = { weights = "fp8-e4m3", activations = "bf16", scheme = "none", '
+         f'tensor_parallel = 1, checkpoint = {_CKPT} }}', "plain floating point"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "gptq-w8a16", '
+         f'tensor_parallel = 1, checkpoint = {_CKPT} }}', 'scheme must be "none"'),
+        ('precision = { weights = "int8", activations = "bf16", scheme = "gptq-w8a16", '
+         f'tensor_parallel = 1, checkpoint = {_CKPT} }}', "vendor or self-made"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+         f'tensor_parallel = 0, checkpoint = {_CKPT} }}', "positive integer"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+         'tensor_parallel = 1, checkpoint = { source = "vendor", repo = "o/m", dtype = "bf16" } }',
+         "needs \\['revision'\\]"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+         'tensor_parallel = 1, checkpoint = { source = "published" } }', "needs \\['dtype'\\]"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+         'tensor_parallel = 1, checkpoint = { source = "hub", dtype = "bf16" } }', "source must be"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+         f'tensor_parallel = 1, checkpoint = {_CKPT}, kv_cache = "fp8" }}', "not precision keys"),
+    ],
+)
+def test_a_recipe_without_a_complete_precision_is_refused(
+    tmp_path: Path, precision: str, match: str
+) -> None:
+    with pytest.raises(recipe.RecipeError, match=match):
+        recipe.load_recipes(_with_precision(tmp_path, precision))
+
+
+def test_args_cannot_override_what_precision_owns(tmp_path: Path) -> None:
+    for flag in ('"--dtype", "float16"', '"--tensor-parallel-size", "2"', '"-tp", "2"'):
+        bad = _with_precision(tmp_path, _PRECISION, args=f"args = [{flag}]\n")
+        with pytest.raises(recipe.RecipeError, match="precision owns"):
+            recipe.load_recipes(bad)
+
+
+@pytest.mark.parametrize("engine", ["nemo", "transformers"])
+def test_the_unquantizing_single_card_servers_refuse_anything_else(
+    tmp_path: Path, engine: str
+) -> None:
+    with pytest.raises(recipe.RecipeError, match="scheme must be"):
+        recipe.load_recipes(_with_precision(tmp_path, _W8A16, engine))
+    split = _PRECISION.replace("tensor_parallel = 1", "tensor_parallel = 2")
+    with pytest.raises(recipe.RecipeError, match="tensor_parallel must be 1"):
+        recipe.load_recipes(_with_precision(tmp_path, split, engine))
+
+
+def test_the_loaded_weights_must_be_mostly_the_declared_format() -> None:
+    # turboctc: transformers keeps its conv norms in fp32 by design.
+    assert recipe.weights_mismatch({"bfloat16": 472_862_720, "float32": 131_072}, "bf16") == ""
+    assert "mostly float32" in recipe.weights_mismatch({"float32": 600_000_000}, "bf16")
+    assert "no floating-point" in recipe.weights_mismatch({}, "fp32")
+
+
+def test_every_recipe_reports_its_precision() -> None:
+    p = recipe.precision("openai/whisper-large-v3")
+    assert p == {"weights": "fp16", "activations": "fp16", "scheme": "none",
+                 "tensor_parallel": 1, "checkpoint": {"source": "published", "dtype": "fp16"}}
+    assert recipe.precision("no/such-model") is None

@@ -169,6 +169,13 @@ class VllmOpenAIAdapter:
 
     def _check_serving(self, body: dict[str, object]) -> None:
         block = serving_block.from_x_raven(body.get("x_raven"))
+        if serving_block.missing_precision(block):
+            raise ServingChangedError(
+                f"[{self.provider_id}] the endpoint names its recipe but not its "
+                f"precision ({serving_block.describe(block)}): it runs serving code "
+                "from before x_raven.precision. Every result must name the number "
+                "format it was measured in; restart the server from this checkout."
+            )
         if not self._serving_pinned:
             self.serving, self._serving_pinned = block, True
             if block is None:

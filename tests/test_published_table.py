@@ -55,14 +55,15 @@ _DER_COLUMNS = {
     10: "der_classic_filemean",
 }
 _DER_WIDTH, _DER_N = 14, 12          # model | dataset | 9 numbers | CI | n | run
-_WER_COLUMNS = {2: "wer_pct", 4: "cer_pct", 6: "entity_hit_rate_pct",
-                9: "n_runaway", 10: "runaway_edit_share_pct"}
+_WER_COLUMNS = {3: "wer_pct", 5: "cer_pct", 7: "entity_hit_rate_pct",
+                10: "n_runaway", 11: "runaway_edit_share_pct"}
 #: "[lo, hi]" cells, each bound to its two expected.json fields.
-_WER_INTERVALS = {3: ("wer_ci_lo", "wer_ci_hi"), 7: ("entity_ci_lo", "entity_ci_hi")}
-_WER_N_ENTITIES = 8
-_WER_WIDTH, _WER_N = 13, 5
-# model | subset | wer | CI | cer | n | numbers hit | CI | numbers | loops |
-# loop edits % | run | ref
+_WER_INTERVALS = {4: ("wer_ci_lo", "wer_ci_hi"), 8: ("entity_ci_lo", "entity_ci_hi")}
+_WER_N_ENTITIES = 9
+_WER_WIDTH, _WER_N = 14, 6
+_WER_PRECISION, _WER_DATASET = 1, 2
+# model | precision | subset | wer | CI | cer | n | numbers hit | CI | numbers |
+# loops | loop edits % | run | ref
 
 
 def _linked_rows() -> list[tuple[str, list[str], Path]]:
@@ -109,7 +110,8 @@ def published_rows(metric: str = "der") -> list[dict]:
                 values[lo_field], values[hi_field] = _number(lo), _number(hi)
         rows.append({
             "model_cell": cells[0],
-            "dataset_cell": cells[1],
+            "dataset_cell": cells[1] if is_der else cells[_WER_DATASET],
+            "precision_cell": None if is_der else cells[_WER_PRECISION],
             "values": values,
             "n": int(cells[n_idx]),
             "n_entities": None if is_der else int(cells[_WER_N_ENTITIES]),
@@ -272,3 +274,36 @@ def test_every_committed_artifact_is_traceable_to_a_pinned_revision():
         "committed DER artifacts whose provenance is not pinned: " + str(offenders)
     )
 
+
+
+@pytest.mark.parametrize(
+    "row", published_rows("wer"),
+    ids=lambda r: f"{r['artifact'].name}-{r['dataset_cell'][:18]}",
+)
+def test_every_published_wer_row_names_the_precision_its_artifact_recorded(row: dict):
+    """Issue #81: precision in every self-hosted row, and only what was recorded.
+
+    The cell is the run's own ``serving.precision`` (``precision_label``). A
+    self-hosted run that recorded none says ``not recorded``; a hosted API
+    ``hosted``. A footnote marker after the cell is allowed.
+    """
+    from raven_asr.config import SELF_HOSTED_MODELS
+    from raven_asr.serving import precision_label
+
+    summary = json.loads((row["artifact"] / "summary.json").read_text(encoding="utf-8"))
+    results = summary["results"]
+    results = results if isinstance(results, list) else list(results.values())
+    expected = json.loads((row["artifact"] / "expected.json").read_text())
+    subset = _dataset_for(row, expected)
+    (result,) = [r for r in results if r.get("subset") == subset]
+    prec = (result.get("serving") or {}).get("precision")
+    if prec is not None:
+        want = precision_label(prec)
+    elif summary["model_id"] in SELF_HOSTED_MODELS:
+        want = "not recorded"
+    else:
+        want = "hosted"
+    assert row["precision_cell"].rstrip("¹²³⁴⁵") == want, (
+        f"{row['artifact'].relative_to(REPO_ROOT)} [{subset}] publishes precision "
+        f"{row['precision_cell']!r}, the artifact records {want!r}"
+    )

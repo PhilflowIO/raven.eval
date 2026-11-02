@@ -124,6 +124,8 @@ BATCH_MAX_AUDIO_S = float(os.environ.get("NEMO_BATCH_MAX_AUDIO_S", "40"))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from recipe import decoding as _recipe_decoding  # noqa: E402
 from recipe import identity as _recipe_identity  # noqa: E402
+from recipe import precision as _recipe_precision  # noqa: E402
+from recipe import weights_mismatch  # noqa: E402
 
 RECIPE = _recipe_identity(os.environ.get("RAVEN_SERVING_RECIPE") or BENCH_MODEL)
 # The recipe's decoding table (x_raven.decoding). This server never changes a
@@ -131,6 +133,21 @@ RECIPE = _recipe_identity(os.environ.get("RAVEN_SERVING_RECIPE") or BENCH_MODEL)
 # refuses to serve when they differ (decoding_mismatch), so what a response
 # reports is what decoded it.
 DECODING = _recipe_decoding(os.environ.get("RAVEN_SERVING_RECIPE") or BENCH_MODEL)
+# The recipe's precision table (x_raven.precision). This server casts nothing:
+# restore_from keeps the checkpoint's stored format and transcribe() runs no
+# autocast. It checks the restored parameters against precision.weights and
+# refuses to serve when they differ, so what a response reports is what ran.
+PRECISION = _recipe_precision(os.environ.get("RAVEN_SERVING_RECIPE") or BENCH_MODEL)
+
+
+def numel_by_dtype(model) -> dict[str, int]:
+    """Floating-point parameter elements of ``model`` per dtype name (``"float32"``)."""
+    counts: dict[str, int] = {}
+    for p in model.parameters():
+        if p.is_floating_point():
+            name = str(p.dtype).removeprefix("torch.")
+            counts[name] = counts.get(name, 0) + p.numel()
+    return counts
 
 
 def decoding_mismatch(cfg, expected: dict | None) -> str:
@@ -273,6 +290,10 @@ def _load_model() -> None:
                 raise RuntimeError(
                     f"checkpoint decoding differs from its recipe: {problem}"
                 )
+            if PRECISION is not None and (
+                problem := weights_mismatch(numel_by_dtype(m), PRECISION["weights"])
+            ):
+                raise RuntimeError(f"checkpoint precision differs from its recipe: {problem}")
             _is_canary = _model_is_canary(m)
             if _is_nemotron:
                 # NeMo 3.0.0 gap (see _transcribe_window): force prompt mode
@@ -786,6 +807,7 @@ def _respond(
             "recipe": RECIPE,
             "batching": BATCHING,
             "decoding": DECODING,
+            "precision": PRECISION,
         },
     }
     if timestamps:

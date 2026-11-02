@@ -240,24 +240,41 @@ token ids (on the 2026-11 Phi-4 run, every loop re-tokenized to the 4,096 tokens
 the server had capped it at, once 4,095), and audio vLLM splits is capped per
 piece by a server. The next run with the cap server-side is the exact number.
 
-| model | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
-|-------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
-| primeline/parakeet-primeline | Tuda-De | 4.02 | [2.76, 5.55] | 2.75 | 414 | 94.51 | [87.50, 100.00] | 91 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 |
-| primeline/parakeet-primeline | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | 97.05 | [95.10, 98.60] | 339 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 |
-| primeline/parakeet-primeline | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | 98.31 | [96.62, 99.66] | 295 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 |
-| primeline/parakeet-primeline | fhnw-all-dialects | 31.04 | [30.24, 31.86] | 16.42 | 2875 | 93.28 | [88.50, 97.48] | 119 | 0 | 0.00 | [2026-10-02](./artifacts/2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet/) | — |
-| xai/grok-voice-transcribe-2.0 | avemio-german-mixed-test | 6.87 | [5.24, 8.76] | 3.85 | 100 | 100.00 | [100.00, 100.00] | 3 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | fleurs | 4.59 | [3.43, 5.90] | 2.57 | 100 | 93.18 | [83.78, 100.00] | 44 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | mls-de | 8.37 | [6.87, 9.95] | 10.53 | 100 | 90.00 | [66.67, 100.00] | 10 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | voxpopuli-de | 12.99 | [10.88, 15.32] | 8.39 | 100 | 75.00 | [50.00, 94.44] | 16 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | spc-test | 41.77 | [35.69, 47.99] | 23.85 | 50 | 60.00 | [20.00, 100.00] | 5 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-2.0 | fhnw-all-dialects | 43.92 | [35.98, 52.24] | 22.70 | 50 | 75.00 | [50.00, 100.00] | 4 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
-| xai/grok-voice-transcribe-1.0 | avemio-german-mixed-test | 7.21 | [5.45, 9.29] | 4.41 | 100 | 66.67 | [0.00, 100.00] | 3 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | fleurs | 6.75 | [4.74, 9.56] | 9.49 | 100 | 90.91 | [80.49, 98.04] | 44 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | mls-de | 8.22 | [7.04, 9.47] | 10.45 | 100 | 90.00 | [66.67, 100.00] | 10 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | voxpopuli-de | 11.27 | [9.43, 13.21] | 7.14 | 100 | 75.00 | [50.00, 94.44] | 16 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | spc-test | 50.07 | [43.82, 55.98] | 27.01 | 50 | 80.00 | [40.00, 100.00] | 5 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
-| xai/grok-voice-transcribe-1.0 | fhnw-all-dialects | 39.66 | [32.79, 46.94] | 22.16 | 50 | 75.00 | [50.00, 100.00] | 4 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+**Precision is part of every self-hosted row.** Two runs of one model at different
+weight precision measure different things, so the `precision` column names the
+format the weights were served in and the computation ran in (`bf16`, `fp16`,
+`fp32`; for a quantized model the scheme, e.g. `fp8 W8A16`, and the GPUs it was
+split over). It comes from the run's own `serving.precision` block, which every
+server reports and every run records (`docs/TIER2-KEYS.md`, "Precision"); a
+change of precision mid-subset aborts the run. `hosted` rows ran on someone
+else's servers, whose precision nobody outside can see. A **quantized** row is
+published with its **control**: the same model in bf16 (with CPU offload where
+it does not fit the cards), measured on `fleurs`, and the paired WER difference
+quantized − bf16 with its 95 % interval, directly under the quantized row.
+
+¹ The parakeet-primeline rows predate the published serving code (2026-07-30
+through a server whose source is not in this repo, 2026-10-02 through a Modal
+app); neither recorded its precision. The checkpoint stores fp32, but whether
+those servers cast it is not on record, so the column does not claim it.
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| primeline/parakeet-primeline | not recorded¹ | Tuda-De | 4.02 | [2.76, 5.55] | 2.75 | 414 | 94.51 | [87.50, 100.00] | 91 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 4.11 |
+| primeline/parakeet-primeline | not recorded¹ | multilingual_librispeech | 3.04 | [2.91, 3.18] | 1.90 | 3996 | 97.05 | [95.10, 98.60] | 339 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 2.60 |
+| primeline/parakeet-primeline | not recorded¹ | common_voice_19_0 | 2.58 | [2.41, 2.75] | 0.85 | 5389 | 98.31 | [96.62, 99.66] | 295 | 0 | 0.00 | [2026-07-30](./artifacts/2026-07-30-parakeet-primeline/primeline-parakeet/) | 3.03 |
+| primeline/parakeet-primeline | not recorded¹ | fhnw-all-dialects | 31.04 | [30.24, 31.86] | 16.42 | 2875 | 93.28 | [88.50, 97.48] | 119 | 0 | 0.00 | [2026-10-02](./artifacts/2026-10-02-fhnw-all-dialects-parakeet-primeline/modal-parakeet/) | — |
+| xai/grok-voice-transcribe-2.0 | hosted | avemio-german-mixed-test | 6.87 | [5.24, 8.76] | 3.85 | 100 | 100.00 | [100.00, 100.00] | 3 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | hosted | fleurs | 4.59 | [3.43, 5.90] | 2.57 | 100 | 93.18 | [83.78, 100.00] | 44 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | hosted | mls-de | 8.37 | [6.87, 9.95] | 10.53 | 100 | 90.00 | [66.67, 100.00] | 10 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | hosted | voxpopuli-de | 12.99 | [10.88, 15.32] | 8.39 | 100 | 75.00 | [50.00, 94.44] | 16 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | hosted | spc-test | 41.77 | [35.69, 47.99] | 23.85 | 50 | 60.00 | [20.00, 100.00] | 5 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-2.0 | hosted | fhnw-all-dialects | 43.92 | [35.98, 52.24] | 22.70 | 50 | 75.00 | [50.00, 100.00] | 4 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-2-0/xai-grok-voice-transcribe-2.0/) | — |
+| xai/grok-voice-transcribe-1.0 | hosted | avemio-german-mixed-test | 7.21 | [5.45, 9.29] | 4.41 | 100 | 66.67 | [0.00, 100.00] | 3 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-avemio-german-mixed-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | hosted | fleurs | 6.75 | [4.74, 9.56] | 9.49 | 100 | 90.91 | [80.49, 98.04] | 44 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fleurs-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | hosted | mls-de | 8.22 | [7.04, 9.47] | 10.45 | 100 | 90.00 | [66.67, 100.00] | 10 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-mls-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | hosted | voxpopuli-de | 11.27 | [9.43, 13.21] | 7.14 | 100 | 75.00 | [50.00, 94.44] | 16 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-voxpopuli-de-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | hosted | spc-test | 50.07 | [43.82, 55.98] | 27.01 | 50 | 80.00 | [40.00, 100.00] | 5 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-spc-test-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
+| xai/grok-voice-transcribe-1.0 | hosted | fhnw-all-dialects | 39.66 | [32.79, 46.94] | 22.16 | 50 | 75.00 | [50.00, 100.00] | 4 | 0 | 0.00 | [2026-09-18](./artifacts/2026-09-18-fhnw-all-dialects-grok-voice-transcribe-1-0/xai-grok-voice-transcribe-1.0/) | — |
 
 **xAI Grok Voice Transcribe 2.0** (hosted, us-east-1, `language=de`, `format=true`,
 2026-09-18) was run on exactly the samples the Raven benchmark page compares every

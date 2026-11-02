@@ -37,6 +37,11 @@
 #                     give the shim the value the launcher got — else the
 #                     recipe's default
 #   x_raven.decoding  the recipe's decoding table: mode "greedy" and max_tokens
+#   x_raven.precision the recipe's precision table: weights, activations, scheme,
+#                     checkpoint, tensor_parallel. launch.py starts the engine
+#                     from that same table (--dtype, --tensor-parallel-size), and
+#                     the transformers stand-in refuses to serve weights that are
+#                     not in it
 #
 # DECODING is the recipe's, never the engine's default: every request upstream
 # carries temperature 0, repetition_penalty 1.0 and the recipe's max_tokens
@@ -69,6 +74,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from recipe import RecipeError, load_recipes, resolve  # noqa: E402
 from recipe import decoding as recipe_decoding  # noqa: E402
 from recipe import identity as recipe_identity  # noqa: E402
+from recipe import precision as recipe_precision  # noqa: E402
 
 logger = logging.getLogger("raven-serving-shim")
 logging.basicConfig(level=logging.INFO)
@@ -170,15 +176,17 @@ def _batching(served: str) -> dict[str, int] | None:
 
 
 async def _serving(served: str | None) -> dict[str, Any]:
-    """engine / recipe / batching for ``served``, looked up once per served model."""
+    """The serving block for ``served``, looked up once per served model."""
     global _serving_cache
     if served is None:
-        return {"engine": None, "recipe": None, "batching": None, "decoding": None}
+        return {"engine": None, "recipe": None, "batching": None, "decoding": None,
+                "precision": None}
     if _serving_cache[0] != served:
         engine = await _engine_version()
         info = {
             "engine": engine, "recipe": recipe_identity(served),
             "batching": _batching(served), "decoding": recipe_decoding(served),
+            "precision": recipe_precision(served),
         }
         if engine is None:
             return info  # do not cache a failed lookup

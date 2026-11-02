@@ -24,6 +24,24 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Added
+- Every self-hosted result names its **precision** (#81). Each serving recipe
+  declares `precision = {weights, activations, scheme, checkpoint,
+  tensor_parallel}` — the format the weights are served in, the format the
+  computation runs in, the quantization scheme (`none` for plain floating
+  point), where the weights come from (`published` / `vendor` / `self`, with the
+  format the checkpoint stores, so a cast is on record) and how many GPUs one
+  instance is split over — and validation refuses a recipe without it. vLLM is
+  started with `--dtype` / `--tensor-parallel-size` from it, the NeMo server and
+  the transformers stand-in refuse to serve weights in another format. Servers
+  report it as `x_raven.precision`; it is the fifth key of the `serving` block in
+  every throughput pass, `summary.json` row and promoted artifact, so a change of
+  precision mid-subset aborts the run (exit 3) like any change of setup, and a
+  server that names its recipe but not its precision is refused. The WER table
+  has a `precision` column held to each artifact's record. The existing recipes
+  were backfilled from their checkpoints at the pinned commits: NeMo models and
+  moonshine fp32, Whisper large-v3 / -turbo fp16, every other model bf16, and
+  primeline-whisper-large-v3-german fp16 cast from a bf16 checkpoint. Blocks
+  recorded before (four or three keys) stay valid.
 - Every WER is published with its **runaway count**: utterances whose hypothesis
   has more than 3x the reference's flozi-strict words (`wer.runaway` in
   `benchmark.config.yaml`), as `n_runaway`, `runaway_pct` and

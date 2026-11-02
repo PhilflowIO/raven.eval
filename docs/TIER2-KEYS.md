@@ -85,7 +85,7 @@ trusted.
 
 The 14 self-hosted rows were served with the recipe in `serving/`, and you can
 stand up the same servers from it. Every model has one declarative recipe in
-`serving/recipes.toml` (engine, dtype, context length, batching defaults,
+`serving/recipes.toml` (engine, precision, context length, batching defaults,
 memory budget, how long audio is chunked, and why); `serving/launch.py` turns a
 recipe into the server process. Every recipe pins the Hugging Face commit it
 loads (`revision`): a publisher can re-upload under the same repo id, and an
@@ -123,7 +123,9 @@ export VLLM_BENCH_URL=http://127.0.0.1:8002/v1
 ```
 
 `python serving/launch.py <model> --print` shows the exact command without
-starting anything. The launcher wants exactly one GPU in `CUDA_VISIBLE_DEVICES`;
+starting anything. The launcher wants exactly as many GPUs in
+`CUDA_VISIBLE_DEVICES` as the recipe's `precision.tensor_parallel` (one for
+every recipe so far);
 `RAVEN_SERVE_HOST`, `RAVEN_SERVE_PORT`, `RAVEN_SERVE_GPU_MEM` and
 `RAVEN_SERVE_MAX_NUM_SEQS` override the host-dependent values, and
 `RAVEN_SERVE_MIN_FREE_GB` makes it refuse a download that would fill the disk.
@@ -133,21 +135,44 @@ work; on an empty card give vLLM more.
 **What a run records.** Every answer of these servers names its setup in
 `x_raven`: `engine` (`vllm 0.33.0`, `nemo 3.0.0 (torch …)`), `recipe` (`id` and
 a SHA-256 over that model's recipe and every file that executes it) and
-`batching` (NeMo `max_batch` / `wait_ms` / `max_audio_s`, vLLM `max_num_seqs`).
+`batching` (NeMo `max_batch` / `wait_ms` / `max_audio_s`, vLLM `max_num_seqs`),
+`decoding` and `precision`.
 The harness pins the first answer's block, writes it into every throughput pass
 and into each `summary.json` result row as `serving`, and **aborts** (exit 3,
 nothing recorded) when a later answer — or the earlier passes of a subset being
 resumed — names a different one: a score over transcripts from two setups
 describes neither. A server that reports no block yields `serving: null` and one
-warning. Hosted APIs always record `null`.
+warning; one that names its recipe but not its precision runs serving code from
+before precision was reported and is refused (exit 3). Hosted APIs always record
+`null`.
+
+**Precision.** Every recipe declares it, and validation refuses a recipe that
+leaves any of it out:
+
+| field | meaning | e.g. |
+|---|---|---|
+| `weights` | format the weights are held in while serving | `fp32`, `bf16`, `fp16`, `fp8-e4m3`, `int8`, `int4` |
+| `activations` | format the computation runs in (vLLM: `--dtype`) | `bf16` |
+| `scheme` | `none` for plain floating point, else the quantization scheme | `none`, `fp8-w8a16-marlin`, `gptq-w8a16` |
+| `checkpoint` | where the served weights come from, and the format it stores: `{source = "published", dtype}` (the repo at `revision`), `{source = "vendor", repo, revision, dtype}`, `{source = "self", recipe, dtype}` (the script or recipe that made it) | `{source = "published", dtype = "bf16"}` |
+| `tensor_parallel` | GPUs one model instance is split over | `1`, `2` |
+
+The launcher starts vLLM with `--dtype` and `--tensor-parallel-size` from this
+table (a recipe's `args` may not set them); the NeMo server and the transformers
+stand-in check the loaded parameters against `weights` and refuse to serve on a
+mismatch. A recipe whose `weights` differ from `checkpoint.dtype` serves a cast —
+`primeline-whisper-large-v3-german` is the one so far (a bf16 checkpoint served in
+fp16). A quantized row is published next to its control: the same model in
+bf16 (with CPU offload where it does not fit), measured on FLEURS-de, and the
+paired WER difference between the two.
 
 **Reproducible to a tolerance, not bit-exact.** The servers batch concurrent
 requests, and a batched forward pass can differ from a single-clip pass in the
 last bits — enough to flip a character now and then. Measured on FLEURS with
 Parakeet-TDT-0.6B-v3: 2 of 862 utterances changed by one character, WER
 unchanged, CER +0.0008 pp. A re-run with the same recipe reproduces a
-self-hosted row to that tolerance; a re-run with a different recipe hash, engine
-or batching is a different measurement.
+self-hosted row to that tolerance; a re-run with a different recipe hash, engine,
+batching or precision is a different measurement.
 
 The `*_URL` / `*_API_KEY` variables name **your** endpoints — this repo never
 ships URLs or key values, only the env-var names the runner reads.
