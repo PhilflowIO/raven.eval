@@ -78,12 +78,13 @@ def test_vllm_command_is_the_recipe() -> None:
     assert env["VLLM_MAX_AUDIO_CLIP_FILESIZE_MB"] == "512"
 
 
-def test_every_vllm_and_transformers_recipe_pins_a_full_commit() -> None:
+def test_every_recipe_pins_a_full_commit() -> None:
     for rid, r in RECIPES.items():
-        if r["engine"] in recipe.REVISION_ENGINES:
-            assert re.fullmatch(r"[0-9a-f]{40}", r["revision"]), rid
-        else:
-            assert "revision" not in r, rid
+        assert re.fullmatch(r"[0-9a-f]{40}", r["revision"]), rid
+        if r["engine"] == "nemo":
+            # from_pretrained takes no revision: the pin only holds through a .nemo
+            # file downloaded at it.
+            assert r["checkpoint_file"].endswith(".nemo"), rid
 
 
 def test_granite_serves_the_checkpoint_vllm_028_can_load() -> None:
@@ -96,14 +97,16 @@ def test_granite_serves_the_checkpoint_vllm_028_can_load() -> None:
     assert "vllm[audio]==0.28.0" in (SERVING / "vllm" / "requirements.txt").read_text()
 
 
+@pytest.mark.parametrize("engine", ["vllm", "transformers", "nemo"])
 @pytest.mark.parametrize("revision", [None, "main", "1454e6e1", "1454E6E1E33845CA9280FF65F52CF1141BA6E6E2"])
-def test_a_vllm_recipe_without_a_full_commit_is_refused(
-    tmp_path: Path, revision: str | None
+def test_a_recipe_without_a_full_commit_is_refused(
+    tmp_path: Path, engine: str, revision: str | None
 ) -> None:
     bad = tmp_path / "r.toml"
     pin = "" if revision is None else f'revision = "{revision}"\n'
-    bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "vllm"\nweights_gb = 1\n'
-                   f'gpu_mem = 0.5\nchunking = "none"\n{pin}')
+    ckpt = 'checkpoint_file = "m.nemo"\n' if engine == "nemo" else ""
+    bad.write_text(f'[recipes."x"]\nmodel = "a/b"\nengine = "{engine}"\nweights_gb = 1\n'
+                   f'gpu_mem = 0.5\nchunking = "none"\n{pin}{ckpt}')
     with pytest.raises(recipe.RecipeError, match="revision"):
         recipe.load_recipes(bad)
 
@@ -151,6 +154,42 @@ def test_snapshots_are_downloaded_at_the_recipe_revision(
         assert calls[-1]["revision"] == RECIPES[rid]["revision"]
 
 
+#: The commits the 2026-11 round loaded: the bench cache's refs/main for the three
+#: nvidia repos, and primeline's main (unchanged since 2026-04-24) for the fourth.
+NEMO_PINS = {
+    "nvidia/parakeet-tdt-0.6b-v3": "541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
+    "nvidia/canary-1b-v2": "d455706339a6b32e1aa40f82c713a482a0c938e2",
+    "nvidia/nemotron-3.5-asr-streaming-0.6b": "ea30d66debe3740a08b573244286791d423d6b3e",
+    "primeline/parakeet-primeline": "3f1a9bcb611dfeda53fe74fe5f1a3d5701e8023e",
+}
+
+
+@pytest.mark.parametrize("model", sorted(NEMO_PINS))
+def test_nemo_checkpoints_are_downloaded_at_the_recipe_revision(
+    monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    import huggingface_hub
+
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_hf_hub_download(*args: object, **kw: object) -> str:
+        calls.append((args, kw))
+        return "/ckpt/m.nemo"
+
+    def no_snapshot(*_: object, **__: object) -> str:
+        raise AssertionError("a NeMo recipe needs its .nemo file, not a snapshot")
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_hf_hub_download)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", no_snapshot)
+    r = RECIPES[recipe.resolve(model, RECIPES)]
+    assert r["revision"] == NEMO_PINS[model]
+    assert launch._fetch(r) == (None, "/ckpt/m.nemo")
+    assert calls == [((model, r["checkpoint_file"]), {"revision": NEMO_PINS[model]})]
+    _, env = _build(model)
+    assert env["BENCH_MODEL_PATH"] == "/ckpt/m.nemo"
+    assert env["BENCH_MODEL_REVISION"] == NEMO_PINS[model]
+
+
 def test_the_disk_check_looks_for_the_pinned_snapshot(tmp_path: Path) -> None:
     repo = tmp_path / "hub" / "models--a--b" / "snapshots"
     (repo / ("0" * 40)).mkdir(parents=True)
@@ -167,6 +206,7 @@ def test_nemo_command_and_batching_come_from_the_recipe() -> None:
     assert _flag(argv, "--port") == "18171"
     assert env["BENCH_MODEL"] == "primeline/parakeet-primeline"
     assert env["BENCH_MODEL_PATH"] == "/ckpt/m.nemo"
+    assert env["BENCH_MODEL_REVISION"] == "3f1a9bcb611dfeda53fe74fe5f1a3d5701e8023e"
     assert (env["NEMO_MAX_BATCH"], env["NEMO_BATCH_WAIT_MS"], env["NEMO_BATCH_MAX_AUDIO_S"]) == (
         "16", "20", "40"
     )
@@ -220,14 +260,15 @@ def test_the_hash_moves_with_the_recipe_and_its_files_only(
 
 def test_malformed_recipes_are_refused(tmp_path: Path) -> None:
     bad = tmp_path / "r.toml"
-    bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "nemo"\nweights_gb = 1\n'
-                   'gpu_mem = 0.5\nchunking = "none"\ndtype = "float16"\n')
+    nemo = ('[recipes."x"]\nmodel = "a/b"\nengine = "nemo"\nweights_gb = 1\n'
+            'gpu_mem = 0.5\nchunking = "none"\nrevision = "' + "0" * 40 + '"\n')
+    bad.write_text(nemo + 'checkpoint_file = "m.nemo"\ndtype = "float16"\n')
     with pytest.raises(recipe.RecipeError, match="do not apply"):
         recipe.load_recipes(bad)
-    # NeMo's from_pretrained takes no revision: a pin there would be a lie.
-    bad.write_text('[recipes."x"]\nmodel = "a/b"\nengine = "nemo"\nweights_gb = 1\n'
-                   'gpu_mem = 0.5\nchunking = "none"\nrevision = "' + "0" * 40 + '"\n')
-    with pytest.raises(recipe.RecipeError, match="do not apply"):
+    # NeMo's from_pretrained takes no revision: without a .nemo file to download
+    # at the pin, the server would load whatever main is.
+    bad.write_text(nemo)
+    with pytest.raises(recipe.RecipeError, match="checkpoint_file"):
         recipe.load_recipes(bad)
 
 

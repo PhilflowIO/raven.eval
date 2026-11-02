@@ -269,3 +269,24 @@ def test_launcher_names_the_recipe_the_server_reports(monkeypatch):
         assert mod.RECIPE["id"] == "primeline-parakeet"
     finally:
         mod._batcher.stop()
+
+
+@pytest.mark.parametrize("path", ["", "/ckpt/m.nemo"])
+def test_health_names_the_revision_only_for_a_downloaded_checkpoint(monkeypatch, path):
+    """The pin holds only through the .nemo file launch.py downloaded at it; a
+    from_pretrained pull follows main, so the server must not claim the pin."""
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("BENCH_MODEL", "nvidia/canary-1b-v2")
+    monkeypatch.setenv("BENCH_MODEL_PATH", path)
+    monkeypatch.setenv("BENCH_MODEL_REVISION", "d455706339a6b32e1aa40f82c713a482a0c938e2")
+    monkeypatch.syspath_prepend(str(NEMO_DIR))
+    sys.modules.pop("batcher", None)
+    mod = _load("raven_serving_nemo_server_3", NEMO_DIR / "server.py")
+    try:
+        body = TestClient(mod.app).get("/health").json()
+        expected = "d455706339a6b32e1aa40f82c713a482a0c938e2" if path else None
+        assert body["model_revision"] == expected
+        assert body["model_path"] == (path or None)
+    finally:
+        mod._batcher.stop()
