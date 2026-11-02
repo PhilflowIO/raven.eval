@@ -60,9 +60,12 @@ asr = [
     # `modal`, so the conversion is tested wherever the harness is.
     "soxr",
     # The post-hoc output-length cap (raven_asr.reparse) cuts recorded output on
-    # the model's own tokenizer.json at the recipe revision; huggingface-hub
-    # above fetches it.
+    # the model's own tokenizer at the recipe revision: its tokenizer.json via
+    # tokenizers, or transformers' AutoTokenizer for a repo that ships only
+    # vocab + merges (no torch needed for a tokenizer). huggingface-hub above
+    # fetches the files.
     "tokenizers",
+    "transformers",
 ]
 modal = ["modal"]
 # Tier-2 DER harness (raven_diar): run the pinned diarizer over public audio and

@@ -4623,6 +4623,7 @@ asr = [
     { name = "soxr" },
     { name = "tokenizers" },
     { name = "tqdm" },
+    { name = "transformers" },
     { name = "websockets" },
 ]
 dev = [
@@ -4727,6 +4728,7 @@ requires-dist = [
     { name = "torchaudio", marker = "extra == 'diar'" },
     { name = "torchaudio", marker = "extra == 'diarizen'", specifier = "==2.1.1" },
     { name = "tqdm", marker = "extra == 'asr'" },
+    { name = "transformers", marker = "extra == 'asr'" },
     { name = "unidecode" },
     { name = "websockets", marker = "extra == 'asr'", specifier = ">=13" },
 ]
@@ -5976,6 +5978,7 @@ version = "5.16.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-raven-eval-core-diarizen'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-15-raven-eval-core-diar') or (python_full_version < '3.12' and extra != 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diar' and extra == 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diarizen' and extra == 'extra-15-raven-eval-core-sortformer')" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-15-raven-eval-core-diar') or (python_full_version >= '3.12' and extra != 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diar' and extra == 'extra-15-raven-eval-core-diarizen') or (extra == 'extra-15-raven-eval-core-diarizen' and extra == 'extra-15-raven-eval-core-sortformer')" },
     { name = "packaging" },

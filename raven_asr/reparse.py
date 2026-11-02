@@ -141,22 +141,42 @@ def recipe_cap(model_id: str, recipes_file: Path = RECIPES_FILE) -> Cap | None:
 
 
 class _HFTokenizer:
-    """The model's ``tokenizer.json`` at the recipe revision (``tokenizers``)."""
+    """The model's own tokenizer at the recipe revision.
+
+    The ``tokenizer.json`` the repo ships, read with ``tokenizers``, where there
+    is one; otherwise (Qwen3-ASR, some Whisper fine-tunes ship vocab + merges
+    only) ``transformers.AutoTokenizer`` builds it from the repo's files, never
+    running remote code. :attr:`source` names which, for the ``post_hoc`` record.
+    """
 
     def __init__(self, cap: Cap) -> None:
+        from huggingface_hub import hf_hub_download
+        from huggingface_hub.errors import EntryNotFoundError
+
         try:
-            from huggingface_hub import hf_hub_download
-            from tokenizers import Tokenizer as _Tok
-        except ImportError as exc:  # pragma: no cover - the asr extra has both
-            raise RuntimeError("the post-hoc cap needs `tokenizers` (asr extra)") from exc
-        path = hf_hub_download(cap.repo, "tokenizer.json", revision=cap.revision)
-        self._tok = _Tok.from_file(path)
+            path = hf_hub_download(cap.repo, "tokenizer.json", revision=cap.revision)
+        except EntryNotFoundError:
+            import transformers
+
+            tok = transformers.AutoTokenizer.from_pretrained(
+                cap.repo, revision=cap.revision, trust_remote_code=False
+            )
+            self._encode = lambda text: list(tok.encode(text, add_special_tokens=False))
+            self._decode = lambda ids: tok.decode(ids)
+            self.source = f"transformers {transformers.__version__} AutoTokenizer"
+            return
+        from tokenizers import Tokenizer as _Tok
+
+        tok = _Tok.from_file(path)
+        self._encode = lambda text: list(tok.encode(text, add_special_tokens=False).ids)
+        self._decode = lambda ids: tok.decode(ids)
+        self.source = "tokenizer.json"
 
     def encode(self, text: str) -> list[int]:
-        return list(self._tok.encode(text, add_special_tokens=False).ids)
+        return self._encode(text)
 
     def decode(self, ids: list[int]) -> str:
-        return self._tok.decode(ids)
+        return self._decode(ids)
 
 
 def cap_text(raw: str, max_tokens: int, tok: Callable[[], Tokenizer]) -> tuple[str, bool]:
@@ -251,6 +271,9 @@ def reparse_run(
     reports: list[SubsetReport] = []
     changed: list[str] = []
     capped: dict[str, int] = {}
+    # Every file is derived before any is written: a tokenizer that cannot be
+    # loaded halfway through must not leave some subsets rewritten and unscored.
+    pending: list[tuple[Path, list[dict[str, Any]]]] = []
     for path in sorted(run_dir.glob("predictions_*.jsonl")):
         m = _PRED_RE.match(path.name)
         assert m
@@ -265,10 +288,12 @@ def reparse_run(
         if n_capped:
             capped[subset] = n_capped
         if n_changed and not dry_run:
-            _write_atomic(path, new)
+            pending.append((path, new))
             changed.append(subset)
     if not changed:
         return reports
+    for path, new in pending:
+        _write_atomic(path, new)
     steps: list[dict[str, Any]] = []
     if plan.cap is not None and capped:
         steps.append({
@@ -276,7 +301,7 @@ def reparse_run(
             "capped_post_hoc": True,
             "max_tokens": plan.cap.max_tokens,
             "tokenizer": {"repo": plan.cap.repo, "revision": plan.cap.revision,
-                          "file": "tokenizer.json"},
+                          "source": getattr(plan._tok, "source", None)},
             "n_capped": capped,
             "exact": False,
             "why_not_exact": (
@@ -316,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
     for run_dir in args.run_dirs:
         try:
             reports = reparse_run(run_dir, dry_run=args.dry_run, cap=not args.no_cap)
-        except (NoParserError, FileNotFoundError, KeyError) as exc:
+        except (NoParserError, FileNotFoundError, KeyError, OSError) as exc:
             print(f"SKIP {run_dir}: {exc}", file=sys.stderr)
             status = 2
             continue

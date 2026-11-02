@@ -223,6 +223,7 @@ def test_the_cap_cuts_only_the_loop_and_records_itself(tmp_path: Path):
     assert step["step"] == "cap" and step["capped_post_hoc"] is True
     assert step["max_tokens"] == 1024 and step["exact"] is False
     assert step["tokenizer"]["revision"] == "93f923e1a7727d1c4f446756212d9d3e8fcc5d81"
+    assert step["tokenizer"]["repo"] == PHI4
     assert step["n_capped"] == {"spc-test": 1}
 
 
@@ -256,3 +257,15 @@ def test_moss_is_capped_before_it_is_parsed(tmp_path: Path):
     assert "[" not in line["prediction"] and line["prediction"].count("sehr") == 1023
     steps = [s["step"] for s in json.loads((out / "summary.json").read_text())["post_hoc"]]
     assert steps == ["cap", "parse"]
+
+
+def test_a_tokenizer_that_cannot_load_leaves_every_file_untouched(tmp_path: Path):
+    out = _phi4_run(tmp_path)
+    snapshot = {p.name: p.read_bytes() for p in out.iterdir() if p.is_file()}
+
+    def _offline(cap):
+        raise OSError("no network")
+
+    with pytest.raises(OSError):
+        reparse_run(out, tokenizer=_offline)
+    assert {p.name: p.read_bytes() for p in out.iterdir() if p.is_file()} == snapshot
