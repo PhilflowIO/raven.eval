@@ -47,7 +47,10 @@ def _artifact(root: Path) -> Path:
                           # "hallo welt" holds no number: the entity score is null.
                           "entity_hit_rate_pct": None, "entity_ci_lo": None,
                           "entity_ci_hi": None, "n_entities": 0,
-                          "n_utterances_with_entities": 0}}),
+                          "n_utterances_with_entities": 0,
+                          # No loop, and no edit for one to have a share of.
+                          "n_runaway": 0, "runaway_pct": 0.0,
+                          "runaway_edit_share_pct": None}}),
         encoding="utf-8",
     )
     return model
