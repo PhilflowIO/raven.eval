@@ -23,6 +23,17 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 
 ## [Unreleased]
 
+### Changed
+- The vLLM serving engine moves from 0.28.0 to 0.33.0 (FlashInfer 0.7.2.post1
+  with its prebuilt CUDA 13.0 kernels, torch 2.14.0, transformers 5.20.2 now
+  pinned too), one engine for every vLLM model. vLLM rows measured on 0.28.0
+  are not comparable to rows on 0.33.0; each row's `serving` block names its
+  engine, and every vLLM model is re-measured on the new one.
+- `granite-speech-4.1-2b-plus` serves IBM's re-trained 2026-10-21 checkpoint
+  (`e69efe37`), which vLLM loads from 0.33.0 on, instead of the one the
+  September sweep measured. Every other vLLM and transformers recipe was
+  already at its repo's newest commit.
+
 ### Fixed
 - Every vLLM and transformers serving recipe pins the Hugging Face commit it
   loads (`revision`, required). IBM re-uploaded `granite-speech-4.1-2b-plus` on
