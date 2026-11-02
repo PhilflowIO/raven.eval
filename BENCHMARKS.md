@@ -115,6 +115,19 @@ was computed from, committed under `artifacts/<run>/<model>/`:
   and the [numeric entity score](#numbers--the-error-wer-hides-numeric-entity-hit-rate)
   (`entity_hit_rate_pct`, its interval, `n_entities`, `n_utterances_with_entities`).
 
+A model whose server wraps the transcript in markup of its own —
+MOSS-Transcribe-Diarize interleaves `[4.18]` timestamps and `[S01]` speaker
+tags with the words — is parsed where its output is read, not in the scoring
+contract (`raven_asr.output_formats`, bound per model in
+`raven_asr.config.OUTPUT_FORMATS`). Its lines then carry `prediction` (the spoken
+text, what every number here is computed on), `raw_prediction` (the server's
+output, byte for byte) and `segments` (the speaker turns the markup carried).
+Scored raw, every tag counts as an inserted word: on the 2026-11 sweep that put
+MOSS at ~100 % strict-de WER on read speech it transcribes almost perfectly. A
+run recorded before its model had a parser is re-derived from that raw text
+with `make reparse RESULTS=…` — no inference, every score recomputed, the step
+named under `post_hoc` in `summary.json`.
+
 `make verify` (→ `scripts/verify.py`) re-scores every `predictions_*.jsonl`
 with our own scorer and asserts each subset matches `expected.json` within
 **±0.05 pp**. CI runs it on every push, so a table row cannot drift from its
