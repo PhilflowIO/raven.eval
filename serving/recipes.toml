@@ -1,0 +1,199 @@
+# Serving recipes of the 14 self-hosted models (raven_asr.config.SELF_HOSTED_MODELS).
+#
+# One table per model, keyed by the model's result-directory label. `launch.py`
+# turns a table into the server process; the servers report the table's id and
+# content hash (`recipe.py`) as `x_raven.recipe` in every response, and the
+# harness records it in summary.json. Edit a table and every later run names the
+# new hash — that is the point.
+#
+# Common keys
+#   model        HF repo id. The server serves and reports exactly this id.
+#   engine       vllm | nemo | transformers (a stand-in for a model vLLM cannot load)
+#   weights_gb   download size, for the optional free-disk check (RAVEN_SERVE_MIN_FREE_GB)
+#   gpu_mem      default VRAM budget as a fraction of the card (RAVEN_SERVE_GPU_MEM
+#                overrides). vLLM pre-allocates it; NeMo and transformers cap torch to it.
+#                The defaults were sized on a 24 GB card shared with other tenants: they
+#                are the smallest budget the model serves with, not a recommendation.
+#   chunking     what happens to audio longer than the model takes in one pass, and
+#                where. The harness sends one utterance per request and never chunks.
+#   notes        why a value is what it is, where that is not obvious
+#
+# vllm keys: dtype, max_num_seqs (default; RAVEN_SERVE_MAX_NUM_SEQS overrides),
+#   max_model_len, trust_remote_code, args (further `vllm serve` flags, verbatim),
+#   snapshot_ignore (patterns left out of the snapshot download), serve_from_snapshot
+#   (serve the local snapshot under the model id instead of letting vLLM download),
+#   lora_modules (name = directory inside the snapshot)
+# nemo keys: checkpoint_file (a .nemo inside the HF repo, for repos that are not
+#   from_pretrained-loadable), max_batch, batch_wait_ms, batch_max_audio_s, longform
+#
+# Every vLLM model is reached through vllm/shim.py, which forwards to vLLM's own
+# /v1/audio/transcriptions, except Phi-4-multimodal, whose vLLM class has no
+# transcription endpoint: the shim turns the request into a chat completion for
+# the speech LoRA. Decoding is greedy everywhere (temperature 0, sent by the shim).
+
+# ── NeMo ────────────────────────────────────────────────────────────────────
+
+[recipes."nvidia-parakeet-tdt-0.6b-v3"]
+model = "nvidia/parakeet-tdt-0.6b-v3"
+engine = "nemo"
+weights_gb = 3
+gpu_mem = 0.5
+max_batch = 16
+batch_wait_ms = 20
+batch_max_audio_s = 40
+longform = true
+chunking = "server: local attention [256, 256]; audio over 900 s is cut into 600 s windows with 3 s overlap and stitched by timestamps"
+notes = "Auto-detects the language and cannot be forced to German; responses carry x_raven.language_forced = false."
+
+[recipes."nvidia-canary-1b-v2"]
+model = "nvidia/canary-1b-v2"
+engine = "nemo"
+weights_gb = 4
+gpu_mem = 0.5
+max_batch = 16
+batch_wait_ms = 20
+batch_max_audio_s = 40
+longform = true
+chunking = "NeMo's AED long-form chunking; it needs a single input, so clips over batch_max_audio_s run unbatched"
+notes = "Forced to German with source_lang = target_lang = de, pnc = yes."
+
+[recipes."nvidia-nemotron-3.5-asr-streaming-0.6b"]
+model = "nvidia/nemotron-3.5-asr-streaming-0.6b"
+engine = "nemo"
+weights_gb = 3
+gpu_mem = 0.5
+max_batch = 16
+batch_wait_ms = 20
+batch_max_audio_s = 40
+longform = true
+chunking = "server: local attention [256, 256]; audio over 900 s is cut into 600 s windows with 3 s overlap and stitched by timestamps"
+notes = "A transducer (library_name nemo), not servable by vLLM. Prompt mode forced to auto; the trailing locale tag the model emits is stripped."
+
+[recipes."primeline-parakeet"]
+model = "primeline/parakeet-primeline"
+engine = "nemo"
+checkpoint_file = "2_95_WER.nemo"
+weights_gb = 3
+gpu_mem = 0.5
+max_batch = 16
+batch_wait_ms = 20
+batch_max_audio_s = 40
+longform = true
+chunking = "server: local attention [256, 256]; audio over 900 s is cut into 600 s windows with 3 s overlap and stitched by timestamps"
+notes = "The repo is not from_pretrained-loadable; the named .nemo checkpoint is restored instead."
+
+# ── vLLM ────────────────────────────────────────────────────────────────────
+
+[recipes."cohere-transcribe-03-2026"]
+model = "CohereLabs/cohere-transcribe-03-2026"
+engine = "vllm"
+weights_gb = 5
+gpu_mem = 0.4
+max_num_seqs = 16
+dtype = "bfloat16"
+trust_remote_code = true
+chunking = "engine: vLLM's transcription endpoint splits audio longer than the model's clip limit"
+notes = "Gated repo: accept the license and export HF_TOKEN. vLLM defaults the language to en for this model; the harness sends language=de."
+
+[recipes."granite-speech-4.1-2b-plus"]
+model = "ibm-granite/granite-speech-4.1-2b-plus"
+engine = "vllm"
+weights_gb = 5
+gpu_mem = 0.4
+max_num_seqs = 16
+dtype = "bfloat16"
+max_model_len = 2048
+chunking = "engine: vLLM's transcription endpoint splits audio longer than the model's clip limit"
+notes = "max_model_len 2048 is the model card's own flag for smaller cards; a clip that busts it fails loudly with a context-length error."
+
+[recipes."phi-4-multimodal"]
+model = "microsoft/Phi-4-multimodal-instruct"
+engine = "vllm"
+weights_gb = 13
+gpu_mem = 0.75
+max_num_seqs = 16
+dtype = "bfloat16"
+trust_remote_code = true
+max_model_len = 8192
+snapshot_ignore = ["vision-lora/*"]
+lora_modules = { speech = "speech-lora" }
+args = ["--enable-lora", "--max-lora-rank", "320", "--max-loras", "1", "--limit-mm-per-prompt", "{\"audio\":1}"]
+chunking = "none: the whole clip goes into one chat request, bounded by max_model_len 8192"
+notes = "No vLLM transcription endpoint: the shim sends a chat completion to the speech LoRA with the prompt 'Transcribe the audio clip into text. The audio is in language: de.' The vision LoRA can never be used with an audio-only prompt budget, so it is neither downloaded nor mounted. Weights plus speech LoRA (~12.1 GB) need gpu_mem >= 0.75 on a 24 GB card."
+
+[recipes."moss-transcribe-diarize"]
+model = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
+engine = "vllm"
+weights_gb = 2
+gpu_mem = 0.4
+max_num_seqs = 2
+dtype = "bfloat16"
+trust_remote_code = true
+max_model_len = 8192
+chunking = "engine: vLLM's transcription endpoint; max_model_len 8192 instead of the declared 131072, whose KV cache does not fit a 0.4 budget"
+notes = "The output carries speaker and timestamp markup ([0.48][S01]text[1.66]); the WER normaliser strips it, the server passes it through. max_num_seqs 2 matches the 0.4 budget; give a full card more."
+
+[recipes."qwen3-asr-1.7b"]
+model = "Qwen/Qwen3-ASR-1.7B"
+engine = "vllm"
+weights_gb = 5
+gpu_mem = 0.4
+max_num_seqs = 16
+dtype = "bfloat16"
+max_model_len = 16384
+chunking = "engine: vLLM's transcription endpoint; max_model_len 16384 instead of the declared 65536, whose KV cache does not fit a 0.4 budget"
+notes = "Short-audio-tuned. vLLM ships the model's config class, so no remote code."
+
+[recipes."voxtral-mini-3b-2507"]
+model = "mistralai/Voxtral-Mini-3B-2507"
+engine = "vllm"
+weights_gb = 10
+gpu_mem = 0.85
+max_num_seqs = 16
+dtype = "bfloat16"
+args = ["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral"]
+chunking = "engine: vLLM's transcription endpoint; 32k-token context (~30 min of audio)"
+notes = "The model card's serve command. Mistral-format loading reads consolidated.safetensors (9.35 GB) instead of the HF shards. Below ~0.75 of a 24 GB card vLLM finds no memory for the KV cache."
+
+[recipes."primeline-whisper-large-v3-german"]
+model = "primeline/whisper-large-v3-german"
+engine = "vllm"
+weights_gb = 4
+gpu_mem = 0.4
+max_num_seqs = 16
+dtype = "float16"
+chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
+notes = "float16 = the checkpoint's dtype; a bfloat16 cast would round every weight."
+
+[recipes."primeline-whisper-large-v3-turbo-german"]
+model = "primeline/whisper-large-v3-turbo-german"
+engine = "vllm"
+weights_gb = 2
+gpu_mem = 0.4
+max_num_seqs = 16
+dtype = "bfloat16"
+chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
+notes = "bfloat16 = the checkpoint's dtype."
+
+[recipes."openai-whisper-large-v3"]
+model = "openai/whisper-large-v3"
+engine = "vllm"
+weights_gb = 4
+gpu_mem = 0.4
+max_num_seqs = 16
+dtype = "float16"
+serve_from_snapshot = true
+snapshot_ignore = ["*fp32*", "*.bin", "*.msgpack"]
+chunking = "engine: vLLM's transcription endpoint splits audio longer than Whisper's 30 s window"
+notes = "The repo has no standard safetensors index, so vLLM would download every variant (~9.3 GB); a filtered snapshot of the fp16 weights is served under the model id instead. float16 = the checkpoint's dtype."
+
+# ── transformers stand-in (behind the same shim) ────────────────────────────
+
+[recipes."moonshine-streaming-small-de"]
+model = "moonshine-ai/moonshine-streaming-small-de"
+engine = "transformers"
+weights_gb = 1
+gpu_mem = 0.4
+max_num_seqs = 1
+chunking = "none: the whole clip in one generate(); max_new_tokens capped by the model card's formula"
+notes = "Encoder-decoder outside Whisper; vLLM has no class for it. vllm/moonshine_shim.py serves it with transformers, attention_mask always passed, one generate() at a time."

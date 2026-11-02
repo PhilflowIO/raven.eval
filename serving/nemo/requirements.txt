@@ -1,0 +1,24 @@
+# Environment of the NeMo server (nemo/server.py, started by launch.py).
+# torch's CUDA 12 wheels bundle the runtime, so the host needs only the NVIDIA
+# driver, no CUDA toolkit.
+#
+# NeMo is exact: nemotron-3.5-asr-streaming needs the 3.0 line, and server.py
+# works around 3.0.0 behaviour (the offline transcribe path cannot force a
+# locale for that model). torch is resolved by NeMo; the server reports both
+# versions in x_raven.engine, so a different torch shows up in every result.
+#
+# numba >= 0.61 must be resolved BEFORE nemo_toolkit: otherwise NeMo[asr]
+# backtracks resampy to numba 0.53.1, which caps Python below 3.10 and breaks a
+# Python 3.12 environment.
+#
+#   uv venv --python 3.12 <venv>
+#   uv pip install --python <venv>/bin/python "numba>=0.61.0"
+#   uv pip install --python <venv>/bin/python -r serving/nemo/requirements.txt
+numba>=0.61.0
+nemo_toolkit[asr]==3.0.0
+torch
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+huggingface_hub>=0.27.1
+soundfile
