@@ -160,9 +160,9 @@ leaves any of it out:
 The launcher starts vLLM with `--dtype` and `--tensor-parallel-size` from this
 table (a recipe's `args` may not set them); the NeMo server and the transformers
 stand-in check the loaded parameters against `weights` and refuse to serve on a
-mismatch. A recipe whose `weights` differ from `checkpoint.dtype` serves a cast —
-`primeline-whisper-large-v3-german` is the one so far (a bf16 checkpoint served in
-fp16). A quantized row is published next to its control: the same model in
+mismatch. A recipe whose `weights` differ from `checkpoint.dtype` serves a cast;
+no current recipe does (`primeline-whisper-large-v3-german` served its bf16
+checkpoint in fp16 until #82, and those rows say so). A quantized row is published next to its control: the same model in
 bf16 (with CPU offload where it does not fit), measured on FLEURS-de, and the
 paired WER difference between the two.
 
