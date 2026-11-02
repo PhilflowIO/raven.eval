@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from raven_asr.config import KNOWN_MODELS, OUTPUT_FORMATS
-from raven_asr.output_formats import Segment, parse_moss, parser_for
+from raven_asr.output_formats import Segment, parse_moss, parse_vibevoice, parser_for
 from raven_eval_core.flozi_wer import corpus_wer_pct
 
 REAL = (
@@ -117,3 +117,45 @@ def test_moss_is_bound_to_its_parser_and_no_other_model_is():
     assert parser_for(None) is None
     with pytest.raises(KeyError):
         parser_for("no-such-format")
+
+
+# ── VibeVoice-ASR ────────────────────────────────────────────────────────────
+# The shape is the model card's own example (microsoft/VibeVoice-ASR-HF,
+# "Speaker-timestamped transcription"), with German words.
+VV = ('[{"Start":0,"End":15.43,"Speaker":0,"Content":"Guten Tag und willkommen."},'
+      '{"Start":15.43,"End":21.05,"Speaker":1,"Content":"Danke, schön hier zu sein."}]')
+
+
+def test_vibevoice_turns_become_spoken_text_and_segments():
+    parsed = parse_vibevoice(VV)
+    assert parsed.text == "Guten Tag und willkommen. Danke, schön hier zu sein."
+    assert parsed.segments == [
+        Segment("S00", 0.0, 15.43, "Guten Tag und willkommen."),
+        Segment("S01", 15.43, 21.05, "Danke, schön hier zu sein."),
+    ]
+
+
+def test_vibevoice_json_escapes_are_decoded():
+    parsed = parse_vibevoice('[{"Start":0,"End":1,"Speaker":0,"Content":"Gr\\u00fc\\u00dfe \\"Anna\\""}]')
+    assert parsed.text == 'Grüße "Anna"'
+
+
+def test_vibevoice_answer_cut_by_the_output_cap_keeps_every_word_it_has():
+    raw = VV[:-1] + ',{"Start":21.05,"End":30,"Speaker":0,"Content":"Und dann sa'
+    parsed = parse_vibevoice(raw)
+    assert parsed.text.endswith("schön hier zu sein. Und dann sa")
+    assert parsed.segments[-1] == Segment(None, None, None, "Und dann sa")
+
+
+def test_vibevoice_plain_and_empty_answers():
+    assert parse_vibevoice("  nur  Text ") .text == "nur Text"
+    assert parse_vibevoice("nur Text").segments == []
+    assert parse_vibevoice("[]").text == ""
+    # An empty turn carries no words and no segment.
+    assert parse_vibevoice('[{"Start":0,"End":1,"Speaker":0,"Content":""}]').text == ""
+
+
+def test_vibevoice_parsed_output_scores_like_the_plain_transcript():
+    ref = "Guten Tag und willkommen. Danke, schön hier zu sein."
+    assert corpus_wer_pct([ref], [parse_vibevoice(VV).text]) == 0
+    assert corpus_wer_pct([ref], [VV]) > 0

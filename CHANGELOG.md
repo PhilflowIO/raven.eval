@@ -42,6 +42,12 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   elsewhere) and are not comparable on looping models; `make reparse` cuts their
   recorded output to the cap after the fact, flagged `capped_post_hoc` and
   `"exact": false`.
+- A second output format: VibeVoice-ASR answers with a JSON list of timed
+  speaker turns (`[{"Start","End","Speaker","Content"}, …]`), parsed in the model
+  layer like MOSS's markup (`vibevoice-json`): `prediction` is the turns'
+  `Content` in order, `raw_prediction` the answer, `segments` the turns. An
+  answer the output cap cut mid-turn keeps the words it has. The scoring
+  contract is unchanged.
 
 ### Fixed
 - MOSS-Transcribe-Diarize's timestamp and speaker markup (`[4.18][S01] … [13.81]`)
