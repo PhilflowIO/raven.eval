@@ -12,6 +12,10 @@ layout ``scripts/verify.py`` re-scores:
                                       them, plus wer_strict_de_pct, the
                                       95 % WER interval and the numeric entity hit
                                       rate scored from the predictions)
+        throughput_<subset>.jsonl    (copied verbatim when the run recorded one —
+                                      every pass's wall time and audio; summary.json
+                                      carries the totals. A measurement of the run,
+                                      held consistent by verify, never re-scored)
 
 Once committed, ``make verify`` re-computes the corpus WER/CER from the copied
 predictions with the SAME core scorer that produced ``summary.json`` and asserts
@@ -284,6 +288,12 @@ def promote(
     dest.mkdir(parents=True, exist_ok=True)
     for p in preds:
         shutil.copy2(p, dest / p.name)
+    # The passes behind each summary row's throughput block, so a reader can
+    # see how the totals were assembled (several passes for a resumed subset).
+    for subset in expected:
+        tp = results_dir / f"throughput_{re.sub(r'[^A-Za-z0-9._-]+', '_', subset)}.jsonl"
+        if tp.is_file():
+            shutil.copy2(tp, dest / tp.name)
     (dest / "expected.json").write_text(
         json.dumps(expected, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )

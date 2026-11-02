@@ -39,6 +39,13 @@ a well-formed run manifest — fails without being re-scored
 (``raven_eval_core.run_manifest``). A summary with no version field is the
 legacy format every artifact committed before the field existed is in.
 
+Throughput is not re-scored: it measures one run on one machine, and nothing
+committed can re-derive it. A summary row that carries a ``throughput`` block is
+held to its own arithmetic instead — totals equal the sum of its passes, ``rtfx``
+equals ``total_audio_s / total_wall_s`` within rounding
+(``raven_asr.throughput.throughput_problem``). A row without one, as in every
+artifact committed before throughput was recorded, is not failed for lacking it.
+
 Exit code is nonzero on any mismatch, on manifest drift, OR on an empty artifacts
 dir (so CI can't silently go green on a run that produced nothing).
 
@@ -91,6 +98,7 @@ from pathlib import Path
 from raven_eval_core.entities import entity_hit_rate
 
 from raven_asr.analysis import entity_interval, wer_interval
+from raven_asr.throughput import throughput_problem
 from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
 from raven_eval_core.flozi_wer import corpus_cer_pct, corpus_wer_pct
@@ -320,6 +328,22 @@ def _drop_problem(exp: dict) -> str:
     return ""
 
 
+def _summary_throughput(model_dir: Path) -> dict[str, object]:
+    """``{subset: throughput block}`` of the artifact's summary, where one exists.
+
+    Read only after :func:`_summary_format_problem` passed, so the file parses.
+    """
+    path = model_dir / "summary.json"
+    if not path.exists():
+        return {}
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        str(r["subset"]): r["throughput"]
+        for r in summary.get("results", [])
+        if isinstance(r, dict) and "subset" in r and "throughput" in r
+    }
+
+
 def find_model_dirs(artifacts_dir: Path) -> list[Path]:
     """Every dir containing at least one predictions_<subset>.jsonl."""
     dirs = {
@@ -352,6 +376,7 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
             continue
         expected_path = model_dir / "expected.json"
         expected: dict = {}
+        throughput_blocks = _summary_throughput(model_dir)
         if not expected_path.exists():
             rows.append(
                 {"model": str(rel), "subset": "*", "status": "FAIL",
@@ -474,6 +499,12 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
             row.update(entity_row)
             if entity_problem:
                 detail = (detail + " " if detail else "") + entity_problem
+                ok = False
+
+            # Throughput: a measurement, not reproduced — only held consistent.
+            tp_problem = throughput_problem(throughput_blocks.get(subset))
+            if tp_problem:
+                detail = (detail + " " if detail else "") + tp_problem
                 ok = False
 
             all_ok = all_ok and ok
