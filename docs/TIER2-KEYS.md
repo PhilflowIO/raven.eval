@@ -106,7 +106,7 @@ driver >= 580.
 uv venv --python 3.12 /opt/raven-serving/vllm
 uv pip install --python /opt/raven-serving/vllm/bin/python -r serving/vllm/requirements.txt
 uv venv --python 3.12 /opt/raven-serving/nemo
-uv pip install --python /opt/raven-serving/nemo/bin/python "numba==0.67.0"
+uv pip install --python /opt/raven-serving/nemo/bin/python "numba==0.68.1"
 uv pip install --python /opt/raven-serving/nemo/bin/python -r serving/nemo/requirements.txt
 
 # a NeMo model: the server speaks the harness's protocol itself
