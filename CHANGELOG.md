@@ -23,6 +23,14 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 
 ## [Unreleased]
 
+### Fixed
+- Every vLLM and transformers serving recipe pins the Hugging Face commit it
+  loads (`revision`, required). IBM re-uploaded `granite-speech-4.1-2b-plus` on
+  2026-10-21 as a re-trained model with renamed weights, which vLLM 0.28.0 cannot
+  load; the unpinned recipe had silently followed it. Granite is pinned to the
+  checkpoint the September sweep served; every other recipe to its repo's
+  current main (2026-11-02), the weights the running round loads anyway.
+
 ### Added
 - The serving recipe of the 14 self-hosted models is part of the repo
   (`serving/`): engine pins, one declarative recipe per model

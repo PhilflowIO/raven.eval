@@ -48,6 +48,8 @@ logging.basicConfig(level=logging.INFO)
 MODEL_ID = os.environ.get(
     "MOONSHINE_MODEL", "moonshine-ai/moonshine-streaming-small-de"
 )
+# The HF commit to load (launch.py passes the recipe's pin); None = the repo's main.
+REVISION = os.environ.get("MOONSHINE_REVISION") or None
 # Bind where the vLLM engine would bind (launch.py sets both) — see header.
 BIND_HOST = os.environ.get("MOONSHINE_HOST", "127.0.0.1")
 BIND_PORT = int(os.environ.get("MOONSHINE_PORT", "8000"))
@@ -94,13 +96,14 @@ def _load() -> None:
                 device = "cpu"
             t0 = time.monotonic()
             model = MoonshineStreamingForConditionalGeneration.from_pretrained(
-                MODEL_ID
+                MODEL_ID, revision=REVISION
             ).eval()
             model.to(device)
-            processor = AutoProcessor.from_pretrained(MODEL_ID)
+            processor = AutoProcessor.from_pretrained(MODEL_ID, revision=REVISION)
             _model, _processor = model, processor
             logger.info(
-                "loaded %s on %s in %.1fs", MODEL_ID, device, time.monotonic() - t0
+                "loaded %s@%s on %s in %.1fs",
+                MODEL_ID, REVISION or "main", device, time.monotonic() - t0,
             )
         except Exception as exc:  # noqa: BLE001 — surface via /health, never swallow
             _load_error = f"{type(exc).__name__}: {exc}"

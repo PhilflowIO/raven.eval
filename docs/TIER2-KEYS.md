@@ -87,7 +87,11 @@ The 14 self-hosted rows were served with the recipe in `serving/`, and you can
 stand up the same servers from it. Every model has one declarative recipe in
 `serving/recipes.toml` (engine, dtype, context length, batching defaults,
 memory budget, how long audio is chunked, and why); `serving/launch.py` turns a
-recipe into the server process. Engines are pinned in
+recipe into the server process. Every vLLM and transformers recipe pins the
+Hugging Face commit it loads (`revision`): a publisher can re-upload under the
+same repo id, and an unpinned recipe would then serve other weights than the
+rows were measured with. The NeMo recipes cannot pin yet (`ASRModel.from_pretrained`
+takes no revision). Engines are pinned in
 `serving/vllm/requirements.txt` (vLLM, FlashInfer with prebuilt kernels for CUDA
 13.0, librosa) and `serving/nemo/requirements.txt` (NeMo). Neither is part of
 this repo's own install: each gets its own environment on the GPU host.
