@@ -24,6 +24,18 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Added
+- The serving recipe of the 14 self-hosted models is part of the repo
+  (`serving/`): engine pins, one declarative recipe per model
+  (`serving/recipes.toml`), the launcher, the NeMo micro-batching server and the
+  OpenAI-compatible shim. The servers report `x_raven.engine`, `x_raven.recipe`
+  (`id` + SHA-256 over the recipe and the files that execute it) and
+  `x_raven.batching`. Each throughput pass and each `summary.json` result row
+  records this as `serving` (`null` for servers that report none and for hosted
+  APIs); a change of serving setup during a run, or against the passes of a
+  subset being resumed, aborts like a served-model mismatch (`reproduce` exit 3).
+  `promote` carries it; `make verify` holds a row's block to its passes and
+  accepts artifacts without one. Self-hosted rows reproduce to character-level
+  batching tolerance, not bit-exactly.
 - WER runs record throughput. Every pass over a subset (a resumed subset has
   several) appends its wall time, requests, successes, transcribed audio,
   concurrency, adapter and hardware label (`RAVEN_EVAL_HARDWARE`, never

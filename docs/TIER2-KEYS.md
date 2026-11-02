@@ -81,6 +81,65 @@ answer carries `x_raven.model` and it names another model, the run **aborts**
 one's name; a server that sends no `x_raven.model` is warned about once and
 trusted.
 
+## Serving self-hosted models
+
+The 14 self-hosted rows were served with the recipe in `serving/`, and you can
+stand up the same servers from it. Every model has one declarative recipe in
+`serving/recipes.toml` (engine, dtype, context length, batching defaults,
+memory budget, how long audio is chunked, and why); `serving/launch.py` turns a
+recipe into the server process. Engines are pinned in
+`serving/vllm/requirements.txt` (vLLM, FlashInfer with prebuilt kernels for CUDA
+13.0, librosa) and `serving/nemo/requirements.txt` (NeMo). Neither is part of
+this repo's own install: each gets its own environment on the GPU host.
+
+```bash
+# once per engine (Python 3.12; see the header of each requirements file)
+uv venv --python 3.12 /opt/raven-serving/vllm
+uv pip install --python /opt/raven-serving/vllm/bin/python -r serving/vllm/requirements.txt
+uv venv --python 3.12 /opt/raven-serving/nemo
+uv pip install --python /opt/raven-serving/nemo/bin/python "numba>=0.61.0"
+uv pip install --python /opt/raven-serving/nemo/bin/python -r serving/nemo/requirements.txt
+
+# a NeMo model: the server speaks the harness's protocol itself
+CUDA_VISIBLE_DEVICES=0 RAVEN_SERVE_PORT=8001 \
+  /opt/raven-serving/nemo/bin/python serving/launch.py nvidia/canary-1b-v2
+export NEMO_BENCH_URL=http://127.0.0.1:8001/v1
+
+# a vLLM (or transformers) model: the engine, plus the shim the harness talks to
+CUDA_VISIBLE_DEVICES=0 RAVEN_SERVE_PORT=8000 RAVEN_SERVE_MAX_NUM_SEQS=16 \
+  /opt/raven-serving/vllm/bin/python serving/launch.py Qwen/Qwen3-ASR-1.7B &
+SHIM_PORT=8002 SHIM_UPSTREAM=http://127.0.0.1:8000 RAVEN_SERVE_MAX_NUM_SEQS=16 \
+  /opt/raven-serving/vllm/bin/python serving/vllm/shim.py &
+export VLLM_BENCH_URL=http://127.0.0.1:8002/v1
+```
+
+`python serving/launch.py <model> --print` shows the exact command without
+starting anything. The launcher wants exactly one GPU in `CUDA_VISIBLE_DEVICES`;
+`RAVEN_SERVE_HOST`, `RAVEN_SERVE_PORT`, `RAVEN_SERVE_GPU_MEM` and
+`RAVEN_SERVE_MAX_NUM_SEQS` override the host-dependent values, and
+`RAVEN_SERVE_MIN_FREE_GB` makes it refuse a download that would fill the disk.
+The recipes' memory defaults were sized on a 24 GB card shared with other
+work; on an empty card give vLLM more.
+
+**What a run records.** Every answer of these servers names its setup in
+`x_raven`: `engine` (`vllm 0.28.0`, `nemo 3.0.0 (torch …)`), `recipe` (`id` and
+a SHA-256 over that model's recipe and every file that executes it) and
+`batching` (NeMo `max_batch` / `wait_ms` / `max_audio_s`, vLLM `max_num_seqs`).
+The harness pins the first answer's block, writes it into every throughput pass
+and into each `summary.json` result row as `serving`, and **aborts** (exit 3,
+nothing recorded) when a later answer — or the earlier passes of a subset being
+resumed — names a different one: a score over transcripts from two setups
+describes neither. A server that reports no block yields `serving: null` and one
+warning. Hosted APIs always record `null`.
+
+**Reproducible to a tolerance, not bit-exact.** The servers batch concurrent
+requests, and a batched forward pass can differ from a single-clip pass in the
+last bits — enough to flip a character now and then. Measured on FLEURS with
+Parakeet-TDT-0.6B-v3: 2 of 862 utterances changed by one character, WER
+unchanged, CER +0.0008 pp. A re-run with the same recipe reproduces a
+self-hosted row to that tolerance; a re-run with a different recipe hash, engine
+or batching is a different measurement.
+
 The `*_URL` / `*_API_KEY` variables name **your** endpoints — this repo never
 ships URLs or key values, only the env-var names the runner reads.
 
