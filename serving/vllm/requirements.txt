@@ -11,12 +11,20 @@
 # Every version that decides output is exact: an unpinned "vllm[audio]>=0.25"
 # once moved a host to 0.28 without anyone asking, and 0.28's FlashInfer
 # top-k/top-p sampler JIT-compiles its kernel at warm-up — on a host without a
-# CUDA toolkit every model then died before serving. flashinfer-jit-cache ships
-# those kernels prebuilt for exactly this flashinfer + CUDA 13.0 pair; bump vllm,
-# flashinfer-python and flashinfer-jit-cache together (vllm pins flashinfer-python
-# itself, and flashinfer refuses a jit-cache of another version). Since 0.7 the
-# jit-cache is a shim that pulls one provider wheel per GPU architecture; an
-# RTX 30xx (sm86) runs the sm80 provider's kernels.
+# CUDA toolkit every model then died before serving. FlashInfer's kernels come
+# prebuilt in two packages, and vLLM needs both:
+#   - flashinfer-cubin is what vLLM checks for. Without it (and without nvcc and
+#     ninja) vLLM 0.33 switches FlashInfer off entirely and says so at start
+#     ("FlashInfer kernels are disabled", has_flashinfer in
+#     vllm/utils/flashinfer.py); it never looks at the jit-cache. It is
+#     CUDA-independent and published only on FlashInfer's own index (/whl).
+#   - flashinfer-jit-cache holds the JIT modules (sampling and the like) built for
+#     exactly this flashinfer + CUDA 13.0 pair (/whl/cu130). Since 0.7 it is a shim
+#     that pulls one provider wheel per GPU architecture; an RTX 30xx (sm86) runs
+#     the sm80 provider's kernels.
+# Bump vllm, flashinfer-python, flashinfer-cubin and flashinfer-jit-cache together:
+# vllm pins flashinfer-python itself, flashinfer refuses kernels of another
+# version, and vLLM warns when cubin or jit-cache drift from flashinfer-python.
 #
 # torch (2.14.0, CUDA 13.0 wheels: needs an NVIDIA driver >= 580) is pinned by
 # vllm itself. transformers is pinned here: vllm only bounds it, and it decides
@@ -28,8 +36,10 @@
 # soundfile comes with vllm[audio]; fastapi, uvicorn and httpx come with vllm
 # too, but the shim imports them directly, so they are named here.
 --extra-index-url https://flashinfer.ai/whl/cu130
+--extra-index-url https://flashinfer.ai/whl
 vllm[audio]==0.33.0
 flashinfer-python==0.7.2.post1
+flashinfer-cubin==0.7.2.post1
 flashinfer-jit-cache==0.7.2.post1+cu130
 transformers==5.20.2
 librosa==1.0.0

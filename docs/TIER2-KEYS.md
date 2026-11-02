@@ -93,8 +93,8 @@ unpinned recipe would then serve other weights than the rows were measured
 with. NeMo's `ASRModel.from_pretrained` takes no revision, so a NeMo recipe names
 its `.nemo` file instead; the launcher downloads that file at the pin and the
 server restores exactly it. Engines are pinned in
-`serving/vllm/requirements.txt` (vLLM, FlashInfer with prebuilt kernels for CUDA
-13.0, transformers, librosa) and `serving/nemo/requirements.txt` (NeMo). Neither
+`serving/vllm/requirements.txt` (vLLM, FlashInfer with its prebuilt cubins and
+JIT kernels for CUDA 13.0, transformers, librosa) and `serving/nemo/requirements.txt` (NeMo). Neither
 is part of this repo's own install: each gets its own environment on the GPU host.
 Every vLLM model runs on the same engine, the newest vLLM release when it was
 pinned; the pin is there so a row can name what served it, and a bump is followed
