@@ -231,6 +231,36 @@ def test_vibevoice_gets_the_audio_alone_so_its_template_writes_the_instruction(l
 
 
 @pytest.mark.parametrize("model", [
+    "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B",
+    "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+])
+def test_nemotron_transcribe_gets_the_cards_benchmark_request(load_shim, model):
+    """NeMo's SpeechLM plugin serves Nemotron-3.5-Transcribe as a chat model: the
+    card's verbatim ASR instruction plus the audio as an audio_url, reasoning off,
+    greedy, the recipe's output cap. "Language: as spoken": language=de is not
+    forwarded, as the card names no wording that forces a language. (Built
+    directly: the serving recipe lands with the quantized checkpoint, and the
+    shim refuses a model without one.)"""
+    mod, _ = load_shim([model])
+    family = mod._detect_family(model)
+    assert family == "nemotron-transcribe"
+    payload = mod.CHAT_BUILDERS[family](
+        model=model, audio_b64="UklGRg==", audio_format="wav", language="de",
+        user_prompt="", max_tokens=1024,
+    )
+    assert payload["model"] == model
+    (message,) = payload["messages"]
+    assert message["role"] == "user"
+    text, audio = message["content"]
+    assert text == {"type": "text", "text": mod.NEMOTRON_TRANSCRIBE_PROMPT}
+    assert "Language: as spoken." in text["text"] and "German" not in text["text"]
+    assert audio == {"type": "audio_url", "audio_url": {"url": "data:audio/wav;base64,UklGRg=="}}
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+    assert (payload["temperature"], payload["repetition_penalty"], payload["max_tokens"]) == (
+        0.0, 1.0, 1024)
+
+
+@pytest.mark.parametrize("model", [
     "openai/whisper-large-v3-turbo", "ibm-granite/granite-speech-5.0-2b",
     "mistralai/Voxtral-Mini-4B-Realtime-2602",
     "ibm-granite/granite-speech-5.0-470m-turboctc",

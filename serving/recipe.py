@@ -54,7 +54,7 @@ REQUIRED_KEYS = frozenset({
 ENGINE_KEYS: dict[str, frozenset[str]] = {
     "vllm": frozenset({
         "max_num_seqs", "max_model_len", "trust_remote_code", "args",
-        "snapshot_ignore", "serve_from_snapshot", "lora_modules", "notes",
+        "snapshot_ignore", "serve_from_snapshot", "lora_modules", "vllm_plugins", "notes",
     }),
     "transformers": frozenset({"model_class", "max_num_seqs", "notes"}),
     "nemo": frozenset({
@@ -292,6 +292,8 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
             )
         if problem := _precision_problem(engine, recipe["precision"], recipe):
             raise RecipeError(f"recipe {rid!r}: {problem}")
+        if problem := _plugins_problem(recipe.get("vllm_plugins", [])):
+            raise RecipeError(f"recipe {rid!r}: {problem}")
         model = recipe["model"]
         if model in models:
             raise RecipeError(f"model {model!r} has two recipes: {models[model]!r} and {rid!r}")
@@ -300,6 +302,28 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
         if problem := _control_problem(recipe["precision"], recipes):
             raise RecipeError(f"recipe {rid!r}: {problem}")
     return recipes
+
+
+#: vLLM plugins (entry points of the ``vllm.*_plugins`` groups) installed in the
+#: vLLM environment that a recipe may load, with the package that ships each.
+#: vLLM loads every installed plugin unless VLLM_PLUGINS names the ones to load;
+#: the launcher always sets it to exactly the recipe's ``vllm_plugins``, so a
+#: plugin installed for one model never runs in another model's engine.
+#:   nemo_speechlm  NeMo Speech's SpeechLM models (nemo_toolkit, pinned in
+#:                  vllm/requirements.txt); the vendor's own serving command for
+#:                  Nemotron-3.5-Transcribe sets VLLM_PLUGINS=nemo_speechlm too.
+VLLM_PLUGINS: dict[str, str] = {"nemo_speechlm": "nemo_toolkit"}
+
+
+def _plugins_problem(plugins: object) -> str:
+    """``vllm_plugins`` is a list of known plugin names, each at most once."""
+    if not isinstance(plugins, list) or not all(isinstance(p, str) for p in plugins):
+        return "vllm_plugins must be a list of plugin names"
+    if unknown := sorted(set(plugins) - VLLM_PLUGINS.keys()):
+        return f"vllm_plugins {unknown} are not installed plugins; known: {sorted(VLLM_PLUGINS)}"
+    if len(set(plugins)) != len(plugins):
+        return "vllm_plugins names a plugin twice"
+    return ""
 
 
 def _control_problem(prec: dict[str, Any], recipes: dict[str, dict[str, Any]]) -> str:

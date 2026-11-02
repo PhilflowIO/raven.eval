@@ -1,0 +1,18 @@
+# Environment of the quantization recipes in this directory (CPU only; no GPU,
+# no vLLM). Every package that decides the produced bytes is pinned exactly, so
+# a re-run of a recipe reproduces its recorded SHA256SUMS.
+#
+# llm-compressor 0.15.0 (vllm-project/llm-compressor tag 0.15.0 = 04546e05)
+# pins compressed-tensors 0.20.1 (tag 0.20.1 = 1e87f83c) and torch <= 2.14.1,
+# transformers <= 5.21.0. Resolved (uv pip compile, Python 3.12, x86_64 Linux,
+# 2026-11-02) to exactly these versions.
+#
+#   uv venv --python 3.12 <venv>
+#   uv pip install --python <venv>/bin/python -r serving/quantize/requirements.txt
+llmcompressor==0.15.0
+compressed-tensors==0.20.1
+torch==2.14.1
+transformers==5.20.2
+numpy==2.3.5
+safetensors==0.8.0
+huggingface_hub==2.4.0
