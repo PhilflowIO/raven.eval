@@ -498,26 +498,56 @@ _MEASURED_PRECISION = {
     "vibevoice-asr": ("bf16", "bf16"),
     "moonshine-streaming-small-de": ("fp32", "fp32"),
     "granite-speech-5.0-470m-turboctc": ("bf16", "bf16"),
+    "voxtral-small-24b-2507-bf16-control": ("bf16", "bf16"),
+}
+
+#: The recipes split over two cards: (weights, activations, scheme, checkpoint).
+_SPLIT_PRECISION = {
+    # RedHat's llm-compressor FP8 build; config.json quantization_config:
+    # float-quantized, weights num_bits 8 type float strategy channel.
+    "voxtral-small-24b-2507-fp8": ("fp8-e4m3", "bf16", "fp8-w8a16-marlin", {
+        "source": "third-party", "repo": "RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic",
+        "revision": "a5dba05c66c6f06ec358dbf6531087a858ab141d", "dtype": "fp8-e4m3"}),
 }
 
 
 def test_every_recipe_declares_the_precision_it_was_measured_in() -> None:
-    assert set(_MEASURED_PRECISION) == set(RECIPES)
-    for rid, r in RECIPES.items():
-        weights, stored = _MEASURED_PRECISION[rid]
-        p = r["precision"]
+    assert set(_MEASURED_PRECISION) | set(_SPLIT_PRECISION) == set(RECIPES)
+    for rid, (weights, stored) in _MEASURED_PRECISION.items():
+        p = RECIPES[rid]["precision"]
         assert (p["weights"], p["activations"], p["scheme"]) == (weights, weights, "none"), rid
         assert p["checkpoint"] == {"source": "published", "dtype": stored}, rid
-        assert p["tensor_parallel"] == 1, rid
+        assert p["tensor_parallel"] == (2 if "control" in p else 1), rid
+    for rid, (weights, acts, scheme, ckpt) in _SPLIT_PRECISION.items():
+        p = RECIPES[rid]["precision"]
+        assert (p["weights"], p["activations"], p["scheme"]) == (weights, acts, scheme), rid
+        assert p["checkpoint"] == ckpt and p["tensor_parallel"] == 2, rid
+
+
+def test_every_quantized_recipe_has_its_control() -> None:
+    controls = {r["precision"]["control"]: rid for rid, r in RECIPES.items()
+                if "control" in r["precision"]}
+    quantized = {rid for rid, r in RECIPES.items() if r["precision"]["scheme"] != "none"}
+    assert set(controls) == quantized
+    for target, rid in controls.items():
+        control, split = RECIPES[rid], RECIPES[target]
+        assert control["precision"]["tensor_parallel"] == split["precision"]["tensor_parallel"]
+        assert "--cpu-offload-gb" in control.get("args", []), rid
 
 
 def test_the_engine_is_started_in_the_declared_precision() -> None:
     for rid, r in RECIPES.items():
         argv, env = launch.build(r, rid, {}, python=PY, snapshot="/snap", checkpoint="/c.nemo")
-        torch_name = recipe.FLOAT_FORMATS[r["precision"]["weights"]]
+        prec = r["precision"]
+        torch_name = recipe.FLOAT_FORMATS[prec["activations"]]
         if r["engine"] == "vllm":
             assert argv.count("--dtype") == 1 and _flag(argv, "--dtype") == torch_name, rid
-            assert "--tensor-parallel-size" not in argv, rid
+            if prec["tensor_parallel"] == 1:
+                assert "--tensor-parallel-size" not in argv, rid
+            else:
+                assert _flag(argv, "--tensor-parallel-size") == str(prec["tensor_parallel"]), rid
+            assert {k: env[k] for k in recipe.VLLM_SCHEME_ENV.get(prec["scheme"], {})} == \
+                recipe.VLLM_SCHEME_ENV.get(prec["scheme"], {}), rid
         elif r["engine"] == "transformers":
             assert env["TRANSFORMERS_DTYPE"] == torch_name, rid
 
@@ -542,9 +572,14 @@ def test_a_quantized_split_recipe_is_launched_as_declared(tmp_path: Path) -> Non
     """The shape of the W8A16 TP=2 recipes (#78/#79): weight-only FP8 from the
     vendor's checkpoint, bf16 activations, split over two cards."""
     recipes = recipe.load_recipes(_with_precision(tmp_path, _W8A16))
-    argv, _ = launch.build(recipes["x"], "x", {}, python=PY)
+    argv, env = launch.build(recipes["x"], "x", {}, python=PY)
     assert _flag(argv, "--dtype") == "bfloat16"
     assert _flag(argv, "--tensor-parallel-size") == "2"
+    # Marlin, as the scheme says: vLLM 0.33.0 would rank Humming first.
+    assert env["VLLM_DISABLED_KERNELS"] == "HummingFP8ScaledMMLinearKernel"
+    third = _W8A16.replace('source = "vendor"', 'source = "third-party"')
+    assert recipe.load_recipes(_with_precision(tmp_path, third))["x"]["precision"][
+        "checkpoint"]["source"] == "third-party"
     self_made = _W8A16.replace(
         f'source = "vendor", repo = "org/m-fp8", revision = "{"b" * 40}"',
         'source = "self", recipe = "quantize/m-w8a16.py"',
@@ -570,7 +605,13 @@ def test_a_quantized_split_recipe_is_launched_as_declared(tmp_path: Path) -> Non
         ('precision = { weights = "bf16", activations = "bf16", scheme = "gptq-w8a16", '
          f'tensor_parallel = 1, checkpoint = {_CKPT} }}', 'scheme must be "none"'),
         ('precision = { weights = "int8", activations = "bf16", scheme = "gptq-w8a16", '
-         f'tensor_parallel = 1, checkpoint = {_CKPT} }}', "vendor or self-made"),
+         f'tensor_parallel = 1, checkpoint = {_CKPT} }}', "third-party or self-made"),
+        (_W8A16.replace("fp8-w8a16-marlin", "fp8-w8a16"), "names no kernel"),
+        ('precision = { weights = "fp8-e4m3", activations = "bf16", scheme = "fp8-w8a16-marlin", '
+         'tensor_parallel = 1, control = "y", checkpoint = { source = "vendor", repo = "o/m", '
+         f'revision = "{"c" * 40}", dtype = "fp8-e4m3" }} }}', "control serves plain"),
+        ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+         f'tensor_parallel = 1, control = "", checkpoint = {_CKPT} }}', "control must name"),
         ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
          f'tensor_parallel = 0, checkpoint = {_CKPT} }}', "positive integer"),
         ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
@@ -589,6 +630,27 @@ def test_a_recipe_without_a_complete_precision_is_refused(
 ) -> None:
     with pytest.raises(recipe.RecipeError, match=match):
         recipe.load_recipes(_with_precision(tmp_path, precision))
+
+
+def test_a_control_names_a_quantized_recipe(tmp_path: Path) -> None:
+    control = ('precision = { weights = "bf16", activations = "bf16", scheme = "none", '
+               f'tensor_parallel = 2, control = "TARGET", checkpoint = {_CKPT} }}')
+    path = tmp_path / "r.toml"
+
+    def two(target: str, quantized: bool = True) -> Path:
+        head = f'engine = "vllm"\nweights_gb = 1\ngpu_mem = 0.5\nchunking = "none"\n{_DECODING["vllm"]}\n'
+        q = _W8A16 if quantized else _PRECISION
+        path.write_text(
+            f'[recipes."q"]\nmodel = "o/m-fp8"\nrevision = "{"b" * 40}"\n{head}{q}\n'
+            f'[recipes."c"]\nmodel = "o/m"\nrevision = "{"a" * 40}"\n{head}'
+            f'{control.replace("TARGET", target)}\n')
+        return path
+
+    assert recipe.load_recipes(two("q"))["c"]["precision"]["control"] == "q"
+    with pytest.raises(recipe.RecipeError, match="names no recipe"):
+        recipe.load_recipes(two("nope"))
+    with pytest.raises(recipe.RecipeError, match="not quantized"):
+        recipe.load_recipes(two("q", quantized=False))
 
 
 def test_args_cannot_override_what_precision_owns(tmp_path: Path) -> None:

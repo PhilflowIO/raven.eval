@@ -1,4 +1,4 @@
-# Serving recipes of the 20 self-hosted models (raven_asr.config.SELF_HOSTED_MODELS).
+# Serving recipes of the 22 self-hosted models (raven_asr.config.SELF_HOSTED_MODELS).
 #
 # One table per model, keyed by the model's result-directory label. `launch.py`
 # turns a table into the server process; the servers report the table's id and
@@ -43,7 +43,10 @@
 # parameter count and the repo's fp32 safetensors) and from how the engine loads
 # it with these flags:
 #   vLLM          --dtype is precision.activations, so weights and computation
-#                 are in that format; nothing is left to vLLM's "auto".
+#                 are in that format; nothing is left to vLLM's "auto". A
+#                 quantized checkpoint's weights are in the format its
+#                 quantization_config names, and the launcher pins the kernel
+#                 the scheme names (recipe.py, VLLM_SCHEME_ENV).
 #   NeMo          (the pinned commit, as 3.0.0 before it) restore_from keeps the
 #                 stored fp32 and transcribe() runs no
 #                 autocast: fp32 throughout (PyTorch defaults, i.e. TF32 for
@@ -355,6 +358,42 @@ max_model_len = 16384
 args = ["--limit-mm-per-prompt", "{\"audio\":1}"]
 chunking = "none: the whole clip goes into one chat request; the card's 64K context holds 60 min, max_model_len 16384 holds ~15 min of audio plus the answer"
 notes = "Microsoft's transformers-format release of microsoft/VibeVoice-ASR: the original repo's VibeVoiceForASRTraining has no vLLM class, this one's VibeVoiceAsrForConditionalGeneration runs on vLLM 0.33.0's Transformers modeling backend (no transcription endpoint: the shim sends a chat completion with the audio and no text, so the repo's chat template writes the model's own instruction). ~8.7B parameters in bfloat16 (16.7 GB): needs a card of its own, gpu_mem 0.92 and 4 sequences. The answer is a JSON list of timed speaker turns; the harness parses it (raven_asr.output_formats 'vibevoice-json'), prediction = the turns' Content, raw_prediction = the answer. No language is sent: the card says it 'requires no explicit language setting'. German: the card's language list carries 'de # German', 'over 50 languages' — https://huggingface.co/microsoft/VibeVoice-ASR"
+
+# ── vLLM, quantized, tensor-parallel over two cards ─────────────────────────
+#
+# A model whose bf16 weights do not fit one 24 GB card is served quantized
+# (8-bit weights, 16-bit activations) and split over both cards
+# (precision.tensor_parallel = 2; CUDA_VISIBLE_DEVICES names both). Each one has
+# a control recipe: the same model in bf16, split the same way with part of the
+# weights offloaded to host RAM (--cpu-offload-gb, per GPU), measured on FLEURS-de
+# only. The published table puts the paired WER difference quantized - control
+# directly under the quantized row (precision.control names the quantized recipe).
+
+[recipes."voxtral-small-24b-2507-fp8"]
+model = "RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic"
+revision = "a5dba05c66c6f06ec358dbf6531087a858ab141d"
+engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "fp8-e4m3", activations = "bf16", scheme = "fp8-w8a16-marlin", tensor_parallel = 2, checkpoint = { source = "third-party", repo = "RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic", revision = "a5dba05c66c6f06ec358dbf6531087a858ab141d", dtype = "fp8-e4m3" } }
+weights_gb = 29
+gpu_mem = 0.9
+max_num_seqs = 16
+args = ["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral"]
+chunking = "engine: vLLM's transcription endpoint; 32k-token context (~30 min of audio)"
+notes = "mistralai/Voxtral-Small-24B-2507 (bf16, ~48 GB) does not fit a 24 GB card and Mistral publishes no quantized build; this is RedHat AI's llm-compressor FP8 build of it (recipe.yaml in the repo): per-channel FP8-E4M3 weights (MSE observer, no calibration data) on the language model's MLP Linear layers only; the audio encoder, the projector, every attention layer and lm_head stay bf16 (its ignore list). Mistral format (consolidated.safetensors, 28.4 GB, ~14 GB per card at TP 2). vLLM 0.33.0 loads it through VoxtralForConditionalGeneration.maybe_update_quant_config (voxtral.py:562-648, maps the Mistral names of the ignore list onto vLLM's modules). On an RTX 3090 (compute capability 8.6) compressed-tensors' W8A8-FP8 needs 8.9 (compressed_tensors_w8a8_fp8.py:83-85), so vLLM serves it weight-only as CompressedTensorsW8A16Fp8 (compressed_tensors.py:896-912); dynamic activation quantization is dropped and the computation runs in bf16. The launcher disables the Humming kernel so Marlin runs, as the scheme says; the engine log names it ('Selected MarlinFP8ScaledMMLinearKernel'). Its control is voxtral-small-24b-2507-bf16-control. German: 'Natively multilingual: ... German ...' — https://huggingface.co/mistralai/Voxtral-Small-24B-2507; RedHat's card reports FLEURS German WER 3.41 % (bf16) and 3.36 % (this FP8) — https://huggingface.co/RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic"
+
+[recipes."voxtral-small-24b-2507-bf16-control"]
+model = "mistralai/Voxtral-Small-24B-2507"
+revision = "da5b42409f279fdd92febee0511a6c32828569c1"
+engine = "vllm"
+decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 2, control = "voxtral-small-24b-2507-fp8", checkpoint = { source = "published", dtype = "bf16" } }
+weights_gb = 49
+gpu_mem = 0.9
+max_num_seqs = 4
+args = ["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral", "--cpu-offload-gb", "14"]
+chunking = "engine: vLLM's transcription endpoint; 32k-token context (~30 min of audio)"
+notes = "The bf16 control of voxtral-small-24b-2507-fp8, run on FLEURS-de only. consolidated.safetensors (48.5 GB) is ~24.3 GB per card at TP 2; --cpu-offload-gb 14 (per GPU, vllm/config/offload.py:23-32) keeps ~14 GB of each card's share in pinned host RAM (28 GB of the host's 125 GB) and streams it over PCIe in every forward pass, which leaves ~8 GB per card for the KV cache and activations at gpu_mem 0.9. Slow by design; the numbers it produces are the bf16 model's. The weights are the ones RedHat quantized: consolidated.safetensors has the same LFS sha256 (421cd598…abea7e) at the repo's first commit (2025-07-15) and at the pinned one."
 
 # ── transformers stand-in (behind the same shim) ────────────────────────────
 

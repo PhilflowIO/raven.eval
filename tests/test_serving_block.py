@@ -283,6 +283,8 @@ def test_a_block_recorded_before_precision_was_reported_is_still_well_formed() -
         {**_W8A16, "tensor_parallel": 0},
         {**_W8A16, "weights": ""},
         {**_W8A16, "checkpoint": {"source": "vendor"}},
+        {**_W8A16, "control": ""},
+        {**_W8A16, "kv_cache": "fp8"},
     ],
 )
 def test_a_malformed_precision_fails_the_artifact(bad: object) -> None:
@@ -295,3 +297,6 @@ def test_the_published_label_names_scheme_cast_and_split() -> None:
     plain = {**BLOCK_A["precision"], "weights": "bf16", "activations": "bf16",
              "checkpoint": {"source": "published", "dtype": "bf16"}}
     assert serving.precision_label(plain) == "bf16"
+    control = {**plain, "tensor_parallel": 2, "control": "voxtral-small-24b-2507-fp8"}
+    assert serving.serving_problem({"serving": {**BLOCK_A, "precision": control}}) == ""
+    assert serving.precision_label(control) == "bf16, TP 2, control"

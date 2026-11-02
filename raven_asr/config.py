@@ -416,6 +416,10 @@ VLLM_SERVED_MODELS: Final[dict[str, str]] = {
     "ibm-granite/granite-speech-5.0-470m-turboctc": "granite-speech-5.0-470m-turboctc",
     "mistralai/Voxtral-Mini-4B-Realtime-2602": "voxtral-mini-4b-realtime-2602",
     "microsoft/VibeVoice-ASR-HF": "vibevoice-asr",
+    # Split over two cards (precision.tensor_parallel = 2), quantized, with its
+    # bf16 control (CPU offload, FLEURS-de only).
+    "RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic": "voxtral-small-24b-2507-fp8",
+    "mistralai/Voxtral-Small-24B-2507": "voxtral-small-24b-2507-bf16-control",
 }
 
 

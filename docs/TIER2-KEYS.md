@@ -154,17 +154,22 @@ leaves any of it out:
 | `weights` | format the weights are held in while serving | `fp32`, `bf16`, `fp16`, `fp8-e4m3`, `int8`, `int4` |
 | `activations` | format the computation runs in (vLLM: `--dtype`) | `bf16` |
 | `scheme` | `none` for plain floating point, else the quantization scheme | `none`, `fp8-w8a16-marlin`, `gptq-w8a16` |
-| `checkpoint` | where the served weights come from, and the format it stores: `{source = "published", dtype}` (the repo at `revision`), `{source = "vendor", repo, revision, dtype}`, `{source = "self", recipe, dtype}` (the script or recipe that made it) | `{source = "published", dtype = "bf16"}` |
+| `checkpoint` | where the served weights come from, and the format it stores: `{source = "published", dtype}` (the repo at `revision`), `{source = "vendor", repo, revision, dtype}` (a quantized build by the model's own vendor), `{source = "third-party", repo, revision, dtype}` (a quantized build by someone else, e.g. RedHatAI), `{source = "self", recipe, dtype}` (the script or recipe that made it) | `{source = "published", dtype = "bf16"}` |
 | `tensor_parallel` | GPUs one model instance is split over | `1`, `2` |
+| `control` | only on a control run: the id of the quantized recipe it is the unquantized control of | `"voxtral-small-24b-2507-fp8"` |
 
 The launcher starts vLLM with `--dtype` and `--tensor-parallel-size` from this
-table (a recipe's `args` may not set them); the NeMo server and the transformers
+table (a recipe's `args` may not set them) and, for a quantized scheme, with the
+environment that makes vLLM run the kernel the scheme names
+(`serving/recipe.py`, `VLLM_SCHEME_ENV`: `fp8-w8a16-marlin` disables the Humming
+kernel vLLM 0.33.0 would otherwise pick first on an RTX 3090); the NeMo server and the transformers
 stand-in check the loaded parameters against `weights` and refuse to serve on a
 mismatch. A recipe whose `weights` differ from `checkpoint.dtype` serves a cast;
 no current recipe does (`primeline-whisper-large-v3-german` served its bf16
 checkpoint in fp16 until #82, and those rows say so). A quantized row is published next to its control: the same model in
 bf16 (with CPU offload where it does not fit), measured on FLEURS-de, and the
-paired WER difference between the two.
+paired WER difference between the two. The control's recipe names the quantized
+one in `precision.control`, and its table label ends in `control`.
 
 **Reproducible to a tolerance, not bit-exact.** The servers batch concurrent
 requests, and a batched forward pass can differ from a single-clip pass in the

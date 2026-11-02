@@ -136,12 +136,21 @@ def _decoding_problem(engine: str, decoding: object) -> str:
 #:                        as its publisher ships it; dtype = what it stores, so a
 #:                        cast (dtype != weights) is on record
 #:                      {source = "vendor", repo, revision, dtype}  a quantized
-#:                        checkpoint its vendor publishes
+#:                        checkpoint the model's own vendor publishes
+#:                      {source = "third-party", repo, revision, dtype}  a quantized
+#:                        checkpoint someone other than the vendor publishes
+#:                        (e.g. RedHatAI's llm-compressor builds); repo names who
 #:                      {source = "self", recipe, dtype[, repo, revision]}  one we
 #:                        made; recipe names the script or recipe that produced it
 #:   tensor_parallel  GPUs one model instance is split over; the launcher
 #:                    requires exactly that many in CUDA_VISIBLE_DEVICES
+#:   control          optional: the id of the quantized recipe this one is the
+#:                    unquantized control of. A control serves the same model in
+#:                    plain floating point (scheme "none"), measured on FLEURS-de
+#:                    only, so the published table can put the paired difference
+#:                    quantized - control directly under the quantized row.
 PRECISION_KEYS = frozenset({"weights", "activations", "scheme", "checkpoint", "tensor_parallel"})
+PRECISION_OPTIONAL = frozenset({"control"})
 #: Plain floating-point formats, with the torch / vLLM name each loads as.
 FLOAT_FORMATS: dict[str, str] = {"fp32": "float32", "bf16": "bfloat16", "fp16": "float16"}
 WEIGHT_FORMATS = frozenset({*FLOAT_FORMATS, "fp8-e4m3", "fp8-e5m2", "int8", "int4", "nf4", "mxfp4"})
@@ -150,11 +159,27 @@ CHECKPOINT_KEYS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     # source: (required, optional)
     "published": (frozenset({"source", "dtype"}), frozenset()),
     "vendor": (frozenset({"source", "repo", "revision", "dtype"}), frozenset()),
+    "third-party": (frozenset({"source", "repo", "revision", "dtype"}), frozenset()),
     "self": (frozenset({"source", "recipe", "dtype"}), frozenset({"repo", "revision"})),
 }
 _SCHEME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 #: vLLM flags the precision table owns; a recipe's ``args`` may not set them.
 PRECISION_FLAGS = ("--dtype", "--tensor-parallel-size", "-tp")
+#: The kernel a quantized vLLM scheme names, and the environment that makes vLLM
+#: 0.33.0 pick it. vLLM ranks its kernels per layer type and takes the first one
+#: the GPU supports; the scheme is only true if that first one is the named one.
+#:   fp8-w8a16-marlin  FP8 weights, 16-bit activations. Below compute capability
+#:                     8.9 compressed-tensors' W8A8-FP8 falls back to weight-only
+#:                     CompressedTensorsW8A16Fp8 (compressed_tensors.py:896-912),
+#:                     whose CUDA kernels are [Humming, Marlin] in that order
+#:                     (kernels/linear/__init__.py:522-526). vLLM installs
+#:                     humming-kernels itself (requirements/cuda.txt:33), so Marlin
+#:                     runs only with Humming disabled (__init__.py:653).
+#: The launcher sets this environment; a quantized vLLM scheme without an entry
+#: here is refused, so no quantized row is left to vLLM's kernel ranking.
+VLLM_SCHEME_ENV: dict[str, dict[str, str]] = {
+    "fp8-w8a16-marlin": {"VLLM_DISABLED_KERNELS": "HummingFP8ScaledMMLinearKernel"},
+}
 
 
 def _checkpoint_problem(ckpt: object, scheme: str, model: str, revision: str) -> str:
@@ -172,13 +197,14 @@ def _checkpoint_problem(ckpt: object, scheme: str, model: str, revision: str) ->
         return f"precision.checkpoint.dtype must be one of {sorted(WEIGHT_FORMATS)}, got {ckpt['dtype']!r}"
     if "revision" in ckpt and not _REVISION.fullmatch(str(ckpt["revision"])):
         return "precision.checkpoint.revision must be a full 40-hex commit"
-    if source == "vendor" and ckpt["repo"] == model and ckpt["revision"] != revision:
+    if source in ("vendor", "third-party") and ckpt["repo"] == model and ckpt["revision"] != revision:
         return "precision.checkpoint names the served repo at another revision than the recipe's"
     if source == "self" and not (isinstance(ckpt["recipe"], str) and ckpt["recipe"].strip()):
         return "precision.checkpoint.recipe must name what produced the checkpoint"
     if scheme != "none" and source == "published":
-        return ("a quantized scheme needs a vendor or self-made checkpoint "
-                "(a published repo that ships quantized weights is source = \"vendor\")")
+        return ("a quantized scheme needs a vendor, third-party or self-made checkpoint "
+                "(a published repo that ships quantized weights is source = \"vendor\" "
+                "or \"third-party\")")
     return ""
 
 
@@ -187,7 +213,7 @@ def _precision_problem(engine: str, prec: object, recipe: dict[str, Any]) -> str
         return "precision must be a table"
     if missing := PRECISION_KEYS - prec.keys():
         return f"precision needs {sorted(missing)}"
-    if unknown := prec.keys() - PRECISION_KEYS:
+    if unknown := prec.keys() - PRECISION_KEYS - PRECISION_OPTIONAL:
         return f"precision keys {sorted(unknown)} are not precision keys"
     weights, acts, scheme = prec["weights"], prec["activations"], prec["scheme"]
     if weights not in WEIGHT_FORMATS:
@@ -214,11 +240,22 @@ def _precision_problem(engine: str, prec: object, recipe: dict[str, Any]) -> str
             return f"precision.tensor_parallel must be 1 on {engine}"
     elif acts not in FLOAT_FORMATS:
         return "precision.activations must be fp32/bf16/fp16 on vllm (it is vLLM's --dtype)"
+    if "control" in prec:
+        control = prec["control"]
+        if not (isinstance(control, str) and control.strip()):
+            return "precision.control must name the quantized recipe this one controls"
+        if scheme != "none":
+            return "a control serves plain floating point: precision.scheme must be \"none\""
     if engine == "vllm":
         args = [str(a) for a in recipe.get("args", [])]
         if clash := [a for a in args if a.split("=", 1)[0] in PRECISION_FLAGS]:
             return f"args {clash} set what precision owns"
-    return _checkpoint_problem(prec["checkpoint"], scheme, recipe["model"], str(recipe["revision"]))
+    if problem := _checkpoint_problem(prec["checkpoint"], scheme, recipe["model"], str(recipe["revision"])):
+        return problem
+    if engine == "vllm" and scheme != "none" and scheme not in VLLM_SCHEME_ENV:
+        return (f"precision.scheme {scheme!r} names no kernel the launcher can pin "
+                f"on vllm; known: {sorted(VLLM_SCHEME_ENV)}")
+    return ""
 
 
 class RecipeError(ValueError):
@@ -259,7 +296,24 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
         if model in models:
             raise RecipeError(f"model {model!r} has two recipes: {models[model]!r} and {rid!r}")
         models[model] = rid
+    for rid, recipe in recipes.items():
+        if problem := _control_problem(recipe["precision"], recipes):
+            raise RecipeError(f"recipe {rid!r}: {problem}")
     return recipes
+
+
+def _control_problem(prec: dict[str, Any], recipes: dict[str, dict[str, Any]]) -> str:
+    """A control must name a quantized recipe of this file that is not a control itself."""
+    if "control" not in prec:
+        return ""
+    target = recipes.get(prec["control"])
+    if target is None:
+        return f"precision.control names no recipe: {prec['control']!r}"
+    if target["precision"]["scheme"] == "none":
+        return f"precision.control names {prec['control']!r}, which is not quantized"
+    if "control" in target["precision"]:
+        return f"precision.control names {prec['control']!r}, which is itself a control"
+    return ""
 
 
 def resolve(name: str, recipes: dict[str, dict[str, Any]] | None = None) -> str:

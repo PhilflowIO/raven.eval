@@ -341,14 +341,16 @@ _VLLM_SERVED = {
     "ibm-granite/granite-speech-5.0-470m-turboctc",
     "mistralai/Voxtral-Mini-4B-Realtime-2602",
     "microsoft/VibeVoice-ASR-HF",
+    "RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic",
+    "mistralai/Voxtral-Small-24B-2507",
 }
 
 
-def test_all_twenty_self_hosted_models_bind_to_their_server_type() -> None:
+def test_all_self_hosted_models_bind_to_their_server_type() -> None:
     from raven_asr.config import SELF_HOSTED_MODELS
 
     assert set(SELF_HOSTED_MODELS) == _NEMO_SERVED | _VLLM_SERVED
-    assert len(SELF_HOSTED_MODELS) == 20
+    assert len(SELF_HOSTED_MODELS) == 22
     for key in _NEMO_SERVED | _VLLM_SERVED:
         spec = KNOWN_MODELS[key]
         assert spec.adapter == "vllm_openai"
