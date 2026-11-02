@@ -1,26 +1,35 @@
 # Environment of the NeMo server (nemo/server.py, started by launch.py).
-# torch's CUDA 12 wheels bundle the runtime, so the host needs only the NVIDIA
-# driver, no CUDA toolkit.
+#
+# Every package is pinned exactly: an open pin lets a rebuild serve different
+# kernels under the same recipe hash (requirements.txt is part of it). The pins
+# follow the newest compatible release; they exist for reproducibility, not to
+# hold versions back. The server reports torch + NeMo in x_raven.engine.
 #
 # NeMo is exact: nemotron-3.5-asr-streaming needs the 3.0 line, and server.py
 # works around 3.0.0 behaviour (the offline transcribe path cannot force a
-# locale for that model). Every other package is pinned too: an open pin lets a
-# rebuild serve different kernels under the same recipe hash. The versions are
-# the ones the first full self-hosted run was measured with; the server still
-# reports torch + NeMo in x_raven.engine.
+# locale for that model).
 #
-# numba >= 0.61 must be resolved BEFORE nemo_toolkit: otherwise NeMo[asr]
-# backtracks resampy to numba 0.53.1, which caps Python below 3.10 and breaks a
-# Python 3.12 environment.
+# torch: the default PyPI wheel bundles the CUDA runtime (torch 2.14.1 ->
+# CUDA 13.0), so the host needs only the NVIDIA driver, R580 or newer, no CUDA
+# toolkit. torch 2.15 is NOT used yet: its wheels bundle CUDA 13.2 (driver
+# branch R595; PyTorch publishes no cu130 build of it). On an R580 driver it
+# starts under minor-version compatibility, but NeMo's transducer/CTC decoders
+# compile their CUDA-graph loop kernels with NVRTC to PTX, which a 13.0 driver
+# cannot load from a 13.2 NVRTC, and NeMo then silently falls back to a slower
+# decoding path. Move to torch 2.15+ once the host driver is R595 or newer.
+#
+# numba must be resolved BEFORE nemo_toolkit: otherwise NeMo[asr] backtracks
+# resampy to numba 0.53.1, which caps Python below 3.10 and breaks a Python 3.12
+# environment.
 #
 #   uv venv --python 3.12 <venv>
-#   uv pip install --python <venv>/bin/python "numba==0.67.0"
+#   uv pip install --python <venv>/bin/python "numba==0.68.1"
 #   uv pip install --python <venv>/bin/python -r serving/nemo/requirements.txt
-numba==0.67.0
+numba==0.68.1
 nemo_toolkit[asr]==3.0.0
-torch==2.13.0
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-huggingface_hub==1.29.0
+torch==2.14.1
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.33
+huggingface_hub==2.4.0
 soundfile==0.14.0
