@@ -9,10 +9,9 @@
 # Common keys
 #   model        HF repo id. The server serves and reports exactly this id.
 #   revision     the full HF commit the weights, tokenizer and processor are loaded
-#                at. Required for vllm and transformers recipes: a repo id alone moves
-#                whenever the publisher re-uploads, and the recipe would then serve
-#                other weights than it was measured with. (NeMo recipes cannot pin
-#                yet: ASRModel.from_pretrained takes no revision.)
+#                at. Required for every recipe: a repo id alone moves whenever the
+#                publisher re-uploads, and the recipe would then serve other weights
+#                than it was measured with.
 #   engine       vllm | nemo | transformers (a stand-in for a model vLLM cannot load)
 #   weights_gb   download size, for the optional free-disk check (RAVEN_SERVE_MIN_FREE_GB)
 #   gpu_mem      default VRAM budget as a fraction of the card (RAVEN_SERVE_GPU_MEM
@@ -28,8 +27,10 @@
 #   snapshot_ignore (patterns left out of the snapshot download), serve_from_snapshot
 #   (serve the local snapshot under the model id instead of letting vLLM download),
 #   lora_modules (name = directory inside the snapshot)
-# nemo keys: checkpoint_file (a .nemo inside the HF repo, for repos that are not
-#   from_pretrained-loadable), max_batch, batch_wait_ms, batch_max_audio_s, longform
+# nemo keys: checkpoint_file (required: the .nemo inside the HF repo; the launcher
+#   downloads it at `revision` and the server restores exactly that file, because
+#   ASRModel.from_pretrained takes no revision), max_batch, batch_wait_ms,
+#   batch_max_audio_s, longform
 #
 # Every vLLM model is reached through vllm/shim.py, which forwards to vLLM's own
 # /v1/audio/transcriptions, except Phi-4-multimodal, whose vLLM class has no
@@ -40,7 +41,9 @@
 
 [recipes."nvidia-parakeet-tdt-0.6b-v3"]
 model = "nvidia/parakeet-tdt-0.6b-v3"
+revision = "541d1f99c6b0c3cd0b11a95167540bb8edefd82b"
 engine = "nemo"
+checkpoint_file = "parakeet-tdt-0.6b-v3.nemo"
 weights_gb = 3
 gpu_mem = 0.5
 max_batch = 16
@@ -52,7 +55,9 @@ notes = "Auto-detects the language and cannot be forced to German; responses car
 
 [recipes."nvidia-canary-1b-v2"]
 model = "nvidia/canary-1b-v2"
+revision = "d455706339a6b32e1aa40f82c713a482a0c938e2"
 engine = "nemo"
+checkpoint_file = "canary-1b-v2.nemo"
 weights_gb = 4
 gpu_mem = 0.5
 max_batch = 16
@@ -64,7 +69,9 @@ notes = "Forced to German with source_lang = target_lang = de, pnc = yes."
 
 [recipes."nvidia-nemotron-3.5-asr-streaming-0.6b"]
 model = "nvidia/nemotron-3.5-asr-streaming-0.6b"
+revision = "ea30d66debe3740a08b573244286791d423d6b3e"
 engine = "nemo"
+checkpoint_file = "nemotron-3.5-asr-streaming-0.6b.nemo"
 weights_gb = 3
 gpu_mem = 0.5
 max_batch = 16
@@ -76,6 +83,7 @@ notes = "A transducer (library_name nemo), not servable by vLLM. Prompt mode for
 
 [recipes."primeline-parakeet"]
 model = "primeline/parakeet-primeline"
+revision = "3f1a9bcb611dfeda53fe74fe5f1a3d5701e8023e"
 engine = "nemo"
 checkpoint_file = "2_95_WER.nemo"
 weights_gb = 3

@@ -42,25 +42,26 @@ ENGINE_FILES: dict[str, tuple[str, ...]] = {
 }
 
 #: Keys every recipe must carry, and keys only some engines accept.
-REQUIRED_KEYS = frozenset({"model", "engine", "weights_gb", "gpu_mem", "chunking"})
+#: ``revision`` is the full HF commit the recipe serves. A repo id alone is a
+#: moving target: a re-upload under the same id swaps the weights (and can break
+#: loading) without anything in the recipe changing.
+REQUIRED_KEYS = frozenset({"model", "revision", "engine", "weights_gb", "gpu_mem", "chunking"})
 ENGINE_KEYS: dict[str, frozenset[str]] = {
     "vllm": frozenset({
-        "revision", "dtype", "max_num_seqs", "max_model_len", "trust_remote_code",
-        "args", "snapshot_ignore", "serve_from_snapshot", "lora_modules", "notes",
+        "dtype", "max_num_seqs", "max_model_len", "trust_remote_code", "args",
+        "snapshot_ignore", "serve_from_snapshot", "lora_modules", "notes",
     }),
-    "transformers": frozenset({"revision", "max_num_seqs", "notes"}),
+    "transformers": frozenset({"max_num_seqs", "notes"}),
     "nemo": frozenset({
         "checkpoint_file", "max_batch", "batch_wait_ms", "batch_max_audio_s",
         "longform", "notes",
     }),
 }
-
-
-#: Engines whose recipes must pin the HF commit they serve. A repo id alone is a
-#: moving target: a re-upload under the same id swaps the weights (and can break
-#: loading) without anything in the recipe changing. The NeMo leg loads through
-#: ``ASRModel.from_pretrained``, which takes no revision, so it is not pinned yet.
-REVISION_ENGINES = frozenset({"vllm", "transformers"})
+#: Engine keys a recipe on that engine must carry. NeMo's
+#: ``ASRModel.from_pretrained`` takes no revision, so a NeMo recipe names the
+#: .nemo file in the repo; the launcher downloads it at ``revision`` and the
+#: server restores exactly that file.
+ENGINE_REQUIRED: dict[str, frozenset[str]] = {"nemo": frozenset({"checkpoint_file"})}
 _REVISION = re.compile(r"[0-9a-f]{40}")
 
 
@@ -86,7 +87,10 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
         unknown = recipe.keys() - REQUIRED_KEYS - ENGINE_KEYS[engine]
         if unknown:
             raise RecipeError(f"recipe {rid!r}: keys {sorted(unknown)} do not apply to {engine}")
-        if engine in REVISION_ENGINES and not _REVISION.fullmatch(str(recipe.get("revision", ""))):
+        missing = ENGINE_REQUIRED.get(engine, frozenset()) - recipe.keys()
+        if missing:
+            raise RecipeError(f"recipe {rid!r}: {engine} needs {sorted(missing)}")
+        if not _REVISION.fullmatch(str(recipe["revision"])):
             raise RecipeError(
                 f"recipe {rid!r}: revision must be the full 40-hex HF commit the "
                 f"recipe serves, got {recipe.get('revision')!r}"

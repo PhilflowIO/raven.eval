@@ -30,6 +30,14 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   load; the unpinned recipe had silently followed it. Granite is pinned to the
   checkpoint the September sweep served; every other recipe to its repo's
   current main (2026-11-02), the weights the running round loads anyway.
+- The four NeMo recipes pin their Hugging Face commit too. `ASRModel.from_pretrained`
+  takes no revision, so each NeMo recipe now names its `.nemo` file
+  (`checkpoint_file`, required); the launcher downloads it at the pin and the
+  server restores that file and reports the pin in `/health` (`model_revision`).
+  Pinned to the commits the November round loads. This changes how parakeet-tdt,
+  canary and nemotron are loaded (`restore_from` on the same file instead of
+  `from_pretrained`), so a pinned start should reproduce the current rows within
+  batching tolerance before the next round relies on it.
 
 ### Added
 - The serving recipe of the 14 self-hosted models is part of the repo
