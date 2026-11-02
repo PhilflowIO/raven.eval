@@ -166,9 +166,9 @@ def test_reports_the_recipe_decoding(load_shim):
 def test_reports_the_recipe_precision(load_shim):
     mod, _ = load_shim(["primeline/whisper-large-v3-german"])
     x = _post(mod, "primeline/whisper-large-v3-german").json()["x_raven"]
-    # Served as fp16, from a checkpoint that stores bf16: the cast is on record.
+    # Served in bf16, the format its checkpoint stores (#82; an fp16 cast before).
     assert x["precision"] == {
-        "weights": "fp16", "activations": "fp16", "scheme": "none", "tensor_parallel": 1,
+        "weights": "bf16", "activations": "bf16", "scheme": "none", "tensor_parallel": 1,
         "checkpoint": {"source": "published", "dtype": "bf16"},
     }
 
