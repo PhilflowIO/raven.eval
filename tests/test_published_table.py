@@ -55,12 +55,14 @@ _DER_COLUMNS = {
     10: "der_classic_filemean",
 }
 _DER_WIDTH, _DER_N = 14, 12          # model | dataset | 9 numbers | CI | n | run
-_WER_COLUMNS = {2: "wer_pct", 4: "cer_pct", 6: "entity_hit_rate_pct"}
+_WER_COLUMNS = {2: "wer_pct", 4: "cer_pct", 6: "entity_hit_rate_pct",
+                9: "n_runaway", 10: "runaway_edit_share_pct"}
 #: "[lo, hi]" cells, each bound to its two expected.json fields.
 _WER_INTERVALS = {3: ("wer_ci_lo", "wer_ci_hi"), 7: ("entity_ci_lo", "entity_ci_hi")}
 _WER_N_ENTITIES = 8
-_WER_WIDTH, _WER_N = 11, 5
-# model | subset | wer | CI | cer | n | numbers hit | CI | numbers | run | ref
+_WER_WIDTH, _WER_N = 13, 5
+# model | subset | wer | CI | cer | n | numbers hit | CI | numbers | loops |
+# loop edits % | run | ref
 
 
 def _linked_rows() -> list[tuple[str, list[str], Path]]:

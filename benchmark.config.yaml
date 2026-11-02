@@ -127,6 +127,17 @@ wer:
     seed: 20260903
     confidence: 0.95
     comparisons: paired                       # two models resampled on the SAME utterances, matched by sample_id
+  # A looping model ("sehr, sehr, sehr, …" for 12,000 characters) on a handful of
+  # clips can out-insert every other error in a corpus. Those utterances are
+  # counted and their share of the corpus edits is published beside every WER,
+  # so a loop cannot pass for general inaccuracy. The WER itself still counts
+  # them: it stays the headline, loops included, after the serving recipe's
+  # output-length cap (serving/recipes.toml, decoding.max_tokens).
+  runaway:
+    rule: hypothesis words > length_ratio x reference words
+    length_unit: words after flozi-strict normalization   # the units the WER counts
+    length_ratio: 3
+    reported: [n_runaway, runaway_pct, runaway_edit_share_pct]   # count, share of utterances, share of corpus word edits
 
 bleu:
   scorer: sacrebleu                 # rejected: nltk.translate.bleu_score — no pinned tokenizer, so the single most score-moving convention would sit outside this contract

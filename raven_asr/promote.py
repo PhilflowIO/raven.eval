@@ -10,8 +10,9 @@ layout ``scripts/verify.py`` re-scores:
                                       summary.json, with n_dropped and
                                       dropped_by_reason when the run counted
                                       them, plus wer_strict_de_pct, the
-                                      95 % WER interval and the numeric entity hit
-                                      rate scored from the predictions)
+                                      95 % WER interval, the numeric entity hit
+                                      rate and the runaway count scored from the
+                                      predictions)
         throughput_<subset>.jsonl    (copied verbatim when the run recorded one —
                                       every pass's wall time and audio; summary.json
                                       carries the totals. A measurement of the run,
@@ -219,6 +220,33 @@ def _add_entities(expected: dict[str, dict], preds: list[Path]) -> None:
         })
 
 
+def _add_runaway(expected: dict[str, dict], preds: list[Path]) -> None:
+    """Attach the runaway count and its share of the corpus edits.
+
+    The rule is the contract's (``wer.runaway``): a hypothesis with more than
+    ``length_ratio`` times the reference's words ran away from the audio. Published
+    beside the WER so a few loops cannot pass for general inaccuracy; the WER
+    itself still counts them.
+    """
+    from raven_eval_core.flozi_wer import runaway_stats
+
+    from raven_asr.config import RUNAWAY_LENGTH_RATIO
+
+    for path in preds:
+        subset = _subset_for(path, expected)
+        if subset is None:
+            continue
+        refs, hyps = _read_pairs(path)
+        got = runaway_stats(refs, hyps, RUNAWAY_LENGTH_RATIO)
+        expected[subset].update({
+            "n_runaway": got.n_runaway,
+            "runaway_pct": round(got.runaway_pct, 4),
+            "runaway_edit_share_pct": (
+                None if got.edit_share_pct is None else round(got.edit_share_pct, 4)
+            ),
+        })
+
+
 def add_required_fields(expected: dict[str, dict], preds: list[Path]) -> None:
     """Attach every derived field ``make verify`` requires of a WER subset.
 
@@ -229,6 +257,7 @@ def add_required_fields(expected: dict[str, dict], preds: list[Path]) -> None:
     """
     _add_interval(expected, preds)
     _add_entities(expected, preds)
+    _add_runaway(expected, preds)
 
 
 def _add_strict_de(expected: dict[str, dict[str, float]], preds: list[Path]) -> None:

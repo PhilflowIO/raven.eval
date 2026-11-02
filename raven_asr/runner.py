@@ -22,7 +22,7 @@ from raven_eval_core.entities import entity_hit_rate
 from tqdm import tqdm
 
 from raven_eval_core.contract import resolved_contract
-from raven_eval_core.flozi_wer import evaluate
+from raven_eval_core.flozi_wer import evaluate, runaway_stats
 from raven_eval_core.run_manifest import (
     SCHEMA_VERSION,
     build_run_manifest,
@@ -33,6 +33,7 @@ from . import serving, throughput
 from .adapters.base import ASRAdapter, ServedModelMismatchError
 from .config import (
     FLOZI_REFERENCE_WER,
+    RUNAWAY_LENGTH_RATIO,
     KNOWN_MODELS,
     MODAL_APP_NAMES,
     WER_DATASETS,
@@ -683,6 +684,10 @@ async def _close_adapter(adapter: ASRAdapter) -> None:
         await aclose()
 
 
+def _r4(value: float | None) -> float | None:
+    return None if value is None else round(value, 4)
+
+
 def _compare_against_flozi(
     model_id: str, entries: Iterable[ResultEntry]
 ) -> list[dict[str, object]]:
@@ -722,6 +727,11 @@ def _compare_against_flozi(
                 ),
                 "n_entities": entry.n_entities,
                 "n_utterances_with_entities": entry.n_utterances_with_entities,
+                # Hypotheses that ran away from the audio (loops), and how much
+                # of the WER above they are. Counted in it, named beside it.
+                "n_runaway": entry.n_runaway,
+                "runaway_pct": _r4(entry.runaway_pct),
+                "runaway_edit_share_pct": _r4(entry.runaway_edit_share_pct),
                 "flozi_reference_wer": ref_wer,
                 "drift_pct_vs_flozi": drift_pct,
             }
@@ -846,6 +856,9 @@ def _entry_from_row(row: dict[str, Any]) -> ResultEntry:
         entity_hit_rate_pct=row.get("entity_hit_rate_pct"),
         n_entities=int(row.get("n_entities") or 0),
         n_utterances_with_entities=int(row.get("n_utterances_with_entities") or 0),
+        n_runaway=row.get("n_runaway"),
+        runaway_pct=row.get("runaway_pct"),
+        runaway_edit_share_pct=row.get("runaway_edit_share_pct"),
     )
 
 
@@ -856,6 +869,7 @@ def _scored(entry: ResultEntry, rows: list[dict[str, Any]]) -> ResultEntry:
     preds = [r["prediction"] for r in ok]
     metrics = evaluate(refs, preds)
     entities = entity_hit_rate(refs, preds)
+    runaway = runaway_stats(refs, preds, RUNAWAY_LENGTH_RATIO)
     return replace(
         entry,
         wer_pct=metrics.wer_pct,
@@ -866,6 +880,9 @@ def _scored(entry: ResultEntry, rows: list[dict[str, Any]]) -> ResultEntry:
         entity_hit_rate_pct=entities.hit_rate_pct,
         n_entities=entities.n_entities,
         n_utterances_with_entities=entities.n_utterances_with_entities,
+        n_runaway=runaway.n_runaway,
+        runaway_pct=runaway.runaway_pct,
+        runaway_edit_share_pct=runaway.edit_share_pct,
     )
 
 
@@ -980,6 +997,7 @@ def _record_subset(
     preds = [cast(str, o.prediction) for o in ok]
     metrics = evaluate(refs, preds)
     entities = entity_hit_rate(refs, preds)
+    runaway = runaway_stats(refs, preds, RUNAWAY_LENGTH_RATIO)
     dataset_revision, dataset_sha256 = _dataset_pin(subset, revision)
     entry = ResultEntry(
         dataset_id=_dataset_id_for_subset(subset),
@@ -997,6 +1015,9 @@ def _record_subset(
         entity_hit_rate_pct=entities.hit_rate_pct,
         n_entities=entities.n_entities,
         n_utterances_with_entities=entities.n_utterances_with_entities,
+        n_runaway=runaway.n_runaway,
+        runaway_pct=runaway.runaway_pct,
+        runaway_edit_share_pct=runaway.edit_share_pct,
     )
     entries.append(entry)
     if entry.n_dropped:
