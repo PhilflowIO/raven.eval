@@ -166,8 +166,8 @@ class VllmOpenAIAdapter:
             self.serving, self._serving_pinned = block, True
             if block is None:
                 logger.warning(
-                    "[%s] the endpoint does not report its serving recipe "
-                    "(no x_raven.engine/recipe/batching); results will record "
+                    "[%s] the endpoint names no serving recipe (no "
+                    "x_raven.engine/recipe/batching); results will record "
                     "serving: null", self.provider_id,
                 )
             return
