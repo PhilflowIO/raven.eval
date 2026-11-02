@@ -56,6 +56,8 @@ LEGACY_SERVING_KEYS = (
 #: What a reported precision table must carry (serving/recipe.py validates the
 #: values; an artifact is only held to the shape).
 PRECISION_KEYS = ("weights", "activations", "scheme", "checkpoint", "tensor_parallel")
+#: Present only on a control run: the id of the quantized recipe it controls.
+PRECISION_OPTIONAL = ("control",)
 
 
 class ServedModelMismatchError(RuntimeError):
@@ -88,8 +90,13 @@ def precision_problem(prec: object) -> str:
     """Why a reported precision table is malformed, or ``""`` (None is allowed)."""
     if prec is None:
         return ""
-    if not isinstance(prec, dict) or set(prec) != set(PRECISION_KEYS):
-        return f"expected null or an object with keys {list(PRECISION_KEYS)}"
+    if not isinstance(prec, dict) or not (
+        set(PRECISION_KEYS) <= set(prec) <= set(PRECISION_KEYS) | set(PRECISION_OPTIONAL)
+    ):
+        return (f"expected null or an object with keys {list(PRECISION_KEYS)} "
+                f"(optionally {list(PRECISION_OPTIONAL)})")
+    if "control" in prec and not (isinstance(prec["control"], str) and prec["control"]):
+        return "control must name the quantized recipe it controls"
     if not all(isinstance(prec[k], str) and prec[k] for k in ("weights", "activations", "scheme")):
         return "weights, activations and scheme must be non-empty strings"
     tp = prec["tensor_parallel"]
@@ -104,11 +111,13 @@ def precision_problem(prec: object) -> str:
 
 def precision_label(prec: dict[str, Any]) -> str:
     """How a precision table reads in a published table: ``bf16``,
-    ``fp16 (cast from bf16)``, ``fp8-e4m3 fp8-w8a16-marlin, TP 2``.
+    ``fp16 (cast from bf16)``, ``fp8-e4m3 fp8-w8a16-marlin, TP 2``,
+    ``bf16, TP 2, control``.
 
     The weights' format first; the scheme when there is one; a cast when the
     weights are served in another format than the checkpoint stores; the GPU
-    split when there is one.
+    split when there is one; "control" for the unquantized control of a
+    quantized row.
     """
     label = str(prec["weights"])
     if prec["scheme"] != "none":
@@ -118,6 +127,8 @@ def precision_label(prec: dict[str, Any]) -> str:
         label += f" (cast from {stored})"
     if prec["tensor_parallel"] > 1:
         label += f", TP {prec['tensor_parallel']}"
+    if prec.get("control"):
+        label += ", control"
     return label
 
 

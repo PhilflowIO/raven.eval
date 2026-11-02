@@ -24,6 +24,17 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Added
+- **Voxtral-Small-24B-2507**, quantized and split over two cards (#79):
+  RedHat AI's FP8 build (`RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic`,
+  per-channel FP8 on the language model's MLP layers; encoder, attention and
+  lm_head bf16) served weight-only (W8A16, bf16 activations) through vLLM's
+  Marlin kernel at tensor-parallel 2, plus its **bf16 control** (the Mistral
+  checkpoint with 14 GB per card offloaded to host RAM, FLEURS-de only). The
+  precision block gains an optional `control` key naming the quantized recipe,
+  and a fourth checkpoint source, `third-party`, for quantized builds by someone
+  other than the model's vendor. A quantized vLLM scheme must name a kernel the
+  launcher can pin; `fp8-w8a16-marlin` disables the Humming kernel that vLLM
+  0.33.0 ranks first on an RTX 3090.
 - Every self-hosted result names its **precision** (#81). Each serving recipe
   declares `precision = {weights, activations, scheme, checkpoint,
   tensor_parallel}` — the format the weights are served in, the format the
@@ -84,6 +95,13 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   `model.safetensors` stores, instead of an fp16 cast (#82). The recipe hash
   changes; earlier rows of this model carry `fp16 (cast from bf16)` and are
   superseded by its run-4 re-measurement.
+- The NeMo engine moves from the 3.0.0 release to NeMo Speech commit
+  `b19b1a79` (reports 3.1.0), the first that honours `target_lang` in offline
+  `transcribe()`. The two prompt-conditioned Nemotron models
+  (nemotron-3.5-asr-streaming-0.6b, nemotron-labs-unified-asr-0.6b) are now
+  forced to German (`de-DE`) and report `language_forced = true`; before they
+  auto-detected the language. Every NeMo recipe hash changes and all five NeMo
+  models are re-measured in run 4.
 - The vLLM serving engine moves from 0.28.0 to 0.33.0 (FlashInfer 0.7.2.post1
   with its prebuilt CUDA 13.0 kernels, torch 2.14.0, transformers 5.20.2 now
   pinned too), one engine for every vLLM model. vLLM rows measured on 0.28.0

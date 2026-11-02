@@ -5,9 +5,19 @@
 # follow the newest compatible release; they exist for reproducibility, not to
 # hold versions back. The server reports torch + NeMo in x_raven.engine.
 #
-# NeMo is exact: nemotron-3.5-asr-streaming needs the 3.0 line, and server.py
-# works around 3.0.0 behaviour (the offline transcribe path cannot force a
-# locale for that model).
+# NeMo is pinned to one commit of NVIDIA-NeMo/Speech (the former NVIDIA/NeMo),
+# not to a release: the newest release, 3.0.0, ignores target_lang in offline
+# transcribe() of the prompt-conditioned transducers (both Nemotron ASR
+# models), so they could only auto-detect the language. b19b1a79 (2026-10-23,
+# "Add inference support for the Unified multilingual RNNT model with lang
+# prompt", NeMo PR #15940) is the first commit that carries target_lang into
+# the transcribe dataloader and conditions every utterance on it
+# (rnnt_bpe_models_prompt.py, audio_to_text_lhotse_prompt_index.py). The
+# nemotron-labs-unified checkpoint was written by 3.1.0+7be3e2bf6 (2026-07-21),
+# which is NOT enough: at that commit the dataloader still reads the language
+# from each utterance's manifest entry, which a list of files does not have.
+# The package reports 3.1.0 at this commit. Every NeMo recipe runs on it.
+# Move to the 3.1.0 release once it is on PyPI and contains this commit.
 #
 # torch: the default PyPI wheel bundles the CUDA runtime (torch 2.14.1 ->
 # CUDA 13.0), so the host needs only the NVIDIA driver, R580 or newer, no CUDA
@@ -20,13 +30,15 @@
 #
 # numba must be resolved BEFORE nemo_toolkit: otherwise NeMo[asr] backtracks
 # resampy to numba 0.53.1, which caps Python below 3.10 and breaks a Python 3.12
-# environment.
+# environment. This set resolves (uv pip compile, Python 3.12, x86_64 Linux,
+# 2026-11-02) to torch 2.14.1 and numba 0.68.1 as pinned (NeMo asks torch>=2.6.0;
+# its cu12/cu13 extras, which pin an older torch, are not installed).
 #
 #   uv venv --python 3.12 <venv>
 #   uv pip install --python <venv>/bin/python "numba==0.68.1"
 #   uv pip install --python <venv>/bin/python -r serving/nemo/requirements.txt
 numba==0.68.1
-nemo_toolkit[asr]==3.0.0
+nemo_toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git@b19b1a79d86ec30c1de078682b4b3ed0f59098bb
 torch==2.14.1
 fastapi==0.162.0
 uvicorn[standard]==0.54.0

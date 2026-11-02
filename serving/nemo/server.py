@@ -35,11 +35,18 @@ Model families:
     only: AED timestamp support runs through a different prompt slot and the
     bench scores text, so we keep it minimal on purpose.
 
+  * Prompt-conditioned transducers (EncDecRNNTBPEModelWithPrompt: the
+    Nemotron ASR models): `.transcribe(paths, target_lang="de-DE")`. The
+    pinned NeMo commit (requirements.txt) carries `target_lang` into the
+    transcribe dataloader and conditions every utterance on it; NeMo 3.0.0
+    dropped it and could only run language auto-detection.
+
 Language-ID hazard (why `x_raven.language_forced` exists): parakeet-tdt-0.6b-v3
 auto-detects the language and offers NO way to force German — a strongly
 accented or code-switched clip can silently come back in the wrong language.
-Canary IS forced to German via `source_lang`/`target_lang`. The response flags
-which regime produced the text so downstream analysis can split on it.
+Canary and the prompt-conditioned Nemotron models ARE forced to German. The
+response flags which regime produced the text so downstream analysis can
+split on it.
 
 GPU DISCIPLINE:
   * Device selection happens EXCLUSIVELY via CUDA_VISIBLE_DEVICES in the
@@ -190,7 +197,7 @@ def _engine_version() -> str | None:
 
 # What every NeMo ASR checkpoint we bench expects: 16 kHz mono. Both the
 # parakeet-v3 and canary-1b-v2 model cards state 16 kHz monochannel input.
-# Trailing language tag nemotron emits in auto mode ("... <de-DE>").
+# Trailing language tag the Nemotron prompt models emit ("... <de-DE>").
 import re as _re
 
 _NEMOTRON_LANG_TAG = _re.compile(r"<[a-z]{2}-[A-Z]{2}>\s*$")
@@ -244,14 +251,29 @@ app = FastAPI(title="Raven STT bench (NeMo)", version="1.0.0")
 
 _model = None
 _is_canary: bool = _model_is_canary()  # refined from the class after load
-_is_nemotron: bool = "nemotron" in BENCH_MODEL.lower()  # prompt-conditioned locale (de-DE)
+#: The prompt key every utterance of a prompt-conditioned model is forced to.
+#: Both Nemotron prompt checkpoints map "de-DE" (and "de") to prompt 9.
+PROMPT_LANGUAGE = "de-DE"
+
+
+def _model_is_prompted(model=None) -> bool:
+    """Prompt-conditioned transducer ⇒ transcribe(target_lang=PROMPT_LANGUAGE).
+
+    By name before the load, by class after it (the class decides: a model
+    without the prompt mixin would ignore target_lang)."""
+    if model is not None:
+        return "WithPrompt" in type(model).__name__
+    return "nemotron" in BENCH_MODEL.lower()
+
+
+_is_prompted: bool = _model_is_prompted()  # refined from the class after load
 _load_error: str | None = None
 _load_seconds: float | None = None
 _load_lock = threading.Lock()
 
 
 def _load_model() -> None:
-    global _model, _is_canary, _load_error, _load_seconds
+    global _model, _is_canary, _is_prompted, _load_error, _load_seconds
     with _load_lock:
         if _model is not None or _load_error is not None:
             return
@@ -295,25 +317,7 @@ def _load_model() -> None:
             ):
                 raise RuntimeError(f"checkpoint precision differs from its recipe: {problem}")
             _is_canary = _model_is_canary(m)
-            if _is_nemotron:
-                # NeMo 3.0.0 gap (see _transcribe_window): force prompt mode
-                # "auto" for every transcribe dataloader this model builds.
-                import types as _types
-
-                _orig_setup = m._setup_dataloader_from_config
-
-                def _patched_setup(self, config):  # noqa: ANN001
-                    try:
-                        if "default_lang" in config:  # transcribe dl-config marker
-                            from omegaconf import open_dict
-
-                            with open_dict(config):
-                                config["default_prompt_mode"] = "auto"
-                    except Exception:  # noqa: BLE001 - fall through to original
-                        pass
-                    return _orig_setup(config=config)
-
-                m._setup_dataloader_from_config = _types.MethodType(_patched_setup, m)
+            _is_prompted = _model_is_prompted(m)
             if LONGFORM and not _is_canary:
                 # Parakeet family only. MUST run before transcribe — this is
                 # what makes NeMo emit segment timestamps for long audio (not
@@ -554,7 +558,7 @@ def health() -> JSONResponse:
             "engine": _engine_version(),
             "recipe": RECIPE,
             "canary": _is_canary,
-            "language_forced": _is_canary,
+            "language_forced": _is_canary or _is_prompted,
             "device": DEVICE,
             "gpu_mem_fraction": GPU_MEM_FRACTION,
             "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
@@ -627,20 +631,14 @@ def _transcribe_paths(paths: Sequence[str]) -> list[tuple[str, dict]]:
             batch, batch_size=n, source_lang="de", target_lang="de", pnc="yes"
         )
         return [(_hyp_text(h), {}) for h in _as_hyp_list(hyps, n)]
-    if _is_nemotron:
-        # Nemotron 3.5 ASR offline transcribe in NeMo 3.0.0 cannot force a
-        # locale: `_setup_transcribe_dataloader` plumbs `default_lang` into the
-        # dl-config but NO dataset consumes it, and the default prompt mode
-        # ("unified") reads `cut.supervisions[0].language`, which the transcribe
-        # temp-manifest never sets -> "Unknown prompt key: 'None'". The only
-        # working offline lane is prompt mode "auto" (language auto-detection;
-        # injected at load time via the _setup_dataloader_from_config patch in
-        # _load_model). NOTE for scoring: this measures the model card's
-        # AUTO-DETECT column, not the LangID column - x_raven.language_forced
-        # stays False for nemotron on purpose.
-        hyps = model.transcribe(batch, batch_size=n)
-        # In auto mode the model may append a language tag (e.g. "<de-DE>")
-        # after the terminal punctuation - transport, not speech.
+    if _is_prompted:
+        # Forced to German: target_lang reaches the transcribe dataloader,
+        # which conditions every utterance on that prompt (NeMo
+        # rnnt_bpe_models_prompt.py _transcribe_input_manifest_processing and
+        # _setup_transcribe_dataloader at the pinned commit).
+        hyps = model.transcribe(batch, batch_size=n, target_lang=PROMPT_LANGUAGE)
+        # The model may append its locale tag (e.g. "<de-DE>") after the
+        # terminal punctuation - transport, not speech.
         return [
             (_NEMOTRON_LANG_TAG.sub("", _hyp_text(h)).strip(), {})
             for h in _as_hyp_list(hyps, n)
@@ -783,7 +781,7 @@ def _respond(
         # Only claim a language when the model was actually FORCED to it
         # (Canary). Parakeet auto-detects and can silently answer in another
         # language — a hard-coded "de" here would launder that into a fact.
-        "language": "de" if _is_canary else None,
+        "language": "de" if (_is_canary or _is_prompted) else None,
         "text": text,
         "duration": round(audio_s, 3),
         "x_raven": {
@@ -792,8 +790,9 @@ def _respond(
             # language and CANNOT be forced to German, so a wrong-language
             # transcript is possible and downstream analysis must be able to
             # see which regime produced each row. True for Canary
-            # (source_lang/target_lang pin it to German).
-            "language_forced": _is_canary,
+            # (source_lang/target_lang pin it to German) and the prompt-
+            # conditioned Nemotron models (target_lang="de-DE").
+            "language_forced": _is_canary or _is_prompted,
             # Wall includes the queue wait for a batch slot; under a parallel
             # client it is per-request latency, not GPU time per clip.
             "wall_seconds": round(wall, 3),

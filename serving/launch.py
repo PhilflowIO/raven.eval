@@ -43,7 +43,9 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from recipe import FLOAT_FORMATS, SERVING_DIR, identity, load_recipes, resolve  # noqa: E402
+from recipe import (  # noqa: E402
+    FLOAT_FORMATS, SERVING_DIR, VLLM_SCHEME_ENV, identity, load_recipes, resolve,
+)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -134,6 +136,9 @@ def build(
     # quantization_config); --dtype is then the activation format around it.
     precision = recipe["precision"]
     argv += ["--dtype", FLOAT_FORMATS[precision["activations"]]]
+    # A quantized scheme names its kernel; this is what makes vLLM pick it
+    # (recipe.VLLM_SCHEME_ENV). It overrides the host's value on purpose.
+    extra.update(VLLM_SCHEME_ENV.get(precision["scheme"], {}))
     if precision["tensor_parallel"] > 1:
         argv += ["--tensor-parallel-size", str(precision["tensor_parallel"])]
     if "max_model_len" in recipe:
