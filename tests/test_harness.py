@@ -305,6 +305,7 @@ def test_make_adapter_threads_endpoint_envs(monkeypatch: pytest.MonkeyPatch) -> 
         "model_id": "nvidia/canary-1b-v2",
         "base_url_env": "NEMO_BENCH_URL",
         "api_key_env": "BENCH_STT_API_KEY",
+        "output_format": None,
     }
 
 
@@ -544,3 +545,10 @@ def test_promote_publishes_dropped_rows_and_verify_holds_them(
     tampered_ok, tampered_rows = verify.verify(artifacts)
     assert not tampered_ok
     assert "n_dropped" in tampered_rows[0]["detail"]
+
+
+def test_make_adapter_threads_the_output_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A model whose server wraps its transcript gets its parser at the adapter."""
+    captured = _capture_vllm_adapter(monkeypatch)
+    runner._make_adapter(KNOWN_MODELS["OpenMOSS-Team/MOSS-Transcribe-Diarize"])
+    assert captured["output_format"] == "moss-timed-speakers"

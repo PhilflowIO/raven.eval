@@ -6,7 +6,9 @@ The source code in this repository is licensed under the MIT License (see LICENS
 This NOTICE covers third-party dataset material whose license requires
 attribution when redistributed. raven.eval never redistributes audio — only,
 where a run has been promoted to a Tier-1 artifact, the reference/hypothesis
-*text* labels under artifacts/.
+*text* labels under artifacts/. A handful of such lines also sit under
+tests/fixtures/ as test input; each dataset's attribution below covers them
+the same way.
 
 --------------------------------------------------------------------------------
 Multilingual LibriSpeech (MLS)

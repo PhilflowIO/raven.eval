@@ -148,7 +148,7 @@ dtype = "bfloat16"
 trust_remote_code = true
 max_model_len = 8192
 chunking = "engine: vLLM's transcription endpoint; max_model_len 8192 instead of the declared 131072, whose KV cache does not fit a 0.4 budget"
-notes = "The output carries speaker and timestamp markup ([0.48][S01]text[1.66]); the WER normaliser strips it, the server passes it through. max_num_seqs 2 matches the 0.4 budget; give a full card more."
+notes = "The output carries speaker and timestamp markup ([0.48][S01]text[1.66]); the server passes it through and the harness parses it (raven_asr.output_formats): prediction holds the spoken text, raw_prediction the server output. max_num_seqs 2 matches the 0.4 budget; give a full card more."
 
 [recipes."qwen3-asr-1.7b"]
 model = "Qwen/Qwen3-ASR-1.7B"
