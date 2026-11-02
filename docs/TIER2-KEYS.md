@@ -133,7 +133,7 @@ The recipes' memory defaults were sized on a 24 GB card shared with other
 work; on an empty card give vLLM more.
 
 **What a run records.** Every answer of these servers names its setup in
-`x_raven`: `engine` (`vllm 0.33.0`, `nemo 3.0.0 (torch …)`), `recipe` (`id` and
+`x_raven`: `engine` (`vllm 0.33.0`, `nemo 3.1.0… (torch …)`), `recipe` (`id` and
 a SHA-256 over that model's recipe and every file that executes it) and
 `batching` (NeMo `max_batch` / `wait_ms` / `max_audio_s`, vLLM `max_num_seqs`),
 `decoding` and `precision`.

@@ -63,7 +63,11 @@ def test_engines_are_pinned_exactly() -> None:
     for pin in ("vllm[audio]==", "flashinfer-python==", "flashinfer-cubin==",
                 "flashinfer-jit-cache==", "transformers==", "librosa=="):
         assert pin in vllm_req, pin
-    assert re.search(r"^nemo_toolkit\[asr\]==\S+$", nemo_req, re.MULTILINE)
+    # NeMo is a release (==x.y.z) or one full git commit, never a branch or tag.
+    assert re.search(
+        r"^nemo_toolkit\[asr\](==\S+| @ git\+https://github\.com/\S+\.git@[0-9a-f]{40})$",
+        nemo_req, re.MULTILINE,
+    )
 
 
 def _pins(text: str) -> dict[str, str]:

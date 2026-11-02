@@ -44,7 +44,8 @@
 # it with these flags:
 #   vLLM          --dtype is precision.activations, so weights and computation
 #                 are in that format; nothing is left to vLLM's "auto".
-#   NeMo 3.0.0    restore_from keeps the stored fp32 and transcribe() runs no
+#   NeMo          (the pinned commit, as 3.0.0 before it) restore_from keeps the
+#                 stored fp32 and transcribe() runs no
 #                 autocast: fp32 throughout (PyTorch defaults, i.e. TF32 for
 #                 cuDNN convolutions on Ampere and later). The server checks the
 #                 restored parameters against precision.weights and refuses to
@@ -143,7 +144,7 @@ batch_wait_ms = 20
 batch_max_audio_s = 40
 longform = true
 chunking = "server: local attention [256, 256]; audio over 900 s is cut into 600 s windows with 3 s overlap and stitched by timestamps"
-notes = "A transducer (library_name nemo), not servable by vLLM. Prompt mode forced to auto; the trailing locale tag the model emits is stripped."
+notes = "A transducer (library_name nemo), not servable by vLLM. EncDecRNNTBPEModelWithPrompt: forced to German with transcribe(target_lang = \"de-DE\") (prompt 9 of the checkpoint's prompt_dictionary), which the pinned NeMo commit honours offline; responses carry x_raven.language_forced = true. Runs before 2026-11-02 (NeMo 3.0.0) could only auto-detect the language. The trailing locale tag the model emits is stripped."
 
 [recipes."primeline-parakeet"]
 model = "primeline/parakeet-primeline"
@@ -175,7 +176,7 @@ batch_wait_ms = 20
 batch_max_audio_s = 40
 longform = false
 chunking = "none in the model: offline mode, full-context attention as the checkpoint ships it (att_context_size [-1, -1]); audio over 900 s is cut into 600 s windows with 3 s overlap and stitched by timestamps"
-notes = "One checkpoint for offline and streaming; this recipe serves the OFFLINE mode the card's WER tables report: longform = false keeps the checkpoint's full-context attention instead of switching it to local attention. EncDecRNNTBPEModelWithPrompt like nemotron-3.5-asr-streaming: on NeMo 3.0.0 offline transcribe cannot force a language (target_lang is honoured only on NeMo Speech main, released as 3.1.0 later), so the server runs prompt mode auto and responses carry x_raven.language_forced = false; the card's numbers use the explicit de prompt. The checkpoint was written by NeMo 3.1.0+7be3e2bf6. German: 'Supported Languages: ... German (de)' and FLEURS (German) 'WER (offline)' 3.87 — https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
+notes = "One checkpoint for offline and streaming; this recipe serves the OFFLINE mode the card's WER tables report: longform = false keeps the checkpoint's full-context attention instead of switching it to local attention. EncDecRNNTBPEModelWithPrompt like nemotron-3.5-asr-streaming: forced to German with transcribe(target_lang = \"de-DE\") (prompt 9), as the card's numbers use the explicit de prompt; responses carry x_raven.language_forced = true. That needs the pinned NeMo commit b19b1a79 (nemo/requirements.txt): NeMo 3.0.0, and also 3.1.0+7be3e2bf6 that wrote this checkpoint, ignore target_lang in offline transcribe, so runs before 2026-11-02 auto-detected the language. German: 'Supported Languages: ... German (de)' and FLEURS (German) 'WER (offline)' 3.87 — https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
 
 # ── vLLM ────────────────────────────────────────────────────────────────────
 

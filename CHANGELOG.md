@@ -84,6 +84,13 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   `model.safetensors` stores, instead of an fp16 cast (#82). The recipe hash
   changes; earlier rows of this model carry `fp16 (cast from bf16)` and are
   superseded by its run-4 re-measurement.
+- The NeMo engine moves from the 3.0.0 release to NeMo Speech commit
+  `b19b1a79` (reports 3.1.0), the first that honours `target_lang` in offline
+  `transcribe()`. The two prompt-conditioned Nemotron models
+  (nemotron-3.5-asr-streaming-0.6b, nemotron-labs-unified-asr-0.6b) are now
+  forced to German (`de-DE`) and report `language_forced = true`; before they
+  auto-detected the language. Every NeMo recipe hash changes and all five NeMo
+  models are re-measured in run 4.
 - The vLLM serving engine moves from 0.28.0 to 0.33.0 (FlashInfer 0.7.2.post1
   with its prebuilt CUDA 13.0 kernels, torch 2.14.0, transformers 5.20.2 now
   pinned too), one engine for every vLLM model. vLLM rows measured on 0.28.0
