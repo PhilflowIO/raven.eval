@@ -24,6 +24,16 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Added
+- WER runs record throughput. Every pass over a subset (a resumed subset has
+  several) appends its wall time, requests, successes, transcribed audio,
+  concurrency, adapter and hardware label (`RAVEN_EVAL_HARDWARE`, never
+  detected) to `throughput_<subset>.jsonl` — on SIGTERM too, flagged
+  `interrupted`. Each `summary.json` result gets a `throughput` block (`rtfx` =
+  `total_audio_s / total_wall_s`, `utterances_per_s`, `comparable` false when
+  passes ran at different concurrency or hardware); `promote` carries the passes
+  into the artifact. `make verify` does not reproduce throughput — it fails a
+  block whose totals or ratios contradict its passes, and accepts artifacts
+  without one.
 - Self-hosted WER models bind to two endpoint env vars by server type
   (`NEMO_BENCH_URL`, `VLLM_BENCH_URL`, optional `BENCH_STT_API_KEY`); five more
   are registered (Qwen3-ASR-1.7B, Voxtral-Mini-3B-2507, whisper-large-v3,

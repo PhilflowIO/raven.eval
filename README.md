@@ -49,8 +49,8 @@ every number from the committed outputs, for anyone.
 
 Every row is re-scored on every push by CI. Full tables with per-file provenance
 and pinned model/dataset commits: [**`BENCHMARKS.md`**](./BENCHMARKS.md).
-Cost is not modelled here; latency is Tier-3 (hardware/network-dependent, not
-portably reproducible).
+Cost is not modelled here; latency and throughput are Tier-3
+(hardware/concurrency/network-dependent, not portably reproducible).
 
 ## Why this repository exists
 
@@ -118,6 +118,17 @@ and we make the reproducible ones *actually* reproducible:
   VoxConverse / CALLHOME-de / AMI (needs an HF token, the gated model license, a GPU,
   and shared FFmpeg libs — see [`docs/TIER2-DER-KEYS.md`](./docs/TIER2-DER-KEYS.md)).
   If it doesn't match what we publish, open an issue.
+
+  Every WER run also records its **throughput**: seconds of audio transcribed per
+  wall-clock second (RTFx), in `summary.json` next to the WER. The per-utterance
+  `latency_s` in the predictions is not that number. With many requests in flight
+  and a server that batches them, a clip's latency includes the time it waited
+  in the queue: latency goes up with concurrency while throughput goes up too.
+  Throughput depends on the hardware (`RAVEN_EVAL_HARDWARE` labels it) and on the
+  concurrency, so a figure is only comparable to one measured on the same of
+  both, and a resumed run whose passes differed in either says so
+  (`comparable: false`). It is a measurement of the run, not a re-scorable
+  number: `make verify` checks only that it adds up.
 
 - **Tier 3 — transparency only (not portably reproducible).**
   Latency / TTFT and any private-fixture result are documented with methodology and an

@@ -113,17 +113,28 @@ make reproduce METRIC=wer DATASET=avemio-german-mixed-test MODEL=Qwen/Qwen3-ASR-
   over.
 - **Exit status of `reproduce`:** `0` every utterance succeeded and the done
   marker exists · `1` incomplete (some requests failed) — run it again · `3` the
-  endpoint serves a different model.
+  endpoint serves a different model. On SIGTERM the run first records its
+  partial pass (below), then dies by SIGTERM exactly as before.
+- **Throughput is recorded per pass.** Each invocation's work on a subset is one
+  line in `throughput_<subset>.jsonl`: wall time from its first request,
+  requests, successes, seconds of audio transcribed, concurrency, adapter, and
+  `interrupted` when it was cut short. Set `RAVEN_EVAL_HARDWARE="1x RTX 3090
+  24GB"` (free text) to label the hardware; nothing is auto-detected, so an
+  unset label is `null`.
 - `MODEL_REV=` is DER-only. A WER model's revision is fixed in the registry: the
   versioned name of a hosted model, and none for a self-hosted endpoint, whose
   loaded weights a client cannot attest.
 
-## Latency / RTFx is NOT a Tier-2 number
+## Latency and throughput are NOT Tier-2 numbers
 
-`predictions_*.jsonl` records a `latency_s` per utterance, but latency and RTFx
-depend on your hardware, region, and network — they are **not** portable. Treat
-them as Tier-3 transparency (documented with methodology), never as a published
-comparable number. Only WER/CER cross the Tier-2 line as reproducible.
+`predictions_*.jsonl` records a `latency_s` per utterance, and every
+`summary.json` result carries a `throughput` block (`rtfx`, `total_audio_s`,
+`total_wall_s`, `utterances_per_s`, `concurrency`, `hardware`, `comparable`, the
+`passes` it adds up). Both depend on your hardware, concurrency, region and
+network — they are **not** portable. Treat them as Tier-3 transparency (a
+measurement of one run, published with its conditions), never as a reproduced
+number. Only WER/CER cross the Tier-2 line as reproducible; `make verify` holds
+the throughput block to its own arithmetic and nothing more.
 
 ## From run to committed proof
 
