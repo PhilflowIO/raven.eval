@@ -29,7 +29,7 @@ from raven_eval_core.run_manifest import (
     same_run_conditions,
 )
 
-from . import throughput
+from . import serving, throughput
 from .adapters.base import ASRAdapter, ServedModelMismatchError
 from .config import (
     FLOZI_REFERENCE_WER,
@@ -367,6 +367,20 @@ class _PredictionLog:
             self._fh = None
 
 
+#: ``_PassMeter.record``: the adapter has not learnt its serving block (yet).
+_NO_SERVING: Any = object()
+
+
+def _serving_of(adapter: ASRAdapter) -> Any:
+    """The adapter's pinned serving block, or :data:`_NO_SERVING` when there is
+    none to record: a hosted API (no serving concept; its summary row says null)
+    or a self-hosted adapter that has not seen a response yet.
+    """
+    if not getattr(adapter, "serving_known", False):
+        return _NO_SERVING
+    return getattr(adapter, "serving", None)
+
+
 @dataclass
 class _PassMeter:
     """What one lane transcribed in this pass, and over how much wall time.
@@ -394,12 +408,17 @@ class _PassMeter:
             self.audio_s += outcome.duration_s
 
     def record(
-        self, *, concurrency: int, adapter: str, interrupted: bool
+        self,
+        *,
+        concurrency: int,
+        adapter: str,
+        interrupted: bool,
+        serving_block: Any = _NO_SERVING,
     ) -> dict[str, Any] | None:
         """The pass line, or None if this lane requested nothing in the pass."""
         if self.started_mono is None or self.started_at is None or not self.n_requests:
             return None
-        return {
+        line = {
             "started_at": _iso(self.started_at),
             "finished_at": _iso(datetime.now(timezone.utc)),
             "wall_s": round(time.monotonic() - self.started_mono, 3),
@@ -411,6 +430,12 @@ class _PassMeter:
             "hardware": throughput.hardware_label(),
             "interrupted": interrupted,
         }
+        if serving_block is not _NO_SERVING:
+            # Which setup answered (raven_asr.serving); null for an endpoint
+            # that does not report one. Left out when no response arrived to
+            # say, so a pass of failed requests cannot contradict the next one.
+            line["serving"] = serving_block
+        return line
 
 
 def _iso(ts: datetime) -> str:
@@ -433,12 +458,20 @@ class _Lane:
 
     def __post_init__(self) -> None:
         self.semaphore = asyncio.Semaphore(self.concurrency)
+        # A resumed subset was partly transcribed already: pin the setup its
+        # earlier passes recorded, so the first answer from a different one
+        # aborts the run instead of being mixed into the score.
+        prior = serving.of_passes(throughput.read_passes(self.log.throughput_path))
+        expect = getattr(self.adapter, "expect_serving", None)
+        if prior is not None and expect is not None:
+            expect(prior)
 
     def record_pass(self, *, interrupted: bool) -> None:
         """Append this lane's pass to its subset's throughput log, if it did work."""
         line = self.meter.record(
             concurrency=self.concurrency, adapter=self.adapter_name,
             interrupted=interrupted,
+            serving_block=_serving_of(self.adapter),
         )
         if line is not None:
             throughput.append_pass(self.log.throughput_path, line)
@@ -735,9 +768,13 @@ def _write_outputs(
     for row in results:
         # Measured on this machine, not re-derivable from the predictions; null
         # for a subset whose passes predate throughput recording.
-        row["throughput"] = throughput.summarize(throughput.read_passes(
+        passes = throughput.read_passes(
             throughput.throughput_path(out_dir, _safe(str(row["subset"])))
-        ))
+        )
+        row["throughput"] = throughput.summarize(passes)
+        # The serving setup every pass of this subset ran on (raven_asr.serving);
+        # null without passes, for servers that report none, and for hosted APIs.
+        row["serving"] = serving.of_passes(passes)
     summary = {
         "schema_version": SCHEMA_VERSION,
         "model_id": spec.model_id,

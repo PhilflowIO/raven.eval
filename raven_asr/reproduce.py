@@ -17,7 +17,8 @@ only the clips that have no transcription yet (see ``raven_asr.runner``).
 Exit status, for an unattended caller that only reads the code:
     0  every utterance of the dataset succeeded and ``.done_<subset>.json`` exists
     1  the run finished but is incomplete (failed requests) — run it again
-    3  the endpoint serves a different model than ``--model``; nothing recorded
+    3  the endpoint serves a different model than ``--model``, or its serving
+       setup (raven_asr.serving) changed under the run; nothing recorded
 """
 
 from __future__ import annotations

@@ -10,6 +10,15 @@ from typing import Protocol
 import numpy as np
 import soundfile as sf
 
+# Defined beside the serving block (stdlib-only, so promote/verify can import
+# it); re-exported here, where every adapter has always imported it from.
+from ..serving import ServedModelMismatchError, ServingChangedError
+
+__all__ = [
+    "ASRAdapter", "ServedModelMismatchError", "ServingChangedError",
+    "TranscribeResult", "encode_wav_pcm16", "resample_mono", "sync_from_async",
+]
+
 
 @dataclass(frozen=True)
 class TranscribeResult:
@@ -55,15 +64,6 @@ def sync_from_async(
 ) -> TranscribeResult:
     """Helper: run ``adapter.atranscribe(...)`` from synchronous code."""
     return asyncio.run(adapter.atranscribe(audio, sample_rate))
-
-
-class ServedModelMismatchError(RuntimeError):
-    """The endpoint reports serving a different model than the run is labelled with.
-
-    Not a property of one utterance but of the whole endpoint, so the runner lets
-    it abort the run instead of recording it as a failed clip: every transcript
-    after it would carry another model's output under this model's name.
-    """
 
 
 def resample_mono(audio: np.ndarray, sample_rate: int, target_rate: int) -> np.ndarray:

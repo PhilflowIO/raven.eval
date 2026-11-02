@@ -46,6 +46,12 @@ equals ``total_audio_s / total_wall_s`` within rounding
 (``raven_asr.throughput.throughput_problem``). A row without one, as in every
 artifact committed before throughput was recorded, is not failed for lacking it.
 
+The ``serving`` block (which recipe, engine and batching answered a self-hosted
+run — ``raven_asr.serving``) is a recording too. It is held to the passes it
+summarises: well formed, and equal to the block every recorded pass names. A row
+without the key, as in every artifact committed before serving was recorded,
+passes.
+
 Exit code is nonzero on any mismatch, on manifest drift, OR on an empty artifacts
 dir (so CI can't silently go green on a run that produced nothing).
 
@@ -98,6 +104,7 @@ from pathlib import Path
 from raven_eval_core.entities import entity_hit_rate
 
 from raven_asr.analysis import entity_interval, wer_interval
+from raven_asr.serving import serving_problem
 from raven_asr.throughput import throughput_problem
 from raven_diar.score import DerScore, score_rttm_pairs
 from raven_eval_core.bleu import bleu_signature, corpus_bleu_score
@@ -328,8 +335,8 @@ def _drop_problem(exp: dict) -> str:
     return ""
 
 
-def _summary_throughput(model_dir: Path) -> dict[str, object]:
-    """``{subset: throughput block}`` of the artifact's summary, where one exists.
+def _summary_rows(model_dir: Path) -> dict[str, dict]:
+    """``{subset: summary row}`` of the artifact's summary, where one exists.
 
     Read only after :func:`_summary_format_problem` passed, so the file parses.
     """
@@ -338,9 +345,9 @@ def _summary_throughput(model_dir: Path) -> dict[str, object]:
         return {}
     summary = json.loads(path.read_text(encoding="utf-8"))
     return {
-        str(r["subset"]): r["throughput"]
+        str(r["subset"]): r
         for r in summary.get("results", [])
-        if isinstance(r, dict) and "subset" in r and "throughput" in r
+        if isinstance(r, dict) and "subset" in r
     }
 
 
@@ -376,7 +383,7 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
             continue
         expected_path = model_dir / "expected.json"
         expected: dict = {}
-        throughput_blocks = _summary_throughput(model_dir)
+        summary_rows = _summary_rows(model_dir)
         if not expected_path.exists():
             rows.append(
                 {"model": str(rel), "subset": "*", "status": "FAIL",
@@ -502,9 +509,16 @@ def verify(artifacts_dir: Path) -> tuple[bool, list[dict]]:
                 ok = False
 
             # Throughput: a measurement, not reproduced — only held consistent.
-            tp_problem = throughput_problem(throughput_blocks.get(subset))
+            summary_row = summary_rows.get(subset, {})
+            tp_problem = throughput_problem(summary_row.get("throughput"))
             if tp_problem:
                 detail = (detail + " " if detail else "") + tp_problem
+                ok = False
+
+            # Serving: also a recording — held to its own passes, not re-derived.
+            sv_problem = serving_problem(summary_row)
+            if sv_problem:
+                detail = (detail + " " if detail else "") + sv_problem
                 ok = False
 
             all_ok = all_ok and ok

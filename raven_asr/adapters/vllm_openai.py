@@ -20,6 +20,11 @@ Three properties a long unattended run depends on:
   the response carries ``x_raven.model`` and it differs from the posted model,
   :class:`~raven_asr.adapters.base.ServedModelMismatchError` aborts the run. A
   server that sends no echo at all is warned about once and trusted.
+* **Serving identity.** The first response's ``x_raven`` engine / recipe /
+  batching (:mod:`raven_asr.serving`) is pinned as :attr:`serving` and recorded
+  with each pass; a later response with a different block raises
+  :class:`~raven_asr.serving.ServingChangedError` (a mismatch, exit 3). A server
+  that reports none pins ``None`` and is warned about once.
 """
 
 from __future__ import annotations
@@ -32,9 +37,11 @@ import time
 import httpx
 import numpy as np
 
+from .. import serving as serving_block
 from ..retry import with_retry
 from .base import (
     ServedModelMismatchError,
+    ServingChangedError,
     TranscribeResult,
     encode_wav_pcm16,
     resample_mono,
@@ -81,6 +88,10 @@ class VllmOpenAIAdapter:
         self._transport = transport
         self._client: httpx.AsyncClient | None = None
         self._warned_no_echo = False
+        #: The serving block this adapter is pinned to (None: none reported).
+        self.serving: dict[str, object] | None = None
+        self._serving_pinned = False
+        self._pinned_by_resume = False
 
     def _http(self) -> httpx.AsyncClient:
         """The adapter's one client, created on first use inside the running loop.
@@ -127,6 +138,54 @@ class VllmOpenAIAdapter:
                 f"server, or point the endpoint env var at the server that has it."
             )
 
+    @property
+    def serving_known(self) -> bool:
+        """Whether :attr:`serving` is pinned (a response arrived, or a resume primed it)."""
+        return self._serving_pinned
+
+    def expect_serving(self, block: dict[str, object]) -> None:
+        """Pin the serving block a resumed subset's earlier passes recorded.
+
+        Called before the first request: the first answer from another setup
+        then aborts the run before any transcript of it is added to the subset.
+        """
+        if self._serving_pinned and block != self.serving:
+            raise ServingChangedError(
+                f"[{self.provider_id}] this run is served by "
+                f"{serving_block.describe(self.serving)}, but earlier passes of the "
+                f"subset being resumed recorded {serving_block.describe(block)}. "
+                "Restore that setup, or remove the subset's output to measure it "
+                "again."
+            )
+        self.serving, self._serving_pinned = block, True
+        self._pinned_by_resume = True
+
+    def _check_serving(self, body: dict[str, object]) -> None:
+        block = serving_block.from_x_raven(body.get("x_raven"))
+        if not self._serving_pinned:
+            self.serving, self._serving_pinned = block, True
+            if block is None:
+                logger.warning(
+                    "[%s] the endpoint does not report its serving recipe "
+                    "(no x_raven.engine/recipe/batching); results will record "
+                    "serving: null", self.provider_id,
+                )
+            return
+        if block != self.serving and self._pinned_by_resume:
+            raise ServingChangedError(
+                f"[{self.provider_id}] earlier passes of the subset being resumed "
+                f"were served by {serving_block.describe(self.serving)}, this "
+                f"endpoint answers with {serving_block.describe(block)}. Restore "
+                "that setup, or remove the subset's output to measure it again."
+            )
+        if block != self.serving:
+            raise ServingChangedError(
+                f"[{self.provider_id}] the endpoint's serving changed mid-run: "
+                f"pinned {serving_block.describe(self.serving)}, now "
+                f"{serving_block.describe(block)}. Transcripts from two setups "
+                "cannot share one score; restart the run on one setup."
+            )
+
     @with_retry()
     async def atranscribe(
         self, audio: np.ndarray, sample_rate: int
@@ -144,6 +203,7 @@ class VllmOpenAIAdapter:
         latency = time.monotonic() - started
         body: dict[str, object] = r.json()
         self._check_served_model(body)
+        self._check_serving(body)
         text = str(body.get("text", "")).strip()
         return TranscribeResult(
             text=text,
