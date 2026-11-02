@@ -60,8 +60,8 @@ def test_every_recipe_says_how_long_audio_is_handled() -> None:
 def test_engines_are_pinned_exactly() -> None:
     vllm_req = (SERVING / "vllm" / "requirements.txt").read_text()
     nemo_req = (SERVING / "nemo" / "requirements.txt").read_text()
-    for pin in ("vllm[audio]==", "flashinfer-python==", "flashinfer-jit-cache==",
-                "transformers==", "librosa=="):
+    for pin in ("vllm[audio]==", "flashinfer-python==", "flashinfer-cubin==",
+                "flashinfer-jit-cache==", "transformers==", "librosa=="):
         assert pin in vllm_req, pin
     assert re.search(r"^nemo_toolkit\[asr\]==\S+$", nemo_req, re.MULTILINE)
 
@@ -78,8 +78,19 @@ def test_flashinfer_kernels_are_prebuilt_for_the_pinned_flashinfer_and_cuda() ->
     version, _, cuda = pins["flashinfer-jit-cache"].partition("+")
     assert version == pins["flashinfer-python"]
     assert re.fullmatch(r"cu\d{3}", cuda), cuda
-    index = re.search(r"^--extra-index-url (\S+)$", text, re.MULTILINE)
-    assert index and index.group(1).rstrip("/").endswith(f"/whl/{cuda}")
+    indexes = [u.rstrip("/") for u in re.findall(r"^--extra-index-url (\S+)$", text, re.MULTILINE)]
+    assert any(u.endswith(f"/whl/{cuda}") for u in indexes), indexes
+
+
+def test_vllm_enables_flashinfer_without_a_cuda_toolkit() -> None:
+    """vLLM 0.33 turns FlashInfer on only when flashinfer-cubin is importable (or
+    nvcc and ninja exist); the jit-cache alone leaves it off. The cubin wheel is
+    CUDA-independent and lives on FlashInfer's own index, not on PyPI."""
+    text = (SERVING / "vllm" / "requirements.txt").read_text()
+    pins = _pins(text)
+    assert pins["flashinfer-cubin"] == pins["flashinfer-python"]
+    indexes = [u.rstrip("/") for u in re.findall(r"^--extra-index-url (\S+)$", text, re.MULTILINE)]
+    assert "https://flashinfer.ai/whl" in indexes, indexes
 
 
 def test_vllm_command_is_the_recipe() -> None:

@@ -61,6 +61,12 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   pinned too), one engine for every vLLM model. vLLM rows measured on 0.28.0
   are not comparable to rows on 0.33.0; each row's `serving` block names its
   engine, and every vLLM model is re-measured on the new one.
+- The vLLM environment adds `flashinfer-cubin` (0.7.2.post1, beside
+  `flashinfer-python` and `flashinfer-jit-cache` of the same version). vLLM 0.33
+  enables FlashInfer only when that package is present or a CUDA toolkit is, so
+  on the GPU host every vLLM model so far started with FlashInfer disabled and
+  the jit-cache unused. With it, the kernels the pins name are the ones that run;
+  vLLM rows served without it are not part of a published round.
 - `granite-speech-4.1-2b-plus` serves IBM's re-trained 2026-10-21 checkpoint
   (`e69efe37`), which vLLM loads from 0.33.0 on, instead of the one the
   September sweep measured. Every other vLLM and transformers recipe was
