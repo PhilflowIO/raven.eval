@@ -150,6 +150,21 @@ class VllmOpenAIAdapter:
         """Whether :attr:`serving` is pinned (a response arrived, or a resume primed it)."""
         return self._serving_pinned
 
+    async def aprobe_serving(self) -> dict[str, object] | None:
+        """The serving block the endpoint answers with, learnt before any clip.
+
+        The runner asks before reusing a subset's recorded rows: a complete
+        subset requests nothing, so its recorded setup could otherwise never be
+        compared with the live one. One second of silence is sent and its
+        transcript discarded; the answer is checked (served model, serving
+        block) and pinned like any first answer, so the run that follows is
+        held to the same setup. Asked once — a pinned block is returned as is.
+        """
+        if not self._serving_pinned:
+            silence = np.zeros(INPUT_SAMPLE_RATE, dtype=np.float32)
+            await self.atranscribe(silence, INPUT_SAMPLE_RATE)
+        return self.serving
+
     def expect_serving(self, block: dict[str, object]) -> None:
         """Pin the serving block a resumed subset's earlier passes recorded.
 

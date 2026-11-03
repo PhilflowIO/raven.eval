@@ -93,6 +93,16 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   contract is unchanged.
 
 ### Fixed
+- **Resume no longer keeps rows measured under another setup** (#87). A
+  complete subset was reused whenever the directory's `summary.json` matched the
+  run — but every invocation rewrites that summary, so after the first dataset
+  of a campaign was re-measured under a new commit or serving recipe, the other
+  datasets' complete rows from the old one counted as done (one model: 9,799
+  new rows for one dataset, 0 for seven). Reuse is now decided per subset
+  against the run manifest and the serving block that subset recorded; a
+  mismatch moves its files aside (`<results-dir>.superseded-<timestamp>/`) and
+  re-measures it. A half-done subset under another serving block is now
+  re-measured the same way instead of aborting with exit 3.
 - MOSS-Transcribe-Diarize's timestamp and speaker markup (`[4.18][S01] … [13.81]`)
   is parsed out of its output in the model layer (`raven_asr.output_formats`)
   instead of being scored as words. Prediction lines of a model with an output

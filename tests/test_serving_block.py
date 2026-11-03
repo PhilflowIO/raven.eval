@@ -3,7 +3,8 @@
 Pins the harness side of ``raven_asr.serving``: the adapter pins the first
 response's engine / recipe / batching / decoding / precision, a later different block aborts the run
 like a served-model mismatch (exit 3, nothing recorded), a resumed subset whose
-earlier passes recorded another block is refused before its first request, a
+rows were measured under another block — complete or half done — is moved
+aside and measured again, one under the same block is resumed, a
 server that reports none records ``serving: null``, and ``promote`` / ``verify``
 carry and check the block without failing artifacts that predate it.
 """
@@ -145,10 +146,64 @@ def test_reproduce_exits_3_on_a_serving_change(
     assert rc == reproduce.EXIT_SERVED_MODEL_MISMATCH == 3
 
 
-def test_resuming_under_another_setup_is_refused_at_its_first_answer(
+def _superseded(out: Path) -> list[Path]:
+    return sorted(out.parent.glob(f"{out.name}.superseded-*"))
+
+
+def test_a_complete_subset_from_another_recipe_is_moved_aside_and_measured_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Issue #87: a complete subset under recipe A must not count for recipe B."""
+    samples = _samples(5)
+    out = tmp_path / "run"
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _Server([BLOCK_A])))
+    _run(out)
+    assert (out / f".done_{SUBSET}.json").exists()
+    old_predictions = (out / f"predictions_{SUBSET}.jsonl").read_text()
+
+    recipe_b = {**BLOCK_A, "recipe": {"id": BLOCK_A["recipe"]["id"], "sha256": "b" * 64}}
+    second = _Server([recipe_b])
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, second))
+    with caplog.at_level("WARNING"):
+        _run(out)
+    assert second.n == 1 + len(samples), "the probe plus every clip, measured again"
+    assert any("serving setup differs: recipe" in r.getMessage() for r in caplog.records)
+    # Nothing of setup A is left in the subset's bookkeeping ...
+    assert _row(out)["serving"] == recipe_b
+    assert [p["serving"] for p in _passes(out)] == [recipe_b]
+    assert serving.serving_problem(_row(out)) == ""
+    # ... and nothing of it was deleted.
+    (aside,) = _superseded(out)
+    assert (aside / f"predictions_{SUBSET}.jsonl").read_text() == old_predictions
+    assert (aside / f".done_{SUBSET}.json").exists()
+    assert [p["serving"] for p in _passes(aside)] == [BLOCK_A]
+    (note,) = [json.loads(x) for x in (aside / "superseded.jsonl").read_text().splitlines()]
+    assert note["subset"] == SUBSET and "recipe" in note["reason"]
+
+
+def test_a_complete_subset_from_the_same_setup_is_still_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    samples = _samples(5)
+    out = tmp_path / "run"
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _Server([BLOCK_A])))
+    _run(out)
+    marker = (out / f".done_{SUBSET}.json").read_text()
+
+    again = _Server([BLOCK_A])
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, again))
+    _run(out)
+    assert again.n == 1, "only the probe; no clip of a complete subset is requested"
+    assert (out / f".done_{SUBSET}.json").read_text() == marker
+    assert _row(out)["serving"] == BLOCK_A
+    assert not _superseded(out)
+
+
+def test_a_partial_subset_from_another_setup_is_moved_aside_and_measured_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     samples = _samples(6)
+    out = tmp_path / "run"
 
     class _FailSome(_Server):
         def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -158,22 +213,43 @@ def test_resuming_under_another_setup_is_refused_at_its_first_answer(
             return super().__call__(request)
 
     _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _FailSome([BLOCK_A])))
-    _run(tmp_path)  # incomplete: one failed clip, the subset stays resumable
-    assert not (tmp_path / f".done_{SUBSET}.json").exists()
+    _run(out)  # incomplete: one failed clip, the subset stays resumable
+    assert not (out / f".done_{SUBSET}.json").exists()
+    before = (out / f"predictions_{SUBSET}.jsonl").read_text()
 
     second = _Server([BLOCK_B])
     _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, second))
-    before = (tmp_path / f"predictions_{SUBSET}.jsonl").read_text()
-    with pytest.raises(serving.ServingChangedError, match="earlier passes"):
-        _run(tmp_path)
-    assert second.n == 1, "the run went on after the first answer from another setup"
-    assert (tmp_path / f"predictions_{SUBSET}.jsonl").read_text() == before
+    _run(out)
+    assert second.n == 1 + len(samples), "no transcript of setup A was resumed"
+    assert (out / f".done_{SUBSET}.json").exists()
+    assert _row(out)["serving"] == BLOCK_B
+    assert [p["serving"] for p in _passes(out)] == [BLOCK_B]
+    (aside,) = _superseded(out)
+    assert (aside / f"predictions_{SUBSET}.jsonl").read_text() == before
 
-    # The setup the earlier passes recorded resumes normally.
-    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _Server([BLOCK_A])))
-    _run(tmp_path)
-    assert (tmp_path / f".done_{SUBSET}.json").exists()
-    assert _row(tmp_path)["serving"] == BLOCK_A
+
+def test_a_partial_subset_from_the_same_setup_resumes_only_what_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    samples = _samples(6)
+    out = tmp_path / "run"
+
+    class _FailSome(_Server):
+        def __call__(self, request: httpx.Request) -> httpx.Response:
+            if self.n == 2:
+                self.n += 1
+                return httpx.Response(400, json={"error": "bad clip"})
+            return super().__call__(request)
+
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, _FailSome([BLOCK_A])))
+    _run(out)
+    again = _Server([BLOCK_A])
+    _wire(monkeypatch, _LazyLoader(samples), _adapter(monkeypatch, again))
+    _run(out)
+    assert again.n == 2, "the probe and the one failed clip"
+    assert (out / f".done_{SUBSET}.json").exists()
+    assert _row(out)["serving"] == BLOCK_A
+    assert not _superseded(out)
 
 
 def test_disagreeing_passes_have_no_single_block() -> None:

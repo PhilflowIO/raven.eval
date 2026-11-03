@@ -477,3 +477,134 @@ def test_reproduce_reports_a_served_model_mismatch_with_its_own_code(
 def test_reproduce_rejects_a_nonpositive_concurrency(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
         _reproduce(tmp_path, "--concurrency", "0")
+
+
+# ── Reuse is decided per subset, against what that subset recorded (#87) ────
+
+
+def _other_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = runner._run_manifest
+
+    def _manifest(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        manifest = real(*args, **kwargs)
+        manifest["git"] = {"sha": "0" * 40, "dirty": False}
+        return manifest
+
+    monkeypatch.setattr(runner, "_run_manifest", _manifest)
+
+
+def test_one_invocation_per_dataset_re_measures_every_stale_complete_subset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The campaign shape that produced #87: each dataset is its own invocation.
+
+    The first re-measured dataset rewrites summary.json under the new manifest;
+    that must not make the other datasets' complete rows from the old one count.
+    """
+    second_subset = "multilingual_librispeech"
+    samples = _samples(4)
+    out = tmp_path / "run"
+
+    def _wire_both(adapter: Any) -> None:
+        monkeypatch.setattr(
+            runner, "_iter_loader_for_subset",
+            lambda s, **_kw: (_LazyLoader(samples), s),
+        )
+        monkeypatch.setattr(runner, "_make_adapter", lambda _spec: adapter)
+
+    def _one(subset: str) -> None:
+        runner.run(model_key=MODEL, subsets=[subset], limit=None, out_dir=out)
+
+    _wire_both(_NoisyAdapter(samples))
+    _one(SUBSET)
+    _one(second_subset)
+
+    _other_commit(monkeypatch)
+    first, second = _NoisyAdapter(samples), _NoisyAdapter(samples)
+    _wire_both(first)
+    _one(SUBSET)
+    _wire_both(second)
+    _one(second_subset)
+    assert len(first.calls) == len(samples)
+    assert len(second.calls) == len(samples), "the stale complete subset was kept"
+    # One directory per invocation (two here, unless both fell in one second).
+    asides = sorted(tmp_path.glob("run.superseded-*"))
+    assert 1 <= len(asides) <= 2
+    assert {p.name for d in asides for p in d.iterdir()} >= {
+        f"predictions_{SUBSET}.jsonl", f"predictions_{second_subset}.jsonl",
+        f".done_{SUBSET}.json", f".done_{second_subset}.json",
+    }
+    # The rows now on disk name the manifest they were measured under.
+    recorded = json.loads((out / f".conditions_{second_subset}.json").read_text())
+    assert recorded["run_manifest"]["git"]["sha"] == "0" * 40
+
+
+def test_a_complete_subset_without_a_recorded_manifest_is_measured_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Rows from before per-subset manifests cannot be held to this run."""
+    samples = _samples(4)
+    out = tmp_path / "run"
+    _wire(monkeypatch, _LazyLoader(samples), _NoisyAdapter(samples))
+    _run(out)
+    (out / f".conditions_{SUBSET}.json").unlink()
+
+    again = _NoisyAdapter(samples)
+    _wire(monkeypatch, _LazyLoader(samples), again)
+    with caplog.at_level("WARNING"):
+        _run(out)
+    assert len(again.calls) == len(samples)
+    assert any("record no run manifest" in r.getMessage() for r in caplog.records)
+    assert (out / f".done_{SUBSET}.json").exists()
+
+
+def test_a_legacy_progress_sidecar_still_resumes_under_the_same_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A subset left half done by the previous code keeps its transcripts."""
+    samples = _samples(6)
+    out = tmp_path / "run"
+    _wire(monkeypatch, _LazyLoader(samples), _NoisyAdapter(samples, fail_on={3}))
+    _run(out)
+    (out / f".conditions_{SUBSET}.json").rename(out / f".progress_{SUBSET}.json")
+
+    retry = _NoisyAdapter(samples)
+    _wire(monkeypatch, _LazyLoader(samples), retry)
+    _run(out)
+    assert retry.calls == [3]
+    assert not (out / f".progress_{SUBSET}.json").exists()
+    assert (out / f".conditions_{SUBSET}.json").exists()
+
+
+def test_a_complete_subset_under_the_same_manifest_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    samples = _samples(4)
+    out = tmp_path / "run"
+    _wire(monkeypatch, _LazyLoader(samples), _NoisyAdapter(samples))
+    _run(out)
+    again = _NoisyAdapter(samples)
+    _wire(monkeypatch, _LazyLoader(samples), again)
+    _run(out)
+    assert again.calls == []
+    assert not list(tmp_path.glob("run.superseded-*"))
+
+
+def test_superseding_a_subset_drops_its_post_hoc_steps_from_the_summary(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "run"
+    out.mkdir()
+    (out / f"predictions_{SUBSET}.jsonl").write_text("{}\n")
+    summary = {"results": [], "post_hoc": [
+        {"step": "cap", "subsets": [SUBSET]},
+        {"step": "cap", "subsets": [SUBSET, "multilingual_librispeech"]},
+    ]}
+    (out / "summary.json").write_text(json.dumps(summary))
+    aside = runner._Supersede().move(out, SUBSET, "test")
+    assert json.loads((out / "summary.json").read_text())["post_hoc"] == [
+        {"step": "cap", "subsets": ["multilingual_librispeech"]},
+    ]
+    assert json.loads((aside / "summary.json").read_text()) == summary
+    assert (aside / f"predictions_{SUBSET}.jsonl").exists()
+    assert not (out / f"predictions_{SUBSET}.jsonl").exists()
