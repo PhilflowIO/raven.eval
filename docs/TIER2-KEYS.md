@@ -139,9 +139,11 @@ a SHA-256 over that model's recipe and every file that executes it) and
 `decoding` and `precision`.
 The harness pins the first answer's block, writes it into every throughput pass
 and into each `summary.json` result row as `serving`, and **aborts** (exit 3,
-nothing recorded) when a later answer — or the earlier passes of a subset being
-resumed — names a different one: a score over transcripts from two setups
-describes neither. A server that reports no block yields `serving: null` and one
+nothing recorded) when a later answer names a different one: a score over
+transcripts from two setups describes neither. Before reusing any recorded rows
+of a subset, the harness sends one second of silence to learn the live block
+and compares it with the one the subset's passes recorded; on a difference the
+rows are moved aside and the subset is measured again (next section). A server that reports no block yields `serving: null` and one
 warning; one that names its recipe but not its precision runs serving code from
 before precision was reported and is refused (exit 3). Hosted APIs always record
 `null`.
@@ -206,9 +208,16 @@ make reproduce METRIC=wer DATASET=avemio-german-mixed-test MODEL=Qwen/Qwen3-ASR-
   abort and only the utterances without a transcript (failed ones included) are
   requested; at the end the file is rewritten to one line per utterance, and the
   scores equal those of an uninterrupted run. A finished subset is marked by
-  `.done_<subset>.json` and skipped. Both only resume under the same commit,
-  `uv.lock` and config as the run that wrote them; otherwise the subset starts
-  over.
+  `.done_<subset>.json` and skipped. Both are reused only when the subset's own
+  recorded conditions match this run: the run manifest in
+  `.conditions_<subset>.json` (commit, `uv.lock`, platform, libraries, config)
+  and, for a self-hosted model, the serving block its throughput passes recorded
+  (engine, recipe id + hash, batching, decoding, precision). Otherwise —
+  complete or half done alike — the subset's files are moved, never deleted, to
+  a sibling directory `<results-dir>.superseded-<UTC timestamp>/` (with a
+  `superseded.jsonl` naming the reason; the warning in the log names it too),
+  and the subset is measured again. Rows from before per-subset manifests carry
+  no `.conditions_` file and are therefore measured again once.
 - **Exit status of `reproduce`:** `0` every utterance succeeded and the done
   marker exists · `1` incomplete (some requests failed) — run it again · `3` the
   endpoint serves a different model. On SIGTERM the run first records its

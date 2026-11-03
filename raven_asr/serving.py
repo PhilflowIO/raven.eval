@@ -27,10 +27,11 @@ Why abort rather than record and mark the row "not comparable": a WER is the
 mean over one subset, and a subset transcribed half under one setup and half
 under another describes neither. Throughput can be summed across differing
 passes and flagged; a transcript cannot be un-mixed. The same rule holds across
-invocations: a resumed subset whose earlier passes recorded another block is
-refused at its first answer, before anything of it is recorded
-(:func:`of_passes` primes the adapter), so the operator decides —
-restore the old setup, or clear the subset's output and measure it again.
+invocations: before any recorded rows of a subset are reused, complete or half
+done, the runner learns the live block (the adapter's ``aprobe_serving``) and
+compares it with the one the subset's passes recorded (:func:`of_passes`). Rows
+from another block are moved aside, never deleted, and the subset is measured
+again (``raven_asr.runner._gate_existing_rows``).
 
 A server that reports none of them (one started from an older copy of the
 recipe) yields a ``null`` block and one warning; its results still stand, they

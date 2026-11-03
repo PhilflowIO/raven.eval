@@ -24,6 +24,7 @@ from tqdm import tqdm
 from raven_eval_core.contract import resolved_contract
 from raven_eval_core.flozi_wer import evaluate, runaway_stats
 from raven_eval_core.run_manifest import (
+    MANIFEST_FIELDS,
     SCHEMA_VERSION,
     build_run_manifest,
     same_run_conditions,
@@ -268,10 +269,13 @@ class _PredictionLog:
 
     Every outcome is appended and flushed the moment it exists, so a run killed
     20 hours into a corpus keeps 20 hours of transcripts. The log is bound to
-    the run manifest it was written under through a ``.progress_<subset>.json``
-    sidecar — the same guard that decides whether a finished subset may be
-    resumed — and is only resumed from when that manifest matches: a transcript
-    from another commit, lockfile or config is not this run's.
+    the run manifest it was written under through a ``.conditions_<subset>.json``
+    sidecar, which outlives the pass: it is how a later invocation tells whether
+    the subset's rows — in progress or complete — were measured as it measures.
+
+    The log trusts its caller to have made that check: :func:`_gate_existing_rows`
+    runs before a log is opened and moves rows from other conditions aside, so
+    whatever is still on disk here may be resumed.
 
     On resume, an utterance with a recorded transcription for the *same
     reference text* is not requested again; a failed one is. The newest line
@@ -284,41 +288,23 @@ class _PredictionLog:
         self, out_dir: Path, subset: str, manifest: dict[str, Any]
     ) -> None:
         self.path = out_dir / f"predictions_{_safe(subset)}.jsonl"
-        self.progress_path = out_dir / f".progress_{_safe(subset)}.json"
+        self.conditions_path = _conditions_path(out_dir, subset)
         # The passes that produced this log. They describe these transcripts, so
         # they are kept and discarded with them, never apart.
         self.throughput_path = throughput.throughput_path(out_dir, _safe(subset))
+        self._legacy_progress_path = _legacy_progress_path(out_dir, subset)
         self._manifest = manifest
         self._fh: Any = None
-        self.prior: dict[str, dict[str, Any]] = {}
-        if self._same_conditions():
-            self.prior = self._read_prior()
-            if self.prior:
-                logger.info(
-                    "resuming %s: %d utterance(s) already recorded",
-                    self.path.name, len(self.prior),
-                )
-        elif self.path.exists() or self.progress_path.exists():
-            logger.warning(
-                "%s was written under a different commit, lockfile or config "
-                "than this run (or by a run without per-utterance resume); "
-                "starting the subset over", self.path.name,
+        self.prior: dict[str, dict[str, Any]] = self._read_prior()
+        if self.prior:
+            logger.info(
+                "resuming %s: %d utterance(s) already recorded",
+                self.path.name, len(self.prior),
             )
-            self.path.unlink(missing_ok=True)
-            self.progress_path.unlink(missing_ok=True)
-        if not self.prior:
+        else:
             # No transcript of this subset will be resumed, so no earlier pass
             # describes the work this run's summary will report.
             self.throughput_path.unlink(missing_ok=True)
-
-    def _same_conditions(self) -> bool:
-        try:
-            progress = json.loads(self.progress_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return False
-        return isinstance(progress, dict) and same_run_conditions(
-            progress.get("run_manifest"), self._manifest
-        )
 
     def _read_prior(self) -> dict[str, dict[str, Any]]:
         prior: dict[str, dict[str, Any]] = {}
@@ -357,9 +343,11 @@ class _PredictionLog:
 
     def append(self, outcome: _Outcome) -> None:
         if self._fh is None:
-            self.progress_path.write_text(
+            self.conditions_path.write_text(
                 json.dumps({"run_manifest": self._manifest}), encoding="utf-8"
             )
+            # Superseded by the sidecar just written (same content, lasting name).
+            self._legacy_progress_path.unlink(missing_ok=True)
             self._fh = self.path.open("a", encoding="utf-8")
             if self._torn_tail():
                 self._fh.write("\n")  # never glue a new line onto a torn one
@@ -764,20 +752,210 @@ def _run_manifest(
     )
 
 
-def _resumable(out_dir: Path, manifest: dict[str, Any]) -> bool:
-    """Whether ``out_dir``'s finished subsets were measured as this run measures.
+# ── Which existing rows of a subset may be reused ────────────────────────────
+#
+# A subset's rows on disk (complete or in progress) are reused only when they
+# were measured exactly as this run measures: under the same run manifest
+# (commit, lockfile, platform, libraries, config) and, for a self-hosted model,
+# by the same serving setup (engine, recipe id + hash, batching, decoding,
+# precision). The check is per subset, against what that subset recorded — not
+# against the directory's summary.json, which every invocation rewrites and
+# which therefore names whichever run wrote last, not the run that measured a
+# given subset. Rows that fail the check are moved aside, never deleted, and
+# the subset is measured again.
 
-    A summary holds one manifest, so it can only describe subsets that share
-    one. Markers left by a different commit, lockfile or config — or by a run
-    from before the manifest existed — are not resumed into it.
+
+def _conditions_path(out_dir: Path, subset: str) -> Path:
+    """The sidecar naming the run manifest a subset's rows were measured under."""
+    return out_dir / f".conditions_{_safe(subset)}.json"
+
+
+def _legacy_progress_path(out_dir: Path, subset: str) -> Path:
+    """The sidecar's name before it outlived the pass (in-progress subsets only)."""
+    return out_dir / f".progress_{_safe(subset)}.json"
+
+
+def _subset_files(out_dir: Path, subset: str) -> list[Path]:
+    """Every file that records one subset's measurement, existing or not."""
+    safe = _safe(subset)
+    return [
+        out_dir / f"predictions_{safe}.jsonl",
+        out_dir / f".done_{safe}.json",
+        _conditions_path(out_dir, subset),
+        _legacy_progress_path(out_dir, subset),
+        throughput.throughput_path(out_dir, safe),
+    ]
+
+
+def _recorded_manifest(out_dir: Path, subset: str) -> Any:
+    """The run manifest a subset's rows recorded, or None if they recorded none."""
+    for path in (_conditions_path(out_dir, subset), _legacy_progress_path(out_dir, subset)):
+        try:
+            sidecar = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(sidecar, dict):
+            return sidecar.get("run_manifest")
+    return None
+
+
+def _manifest_mismatch(recorded: Any, manifest: dict[str, Any]) -> str:
+    """Why ``recorded`` does not describe this run, or ``""`` if it does."""
+    if not isinstance(recorded, dict):
+        return "the rows record no run manifest (written before per-subset manifests)"
+    if same_run_conditions(recorded, manifest):
+        return ""
+    fields = [f for f in MANIFEST_FIELDS if f != "argv" and recorded.get(f) != manifest.get(f)]
+    detail = ", ".join(fields)
+    if "git" in fields:
+        old = (recorded.get("git") or {}).get("sha") if isinstance(recorded.get("git"), dict) else None
+        new = (manifest.get("git") or {}).get("sha")
+        detail += f" (commit {str(old)[:12]} -> {str(new)[:12]})"
+    return f"the run manifest differs: {detail}"
+
+
+async def _current_serving(adapter: ASRAdapter) -> Any:
+    """The serving block the endpoint answers with now, or :data:`_NO_SERVING`
+    for an adapter without one (a hosted API).
+
+    A complete subset sends no request, so without asking there is nothing to
+    compare its recorded setup with; :meth:`aprobe_serving` sends one throwaway
+    clip and pins the block, so the run that follows is held to it as well.
     """
+    probe = getattr(adapter, "aprobe_serving", None)
+    if probe is None:
+        return _NO_SERVING
+    return await probe()
+
+
+def _serving_mismatch(out_dir: Path, subset: str, current: Any) -> str:
+    """Why the subset's recorded serving block is not ``current``, or ``""``."""
+    if current is _NO_SERVING:
+        return ""
+    passes = throughput.read_passes(throughput.throughput_path(out_dir, _safe(subset)))
+    if not any("serving" in p for p in passes):
+        return "the rows record no serving setup, so they cannot be held to this one"
     try:
-        previous = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    return isinstance(previous, dict) and same_run_conditions(
-        previous.get("run_manifest"), manifest
+        recorded = serving.of_passes(passes)
+    except serving.ServingChangedError as exc:
+        return str(exc)
+    if recorded == current:
+        return ""
+    if not isinstance(recorded, dict) or not isinstance(current, dict):
+        return (
+            f"the serving setup differs: recorded {serving.describe(recorded)}, "
+            f"the endpoint now answers with {serving.describe(current)}"
+        )
+    changed = [
+        f"{key} {json.dumps(recorded.get(key), sort_keys=True)} -> "
+        f"{json.dumps(current.get(key), sort_keys=True)}"
+        for key in serving.SERVING_KEYS if recorded.get(key) != current.get(key)
+    ]
+    return "the serving setup differs: " + "; ".join(changed)
+
+
+@dataclass
+class _Supersede:
+    """Where one invocation moves rows from other conditions: a timestamped
+    sibling of the results directory, outside every ``predictions_*`` glob.
+    """
+
+    stamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     )
+
+    def dest(self, out_dir: Path) -> Path:
+        return out_dir.parent / f"{out_dir.name}.superseded-{self.stamp}"
+
+    def move(self, out_dir: Path, subset: str, reason: str) -> Path:
+        dest = self.dest(out_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        for path in _subset_files(out_dir, subset):
+            if path.exists():
+                os.replace(path, dest / path.name)
+        with (dest / "superseded.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(
+                {"subset": subset, "reason": reason, "at": _iso(datetime.now(timezone.utc))},
+                ensure_ascii=False,
+            ) + "\n")
+        _drop_post_hoc_for(out_dir, subset, dest)
+        return dest
+
+
+def _drop_post_hoc_for(out_dir: Path, subset: str, dest: Path) -> None:
+    """Forget the post-hoc steps the summary records for a superseded subset.
+
+    ``post_hoc`` describes what was done to recorded predictions; the moved-aside
+    ones took that history with them (a copy of the summary goes along), and
+    the re-measured rows have none yet.
+    """
+    path = out_dir / "summary.json"
+    try:
+        summary = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    steps = summary.get("post_hoc") if isinstance(summary, dict) else None
+    if not isinstance(steps, list):
+        return
+    if not (dest / "summary.json").exists():
+        (dest / "summary.json").write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    kept = []
+    for step in steps:
+        if isinstance(step, dict) and isinstance(step.get("subsets"), list):
+            step = {**step, "subsets": [s for s in step["subsets"] if s != subset]}
+            if not step["subsets"]:
+                continue
+        kept.append(step)
+    if kept:
+        summary["post_hoc"] = kept
+    else:
+        summary.pop("post_hoc", None)
+    path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+async def _gate_existing_rows(
+    *,
+    out_dir: Path,
+    subset: str,
+    manifest: dict[str, Any],
+    adapter: ASRAdapter,
+    supersede: _Supersede,
+    label: str,
+) -> ResultEntry | None:
+    """Hold a subset's rows on disk to this run; return its entry if complete.
+
+    Rows measured under another run manifest or serving setup — complete or
+    half done alike — are moved aside with a log line naming why, and the
+    subset is measured again. Rows that pass are resumed: a complete subset
+    (``.done_`` marker) is returned and not requested at all, a partial one is
+    continued by :class:`_PredictionLog`.
+    """
+    if not any(p.exists() for p in _subset_files(out_dir, subset)):
+        return None
+    reason = _manifest_mismatch(_recorded_manifest(out_dir, subset), manifest)
+    if not reason:
+        reason = _serving_mismatch(out_dir, subset, await _current_serving(adapter))
+    if reason:
+        dest = supersede.move(out_dir, subset, reason)
+        logger.warning(
+            "[%s] subset %s: not reusing its recorded rows — %s; moved them to "
+            "%s and measuring the subset again", label, subset, reason, dest,
+        )
+        return None
+    marker = out_dir / f".done_{_safe(subset)}.json"
+    if not marker.exists():
+        return None
+    try:
+        entry = ResultEntry(**json.loads(marker.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, TypeError) as exc:
+        logger.warning("[%s] ignoring corrupt marker %s: %s; re-running subset",
+                       label, marker, exc)
+        return None
+    logger.info("[%s] subset %s already done under this run's manifest and "
+                "serving setup (resumed from %s)", label, subset, marker)
+    return entry
 
 
 def _write_outputs(
@@ -1039,8 +1217,9 @@ def _record_subset(
         )
     else:
         marker.write_text(json.dumps(asdict(entry)), encoding="utf-8")
-        # Finished: nothing left to resume from the per-utterance log.
-        (out_dir / f".progress_{_safe(subset)}.json").unlink(missing_ok=True)
+        # Finished. The conditions sidecar stays: it is what lets the next
+        # invocation hold this complete subset to its own manifest.
+        _legacy_progress_path(out_dir, subset).unlink(missing_ok=True)
         logger.info(
             "[%s] subset %s done: %d samples, WER %.4f%%",
             spec.label, subset, metrics.n_samples, metrics.wer_pct,
@@ -1082,31 +1261,18 @@ async def run_async(
     out_dir.mkdir(parents=True, exist_ok=True)
     entries: list[ResultEntry] = []
     manifest = _run_manifest(spec, limit, revision)
-    resumable = _resumable(out_dir, manifest)
+    supersede = _Supersede()
 
     async with _stop_on_sigterm():
         try:
             for subset in subsets:
-                marker = out_dir / f".done_{_safe(subset)}.json"
-                if marker.exists() and not resumable:
-                    logger.warning(
-                        "subset %s was finished under a different commit, lockfile "
-                        "or config than this run; re-running it instead of "
-                        "resuming", subset
-                    )
-                elif marker.exists():
-                    try:
-                        cached = json.loads(marker.read_text(encoding="utf-8"))
-                        entries.append(ResultEntry(**cached))
-                        logger.info(
-                            "subset %s already done (resumed from %s)", subset, marker
-                        )
-                        continue
-                    except (json.JSONDecodeError, TypeError) as exc:
-                        logger.warning(
-                            "ignoring corrupt marker %s: %s; re-running subset",
-                            marker, exc,
-                        )
+                done = await _gate_existing_rows(
+                    out_dir=out_dir, subset=subset, manifest=manifest,
+                    adapter=adapter, supersede=supersede, label=spec.label,
+                )
+                if done is not None:
+                    entries.append(done)
+                    continue
 
                 lane = _Lane(
                     key=model_key, adapter=adapter, concurrency=effective_concurrency,
@@ -1210,35 +1376,25 @@ async def run_multi_async(
         out_dirs[key] = out_root / spec.label
         out_dirs[key].mkdir(parents=True, exist_ok=True)
         manifests[key] = _run_manifest(spec, limit, revision)
-        resumable = _resumable(out_dirs[key], manifests[key])
-        # Resume from any already-present markers.
-        loaded: list[ResultEntry] = []
-        for subset in subsets:
-            mp = out_dirs[key] / f".done_{_safe(subset)}.json"
-            if mp.exists() and not resumable:
-                logger.warning(
-                    "[%s] subset %s was finished under a different commit, "
-                    "lockfile or config than this run; re-running it", key, subset
-                )
-            elif mp.exists():
-                try:
-                    loaded.append(
-                        ResultEntry(**json.loads(mp.read_text(encoding="utf-8")))
-                    )
-                except (json.JSONDecodeError, TypeError) as exc:
-                    logger.warning(
-                        "[%s] ignoring corrupt marker %s: %s", key, mp, exc
-                    )
-        entries[key] = loaded
-
-    done_pairs: set[tuple[str, str]] = {
-        (k, e.subset_arg) for k, es in entries.items() for e in es
-    }
+        entries[key] = []
+    supersede = _Supersede()
 
     async with _stop_on_sigterm():
         try:
             for key in model_keys:
                 adapters[key] = _make_adapter(specs[key])
+            # Resume what each model's subsets recorded under this run's
+            # conditions; move the rest aside before any lane opens a log.
+            done_pairs: set[tuple[str, str]] = set()
+            for key in model_keys:
+                for subset in subsets:
+                    done = await _gate_existing_rows(
+                        out_dir=out_dirs[key], subset=subset, manifest=manifests[key],
+                        adapter=adapters[key], supersede=supersede, label=key,
+                    )
+                    if done is not None:
+                        entries[key].append(done)
+                        done_pairs.add((key, subset))
             for subset in subsets:
                 pending = [k for k in model_keys if (k, subset) not in done_pairs]
                 if not pending:
