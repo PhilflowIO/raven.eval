@@ -106,7 +106,8 @@ def test_a_failed_health_probe_stops_it_at_once(tmp_path: Path, monkeypatch: pyt
     adapter = _Dying(alive=0, error=_status_error(503), health=False, probes=True)
     with pytest.raises(EndpointDeadError, match="health probe"):
         _go(monkeypatch, adapter, tmp_path)
-    assert adapter.probed == 1
+    # Requests in flight may finish before the pass is cancelled and ask again.
+    assert 1 <= adapter.probed <= 2
     assert adapter.calls < runner.DEAD_ENDPOINT_STREAK
 
 
