@@ -30,8 +30,8 @@ Environment (everything a host decides, nothing a model decides):
     HF_HOME, HF_TOKEN         as usual for huggingface_hub
 
 Set by the recipe, never by the host: VLLM_PLUGINS (the recipe's ``vllm_plugins``,
-empty for all others) and, for a quantized scheme, the kernel environment
-(``recipe.VLLM_SCHEME_ENV``).
+empty for all others) and, for a quantized scheme, the kernel environment and
+flags (``recipe.VLLM_SCHEMES``).
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from recipe import (  # noqa: E402
-    FLOAT_FORMATS, SERVING_DIR, VLLM_SCHEME_ENV, identity, load_recipes, resolve,
+    FLOAT_FORMATS, SERVING_DIR, VLLM_SCHEMES, identity, load_recipes, resolve,
 )
 
 DEFAULT_HOST = "127.0.0.1"
@@ -140,11 +140,14 @@ def build(
     # quantization_config); --dtype is then the activation format around it.
     precision = recipe["precision"]
     argv += ["--dtype", FLOAT_FORMATS[precision["activations"]]]
-    # A quantized scheme names its kernel; this is what makes vLLM pick it
-    # (recipe.VLLM_SCHEME_ENV). It overrides the host's value on purpose.
-    extra.update(VLLM_SCHEME_ENV.get(precision["scheme"], {}))
     if precision["tensor_parallel"] > 1:
         argv += ["--tensor-parallel-size", str(precision["tensor_parallel"])]
+    # A quantized scheme names its kernels; its environment and flags are what
+    # make vLLM pick them (recipe.VLLM_SCHEMES). The environment overrides the
+    # host's value on purpose; a recipe's args may not repeat the flags.
+    if (scheme := VLLM_SCHEMES.get(precision["scheme"])) is not None:
+        extra.update(scheme.env)
+        argv += list(scheme.args)
     if "max_model_len" in recipe:
         argv += ["--max-model-len", str(recipe["max_model_len"])]
     if recipe.get("trust_remote_code"):

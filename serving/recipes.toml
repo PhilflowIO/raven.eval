@@ -46,7 +46,7 @@
 #                 are in that format; nothing is left to vLLM's "auto". A
 #                 quantized checkpoint's weights are in the format its
 #                 quantization_config names, and the launcher pins the kernel
-#                 the scheme names (recipe.py, VLLM_SCHEME_ENV).
+#                 the scheme names (recipe.py, VLLM_SCHEMES: environment and flags).
 #   NeMo          (the pinned commit, as 3.0.0 before it) restore_from keeps the
 #                 stored fp32 and transcribe() runs no
 #                 autocast: fp32 throughout (PyTorch defaults, i.e. TF32 for

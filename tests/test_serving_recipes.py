@@ -548,8 +548,12 @@ def test_the_engine_is_started_in_the_declared_precision() -> None:
                 assert "--tensor-parallel-size" not in argv, rid
             else:
                 assert _flag(argv, "--tensor-parallel-size") == str(prec["tensor_parallel"]), rid
-            assert {k: env[k] for k in recipe.VLLM_SCHEME_ENV.get(prec["scheme"], {})} == \
-                recipe.VLLM_SCHEME_ENV.get(prec["scheme"], {}), rid
+            scheme = recipe.VLLM_SCHEMES.get(prec["scheme"], recipe.VllmScheme())
+            assert {k: env[k] for k in scheme.env} == scheme.env, rid
+            if scheme.args:
+                start = argv.index(scheme.args[0])
+                assert tuple(argv[start:start + len(scheme.args)]) == scheme.args, rid
+                assert argv.count(scheme.args[0]) == 1, rid
         elif r["engine"] == "transformers":
             assert env["TRANSFORMERS_DTYPE"] == torch_name, rid
 
@@ -588,6 +592,33 @@ def test_a_quantized_split_recipe_is_launched_as_declared(tmp_path: Path) -> Non
     )
     assert recipe.load_recipes(_with_precision(tmp_path, self_made))["x"]["precision"][
         "checkpoint"]["source"] == "self"
+
+
+_INT8 = ('precision = { weights = "int8", activations = "bf16", scheme = "int8-w8a16-marlin", '
+         'tensor_parallel = 2, checkpoint = { source = "self", recipe = "quantize/m-w8a16.py", '
+         f'dtype = "int8", repo = "org/m-w8a16", revision = "{"b" * 40}" }} }}')
+
+
+def test_a_scheme_pins_its_moe_backend_with_a_flag(tmp_path: Path) -> None:
+    """int8-w8a16-marlin (#78): Marlin for the dense linears through the
+    environment, and for the MoE experts through vLLM's --moe-backend flag."""
+    recipes = recipe.load_recipes(_with_precision(tmp_path, _INT8))
+    argv, env = launch.build(recipes["x"], "x", {"VLLM_DISABLED_KERNELS": "host"}, python=PY)
+    assert env["VLLM_DISABLED_KERNELS"] == "HummingLinearKernel"
+    assert argv.count("--moe-backend") == 1 and _flag(argv, "--moe-backend") == "marlin"
+    # No other scheme sets the flag: an unquantized or FP8 row leaves vLLM's default.
+    for other in (_PRECISION, _W8A16):
+        argv, _ = launch.build(recipe.load_recipes(_with_precision(tmp_path, other))["x"],
+                               "x", {}, python=PY)
+        assert "--moe-backend" not in argv
+
+
+@pytest.mark.parametrize("flag", ['"--moe-backend", "triton"', '"--moe-backend=triton"'])
+def test_args_cannot_override_the_kernels_a_scheme_pins(tmp_path: Path, flag: str) -> None:
+    assert "--moe-backend" in recipe.PRECISION_FLAGS
+    for precision in (_INT8, _PRECISION):
+        with pytest.raises(recipe.RecipeError, match="precision owns"):
+            recipe.load_recipes(_with_precision(tmp_path, precision, args=f"args = [{flag}]\n"))
 
 
 @pytest.mark.parametrize(

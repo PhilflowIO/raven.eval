@@ -18,6 +18,7 @@ import hashlib
 import json
 import re
 import tomllib
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -171,23 +172,52 @@ CHECKPOINT_KEYS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "self": (frozenset({"source", "recipe", "dtype"}), frozenset({"repo", "revision"})),
 }
 _SCHEME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-#: vLLM flags the precision table owns; a recipe's ``args`` may not set them.
-PRECISION_FLAGS = ("--dtype", "--tensor-parallel-size", "-tp")
-#: The kernel a quantized vLLM scheme names, and the environment that makes vLLM
-#: 0.33.0 pick it. vLLM ranks its kernels per layer type and takes the first one
-#: the GPU supports; the scheme is only true if that first one is the named one.
-#:   fp8-w8a16-marlin  FP8 weights, 16-bit activations. Below compute capability
-#:                     8.9 compressed-tensors' W8A8-FP8 falls back to weight-only
-#:                     CompressedTensorsW8A16Fp8 (compressed_tensors.py:896-912),
-#:                     whose CUDA kernels are [Humming, Marlin] in that order
-#:                     (kernels/linear/__init__.py:522-526). vLLM installs
-#:                     humming-kernels itself (requirements/cuda.txt:33), so Marlin
-#:                     runs only with Humming disabled (__init__.py:653).
-#: The launcher sets this environment; a quantized vLLM scheme without an entry
-#: here is refused, so no quantized row is left to vLLM's kernel ranking.
-VLLM_SCHEME_ENV: dict[str, dict[str, str]] = {
-    "fp8-w8a16-marlin": {"VLLM_DISABLED_KERNELS": "HummingFP8ScaledMMLinearKernel"},
+#: How the launcher pins the kernels a quantized vLLM scheme names in vLLM
+#: 0.33.0. vLLM ranks its kernels per layer type and takes the first one the GPU
+#: supports; the scheme is only true if that first one is the named one. A scheme
+#: pins a kernel through the environment (``env``, e.g. VLLM_DISABLED_KERNELS)
+#: and/or through ``vllm serve`` flags (``args``, e.g. --moe-backend); the
+#: launcher sets both, overriding the host's environment on purpose.
+@dataclass(frozen=True)
+class VllmScheme:
+    env: dict[str, str] = field(default_factory=dict)
+    args: tuple[str, ...] = ()
+
+
+#:   fp8-w8a16-marlin   FP8 weights, 16-bit activations. Below compute capability
+#:                      8.9 compressed-tensors' W8A8-FP8 falls back to weight-only
+#:                      CompressedTensorsW8A16Fp8 (compressed_tensors.py:896-912),
+#:                      whose CUDA kernels are [Humming, Marlin] in that order
+#:                      (kernels/linear/__init__.py:522-526). vLLM installs
+#:                      humming-kernels itself (requirements/cuda.txt:33), so Marlin
+#:                      runs only with Humming disabled (__init__.py:653).
+#:   int8-w8a16-marlin  int8 weights (pack-quantized, per channel), 16-bit
+#:                      activations, on a mixture-of-experts model. Dense linears
+#:                      go through the mixed-precision kernels, CUDA order
+#:                      [CutlassW4A8, Machete, Marlin, …, Humming]
+#:                      (kernels/linear/__init__.py:539-548), which
+#:                      humming/priority.py can reorder to put Humming first on
+#:                      sm86; disabling HummingLinearKernel leaves Marlin (Machete
+#:                      is sm90 only). The experts go through compressed-tensors'
+#:                      WNA16 MoE, whose backend is the engine's --moe-backend
+#:                      (engine/arg_utils.py:1845; "marlin" is a MoEBackend,
+#:                      config/kernel.py:122-135, mapped to WNA16MoEBackend.MARLIN
+#:                      in fused_moe/oracle/int_wna16.py:242); "auto" would leave
+#:                      the choice to vLLM's ranking.
+#: A quantized vLLM scheme without an entry here is refused, so no quantized row
+#: is left to vLLM's kernel ranking.
+VLLM_SCHEMES: dict[str, VllmScheme] = {
+    "fp8-w8a16-marlin": VllmScheme(env={"VLLM_DISABLED_KERNELS": "HummingFP8ScaledMMLinearKernel"}),
+    "int8-w8a16-marlin": VllmScheme(
+        env={"VLLM_DISABLED_KERNELS": "HummingLinearKernel"},
+        args=("--moe-backend", "marlin"),
+    ),
 }
+#: vLLM flags the precision table owns; a recipe's ``args`` may not set them:
+#: the format and split, and every flag a scheme sets to pin its kernels.
+PRECISION_FLAGS = ("--dtype", "--tensor-parallel-size", "-tp", *sorted({
+    a for s in VLLM_SCHEMES.values() for a in s.args if a.startswith("-")
+}))
 
 
 def _checkpoint_problem(ckpt: object, scheme: str, model: str, revision: str) -> str:
@@ -260,9 +290,9 @@ def _precision_problem(engine: str, prec: object, recipe: dict[str, Any]) -> str
             return f"args {clash} set what precision owns"
     if problem := _checkpoint_problem(prec["checkpoint"], scheme, recipe["model"], str(recipe["revision"])):
         return problem
-    if engine == "vllm" and scheme != "none" and scheme not in VLLM_SCHEME_ENV:
+    if engine == "vllm" and scheme != "none" and scheme not in VLLM_SCHEMES:
         return (f"precision.scheme {scheme!r} names no kernel the launcher can pin "
-                f"on vllm; known: {sorted(VLLM_SCHEME_ENV)}")
+                f"on vllm; known: {sorted(VLLM_SCHEMES)}")
     return ""
 
 
