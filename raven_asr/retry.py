@@ -42,6 +42,25 @@ class TransientStreamError(Exception):
     """
 
 
+class EndpointDeadError(RuntimeError):
+    """The endpoint stopped serving: no later request of this run can succeed.
+
+    Raised by the runner, never by an adapter: one failed request says nothing
+    about the endpoint, a streak of them or a failed health probe does.
+    """
+
+
+def is_endpoint_failure(exc: BaseException) -> bool:
+    """Whether ``exc`` means the endpoint failed, rather than this one clip.
+
+    A 5xx, a connection that broke or timed out, or a streaming session that
+    died. A 4xx is an answer: the server is up and has an opinion about the clip.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(exc, httpx.TransportError | TransientStreamError)
+
+
 def _is_modal_exhaustion(exc: BaseException) -> bool:
     """Best-effort detection of Modal queue/resource backpressure.
 

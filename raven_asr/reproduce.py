@@ -23,6 +23,9 @@ Exit status, for an unattended caller that only reads the code:
        leakage, raven_eval_core.leakage): the serving stack mixed requests. Not
        scored, no done marker, ``.leaked_<subset>.json`` names the examples; a
        re-run under the same serving fails the same way
+    5  the endpoint died during the run: requests in a row failed with a 5xx or
+       a broken connection, or its health probe failed. The subset was stopped
+       there, no done marker; what was transcribed stays for a later resume
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from pathlib import Path
 
 from .adapters.base import ServedModelMismatchError
 from .config import FLOZI_SUBSETS, KNOWN_MODELS, WER_DATASETS, resolve_wer_dataset
+from .retry import EndpointDeadError
 from .runner import _safe, leak_report_path, run
 
 _SUPPORTED_METRICS = ("wer",)
@@ -41,6 +45,7 @@ _SUPPORTED_METRICS = ("wer",)
 EXIT_INCOMPLETE = 1
 EXIT_SERVED_MODEL_MISMATCH = 3
 EXIT_LEAKED = 4
+EXIT_ENDPOINT_DEAD = 5
 
 
 def _positive_int(value: str) -> int:
@@ -139,6 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     except ServedModelMismatchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_SERVED_MODEL_MISMATCH
+    except EndpointDeadError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ENDPOINT_DEAD
     summary_path = out_dir / "summary.json"
     if summary_path.exists():
         _print_benchmarks_row(summary_path, args.model)
