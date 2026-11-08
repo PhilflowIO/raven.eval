@@ -50,6 +50,7 @@ from .config import (
 from .datasets import load_loader_class
 from .datasets.base import DatasetLoader, RowTally, Sample
 from .model_index import ResultEntry, build_model_index, write_yaml
+from .retry import EndpointDeadError, is_endpoint_failure
 
 logger = logging.getLogger("raven_asr.runner")
 
@@ -99,6 +100,9 @@ class _Outcome:
     # ``prediction`` is then the spoken text parsed out of it.
     raw_prediction: str | None = None
     segments: list[dict[str, object]] | None = None
+    # The request failed because of the endpoint, not this clip
+    # (raven_asr.retry.is_endpoint_failure). Never written to the predictions.
+    endpoint_failure: bool = False
 
 
 @dataclass(frozen=True)
@@ -236,6 +240,7 @@ async def _attempt(adapter: ASRAdapter, sample: Sample) -> _Outcome:
             reference=sample.reference,
             duration_s=duration_s,
             error=f"{type(exc).__name__}: {exc}",
+            endpoint_failure=is_endpoint_failure(exc),
         )
     return _Outcome(
         sample_id=sample.sample_id,
@@ -452,6 +457,57 @@ def _iso(ts: datetime) -> str:
     return ts.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+#: Clips in a row that may fail on the endpoint before the pass is given up. Each
+#: of them already survived the adapter's retries, about a minute of backoff.
+DEAD_ENDPOINT_STREAK = 10
+#: Clips in a row after which the endpoint is asked whether it is still healthy.
+HEALTH_PROBE_AFTER = 2
+
+
+@dataclass
+class _EndpointWatch:
+    """Stops a pass whose endpoint died, instead of failing the rest of the corpus.
+
+    A vLLM engine that died keeps its API server up and answers 503 to everything,
+    so without this a run spends the adapter's retries on every remaining clip:
+    1,007 clips and over two hours for one dead engine (raven.eval#93). Any answer
+    from the endpoint ends a streak, a 4xx included. Completed requests are counted
+    in completion order; the limit is at least twice the requests in flight, so one
+    outage shared by everything in flight cannot reach it on its own.
+    """
+
+    adapter: ASRAdapter
+    concurrency: int
+    streak: int = 0
+    probing: bool = False
+
+    async def observe(self, outcome: _Outcome) -> None:
+        """Count one finished request; raises :class:`EndpointDeadError` when dead."""
+        if not outcome.endpoint_failure:
+            self.streak = 0
+            return
+        self.streak += 1
+        limit = max(DEAD_ENDPOINT_STREAK, 2 * self.concurrency)
+        if self.streak >= limit:
+            raise EndpointDeadError(
+                f"{self.streak} requests in a row failed on the endpoint; "
+                f"last: {outcome.error}"
+            )
+        probe = getattr(self.adapter, "aprobe_health", None)
+        if probe is None or self.probing or self.streak < HEALTH_PROBE_AFTER:
+            return
+        self.probing = True
+        try:
+            healthy = await probe()
+        finally:
+            self.probing = False
+        if healthy is False:
+            raise EndpointDeadError(
+                f"health probe failed after {self.streak} requests in a row "
+                f"failed on the endpoint; last: {outcome.error}"
+            )
+
+
 @dataclass
 class _Lane:
     """One model's share of a subset pass: its adapter, pool, log and meter."""
@@ -465,9 +521,11 @@ class _Lane:
     outcomes: dict[str, _Outcome] = field(default_factory=dict)
     meter: _PassMeter = field(default_factory=_PassMeter)
     semaphore: asyncio.Semaphore = field(init=False)
+    watch: _EndpointWatch = field(init=False)
 
     def __post_init__(self) -> None:
         self.semaphore = asyncio.Semaphore(self.concurrency)
+        self.watch = _EndpointWatch(self.adapter, self.concurrency)
         # A resumed subset was partly transcribed already: pin the setup its
         # earlier passes recorded, so the first answer from a different one
         # aborts the run instead of being mixed into the score.
@@ -496,8 +554,9 @@ async def _run_pool(samples: Iterable[Sample], lanes: list[_Lane], desc: str) ->
     the size of the subset. A sample whose transcription a lane already has is
     not sent to that lane again.
 
-    A :class:`ServedModelMismatchError` from any request stops the pass: the
-    remaining requests are cancelled and the error propagates.
+    A :class:`ServedModelMismatchError` from any request, or an endpoint found
+    dead (:class:`EndpointDeadError`), stops the pass: the remaining requests are
+    cancelled and the error propagates.
     """
     window = asyncio.Semaphore(sum(lane.concurrency for lane in lanes))
     order: list[str] = []
@@ -517,6 +576,7 @@ async def _run_pool(samples: Iterable[Sample], lanes: list[_Lane], desc: str) ->
         lane.meter.count(outcome)
         lane.outcomes[outcome.sample_id] = outcome
         pbars[lane.key].update(1)
+        await lane.watch.observe(outcome)
 
     async def _fan_out(sample: Sample, todo: list[_Lane]) -> None:
         try:
@@ -558,7 +618,7 @@ async def _run_pool(samples: Iterable[Sample], lanes: list[_Lane], desc: str) ->
             pending.add(task)
             task.add_done_callback(pending.discard)
             del sample
-        if pending:
+        if pending and not fatal:
             await asyncio.gather(*pending)
         if fatal:
             raise fatal[0]
@@ -1586,6 +1646,9 @@ def main(argv: list[str] | None = None) -> int:
         except ServedModelMismatchError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 3
+        except EndpointDeadError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 5
         except RunTerminated as exc:
             _exit_like_signal(exc.signum)
         for k, p in paths.items():
@@ -1612,6 +1675,9 @@ def main(argv: list[str] | None = None) -> int:
     except ServedModelMismatchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
+    except EndpointDeadError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 5
     except RunTerminated as exc:
         _exit_like_signal(exc.signum)
     print(f"wrote {yaml_path}")

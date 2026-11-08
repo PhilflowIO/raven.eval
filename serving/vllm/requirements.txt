@@ -55,6 +55,14 @@
 # 2026-11-02): vllm, torch, transformers, flashinfer, librosa and numpy stay
 # exactly as without NeMo; only fsspec (2025.12.0) and packaging (24.2) resolve
 # lower.
+#
+# raven-vllm-plugin (serving/vllm/plugin in this repository) keeps vLLM 0.33.0's
+# Transformers backend from killing its engine on a batch of audio clips of
+# different lengths: _select_item_kwargs (multimodal.py:1154-1165) hands the model
+# a per-clip tensor as a one-element list (raven.eval#93). Unfixed upstream as of
+# 2026-11-08. Pinned to the commit that added it: a change to the plugin moves this
+# line, and with it the venv stamp that rebuilds the environment. VibeVoice-ASR
+# loads it through `vllm_plugins`; remove it once a pinned vLLM carries a fix.
 --extra-index-url https://flashinfer.ai/whl/cu130
 --extra-index-url https://flashinfer.ai/whl
 vllm[audio]==0.33.0
@@ -69,3 +77,4 @@ httpx>=0.27
 python-multipart>=0.0.9
 nemo_toolkit[asr] @ git+https://github.com/PhilflowIO/Speech.git@2bd9dcb68570d254684c6ecdf21dc3bbfdb1ead2
 peft==0.21.2
+raven-vllm-plugin @ git+https://github.com/PhilflowIO/raven.eval.git@ac5ec1412951039d12397ceaf5652de356579d3d#subdirectory=serving/vllm/plugin

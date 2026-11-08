@@ -54,6 +54,9 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
+#: The shim's /health asks vLLM twice with 5 s each before it answers.
+HEALTH_TIMEOUT_S = 30.0
+
 DEFAULT_LANGUAGE = "de"
 DEFAULT_TIMEOUT_S = 300.0
 #: The rate every self-hosted endpoint is sent, whatever the corpus's native rate.
@@ -164,6 +167,25 @@ class VllmOpenAIAdapter:
             silence = np.zeros(INPUT_SAMPLE_RATE, dtype=np.float32)
             await self.atranscribe(silence, INPUT_SAMPLE_RATE)
         return self.serving
+
+    async def aprobe_health(self) -> bool | None:
+        """Whether the server says it can serve; None when it does not say.
+
+        vLLM's /health answers 503 once its engine has died, and the shim and the
+        NeMo server pass on what they know the same way. Refused connections and
+        5xx are a no. A timeout proves nothing about a server busy with long
+        clips, and a server without the route has not said anything.
+        """
+        root = self._base_url.removesuffix("/v1")
+        try:
+            r = await self._http().get(f"{root}/health", timeout=HEALTH_TIMEOUT_S)
+        except httpx.TimeoutException:
+            return None
+        except httpx.TransportError:
+            return False
+        if r.status_code >= 500:
+            return False
+        return True if r.is_success else None
 
     def expect_serving(self, block: dict[str, object]) -> None:
         """Pin the serving block a resumed subset's earlier passes recorded.
