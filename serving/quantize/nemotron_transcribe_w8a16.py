@@ -30,11 +30,14 @@ Steps (``all`` runs them in order; each one can be re-run on its own):
             re-encoded: every output tensor is a byte-for-byte copy or transpose of
             a source tensor. Shards of <= 5 GiB, so the quantizer holds little in
             RAM; the CTC head goes to its own file with the source's metadata
-            (the plugin reads the head's configuration from there).
+            (the plugin reads the head's configuration from there), and so do the
+            MTP draft layers, whose fused experts the quantizer would otherwise
+            rewrite (see restore_passthrough).
   quantize  llm-compressor model_free_ptq over the converted shards on the CPU
-            (QUANT_TARGETS / QUANT_IGNORE below), then the CTC file is restored
-            byte-identical (convert_checkpoint rewrites every shard without its
-            safetensors metadata).
+            (QUANT_TARGETS / QUANT_IGNORE below), then the CTC and MTP files are
+            restored byte-identical (convert_checkpoint rewrites every shard
+            without its safetensors metadata, and splits 3-D tensors whose name
+            contains "down_proj", which the MTP layer's packed experts do).
   verify    the output against the source: the scheme in config.json, exactly
             the expected Linear set quantized (EXPECTED_QUANTIZED), every other
             tensor byte-identical to the converted input.
@@ -74,6 +77,8 @@ PLUGIN_COMMIT = "821e036741a60332ca90b160243d88d13a90ec84"
 SHARD_BYTES = 5 * 2**30
 CTC_FILE = "model-ctc-bf16.safetensors"
 CTC_PREFIX = "ctc_timestamp."
+MTP_FILE = "model-mtp-bf16.safetensors"
+MTP_PREFIX = "llm.mtp."
 INDEX_FILE = "model.safetensors.index.json"
 SUMS_FILE = "SHA256SUMS"
 
@@ -223,14 +228,24 @@ def plan(header: dict[str, Any]) -> list[Out]:
     return outs
 
 
+def _apart(name: str) -> str | None:
+    """The file of its own a tensor goes to, or None for the numbered shards."""
+    if name.startswith(CTC_PREFIX):
+        return CTC_FILE
+    if name.startswith(MTP_PREFIX):
+        return MTP_FILE
+    return None
+
+
 def shards(outs: list[Out], limit: int | None = None) -> list[list[Out]]:
-    """The CTC head on its own; everything else in order, <= ``limit`` bytes per shard."""
+    """The CTC head and the MTP layers on their own; the rest in order, <= ``limit`` bytes per shard."""
     limit = limit or SHARD_BYTES
-    ctc = [o for o in outs if o.name.startswith(CTC_PREFIX)]
+    ctc = [o for o in outs if _apart(o.name) == CTC_FILE]
+    mtp = [o for o in outs if _apart(o.name) == MTP_FILE]
     groups: list[list[Out]] = [[]]
     size = 0
     for o in outs:
-        if o.name.startswith(CTC_PREFIX):
+        if _apart(o.name) is not None:
             continue
         n = _nbytes(o.dtype, o.shape)
         if groups[-1] and size + n > limit:
@@ -238,7 +253,7 @@ def shards(outs: list[Out], limit: int | None = None) -> list[list[Out]]:
             size = 0
         groups[-1].append(o)
         size += n
-    return [g for g in groups if g] + ([ctc] if ctc else [])
+    return [g for g in groups if g] + ([mtp] if mtp else []) + ([ctc] if ctc else [])
 
 
 def _producer(buf: mmap.mmap, start: int, info: dict[str, Any], out: Out):
@@ -272,12 +287,12 @@ def convert(source: Path, work: Path) -> None:
             shutil.copyfile(item, work / rel)
     weight_map: dict[str, str] = {}
     total = 0
-    n_main = sum(1 for g in groups if not g[0].name.startswith(CTC_PREFIX))
+    n_main = sum(1 for g in groups if _apart(g[0].name) is None)
     with weights.open("rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as buf:
         for i, group in enumerate(groups):
-            is_ctc = group[0].name.startswith(CTC_PREFIX)
-            fname = CTC_FILE if is_ctc else f"model-{i + 1:05d}-of-{n_main:05d}.safetensors"
-            meta = metadata if is_ctc else {"format": "pt"}
+            apart = _apart(group[0].name)
+            fname = apart or f"model-{i + 1:05d}-of-{n_main:05d}.safetensors"
+            meta = metadata if apart == CTC_FILE else {"format": "pt"}
             write_safetensors(work / fname, [
                 (o.name, o.dtype, o.shape, _producer(buf, start, header[o.source], o)) for o in group
             ], meta)
@@ -299,20 +314,36 @@ def quantize(work: Path, out: Path, workers: int) -> None:
     scheme = QuantizationScheme(targets=QUANT_TARGETS, weights=QuantizationArgs(**WEIGHT_ARGS))
     model_free_ptq(model_stub=str(work), save_directory=str(out), scheme=scheme,
                    ignore=QUANT_IGNORE, max_workers=workers, device="cpu")
-    restore_ctc(work, out)
+    restore_passthrough(work, out)
 
 
-def restore_ctc(work: Path, out: Path) -> None:
-    """Put the CTC file back byte-identical once its tensors are proven unchanged."""
+def restore_passthrough(work: Path, out: Path) -> None:
+    """Put the CTC and MTP files back byte-identical, under the converted names.
+
+    The CTC tensors must be proven unchanged first (only its metadata is lost).
+    The MTP file cannot be compared name by name: ``model_free_ptq`` splits every
+    3-D tensor whose name contains "down_proj", which the MTP layer's packed
+    ``experts.down_projs`` does, and renames it. No MTP tensor is quantized
+    (QUANT_IGNORE), so the file is the converted one; ``verify`` proves it and the
+    index is put back for its tensors.
+    """
     src, dst = work / CTC_FILE, out / CTC_FILE
-    if not src.exists():
-        return
-    a, _, sa = read_header(src)
-    b, _, sb = read_header(dst)
-    if set(a) != set(b) or any(_tensor_bytes(src, sa, a[k]) != _tensor_bytes(dst, sb, b[k])
-                               or a[k]["dtype"] != b[k]["dtype"] for k in a):
-        raise RuntimeError(f"{dst} differs from {src} beyond its metadata")
-    shutil.copyfile(src, dst)
+    if src.exists():
+        a, _, sa = read_header(src)
+        b, _, sb = read_header(dst)
+        if set(a) != set(b) or any(_tensor_bytes(src, sa, a[k]) != _tensor_bytes(dst, sb, b[k])
+                                   or a[k]["dtype"] != b[k]["dtype"] for k in a):
+            raise RuntimeError(f"{dst} differs from {src} beyond its metadata")
+        shutil.copyfile(src, dst)
+    src, dst = work / MTP_FILE, out / MTP_FILE
+    if src.exists():
+        shutil.copyfile(src, dst)
+        converted = json.loads((work / INDEX_FILE).read_text())
+        index = json.loads((out / INDEX_FILE).read_text())
+        weight_map = {n: f for n, f in index["weight_map"].items() if f != MTP_FILE}
+        weight_map |= {n: f for n, f in converted["weight_map"].items() if f == MTP_FILE}
+        index["weight_map"] = dict(sorted(weight_map.items()))
+        (out / INDEX_FILE).write_text(json.dumps(index, indent=2) + "\n")
 
 
 # ── verify / sums ───────────────────────────────────────────────────────────
