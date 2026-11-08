@@ -337,15 +337,15 @@ notes = "GraniteSpeechForConditionalGeneration, a class vLLM 0.33.0 registers. T
 model = "mistralai/Voxtral-Mini-4B-Realtime-2602"
 revision = "2769294da9567371363522aac9bbcfdd19447add"
 engine = "vllm"
-decoding = { mode = "greedy", max_tokens = 1024 }
+decoding = { mode = "greedy", max_tokens = 1024, stop_at_audio_end = true }
 precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 1, checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 9
-gpu_mem = 0.6
+gpu_mem = 0.7
 max_num_seqs = 16
 max_model_len = 16384
 args = ["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral", "--compilation-config", "{\"cudagraph_mode\": \"PIECEWISE\"}"]
 chunking = "none: vLLM's transcription endpoint sends the whole file as one offline request (no clip limit for this class); max_model_len 16384 text positions at 80 ms each hold ~21 min, instead of the declared 131072, whose RoPE tables only cost memory here"
-notes = "A streaming model served OFFLINE: vLLM 0.33.0's VoxtralRealtimeGeneration answers /v1/audio/transcriptions with mistral-common's StreamingMode.OFFLINE, no websocket. The transcription delay is the checkpoint's own tekken.json transcription_delay_ms = 480 at the pinned commit — the setting of the card's FLEURS table and its recommended 'sweet spot'. Mistral-format loading reads consolidated.safetensors (8.9 GB); cudagraph_mode PIECEWISE is the card's serve flag (the class refuses FULL cudagraphs for mixed batches). German: FLEURS German 6.19 % at 480 ms delay — https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602"
+notes = "A streaming model served OFFLINE: vLLM 0.33.0's VoxtralRealtimeGeneration answers /v1/audio/transcriptions with mistral-common's StreamingMode.OFFLINE, no websocket. The transcription delay is the checkpoint's own tekken.json transcription_delay_ms = 480 at the pinned commit — the setting of the card's FLEURS table and its recommended 'sweet spot'. Mistral-format loading reads consolidated.safetensors (8.9 GB); cudagraph_mode PIECEWISE is the card's serve flag (the class refuses FULL cudagraphs for mixed batches). stop_at_audio_end: the model decodes one token per 80 ms frame and vLLM 0.33.0 does not stop it at the last one; past it the batch's audio rows shift onto the wrong requests and transcripts continue with other clips (raven.eval#89, measured on 20 FLEURS clips: 8-11 leaked at concurrency 2-8, none at 1). The shim caps every request at the audio end, the bound vllm-project/vllm#54516 adds upstream — drop the flag once a pinned vLLM carries it. gpu_mem 0.7: 0.6 leaves 5.1 GiB KV cache on a 24 GB card and max_model_len 16384 needs 5.7 GiB, so the engine refuses to start. German: FLEURS German 6.19 % at 480 ms delay — https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602"
 
 [recipes."vibevoice-asr"]
 model = "microsoft/VibeVoice-ASR-HF"

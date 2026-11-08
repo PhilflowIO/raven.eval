@@ -83,6 +83,12 @@ DECODING_MODES = frozenset({"greedy"})
 #:                        (vLLM: max_completion_tokens / max_tokens), together
 #:                        with temperature 0 and repetition_penalty 1.0, so a
 #:                        generation_config.json default can never apply.
+#:                        stop_at_audio_end (vllm only, optional) — the model
+#:                        decodes one position per audio frame and has no audio
+#:                        past the last one (Voxtral Realtime): the shim lowers
+#:                        max_tokens per request to the frames left after the
+#:                        prompt, so generation ends where the audio ends
+#:                        (shim._frames_after_prompt, raven.eval#89).
 #:   nemo                 the checkpoint's own decoding config, which the server
 #:                        does not change; it refuses to start when the restored
 #:                        checkpoint disagrees. Transducers (strategy
@@ -91,7 +97,7 @@ DECODING_MODES = frozenset({"greedy"})
 #:                        greedy) at most max_generation_delta tokens beyond the
 #:                        encoder length. Those are their length bounds.
 DECODING_KEYS: dict[str, frozenset[str]] = {
-    "vllm": frozenset({"mode", "max_tokens"}),
+    "vllm": frozenset({"mode", "max_tokens", "stop_at_audio_end"}),
     "transformers": frozenset({"mode", "max_tokens"}),
     "nemo": frozenset({"mode", "strategy", "max_symbols", "beam_size", "len_pen",
                        "max_generation_delta"}),
@@ -118,6 +124,8 @@ def _decoding_problem(engine: str, decoding: object) -> str:
         isinstance(decoding["max_tokens"], int) and decoding["max_tokens"] > 0
     ):
         return "decoding.max_tokens must be a positive integer"
+    if "stop_at_audio_end" in decoding and decoding["stop_at_audio_end"] is not True:
+        return "decoding.stop_at_audio_end is either true or absent"
     return ""
 
 
@@ -393,6 +401,15 @@ def decoding(name: str) -> dict[str, Any] | None:
         recipes = load_recipes()
         return dict(recipes[resolve(name, recipes)]["decoding"])
     except (OSError, RecipeError, tomllib.TOMLDecodeError):
+        return None
+
+
+def revision_of(name: str) -> str | None:
+    """The pinned model revision of ``name``'s recipe, or None."""
+    try:
+        recipes = load_recipes()
+        return str(recipes[resolve(name, recipes)]["revision"])
+    except (OSError, RecipeError, tomllib.TOMLDecodeError, KeyError):
         return None
 
 

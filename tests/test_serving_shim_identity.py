@@ -267,5 +267,63 @@ def test_nemotron_transcribe_gets_the_cards_benchmark_request(load_shim, model):
 ])
 def test_the_new_transcription_models_pass_through(load_shim, model):
     mod, calls = load_shim([model])
+    mod._frames_after_prompt = lambda *_a: 200  # the engine's audio stack is not installed here
     assert _post(mod, model).status_code == 200
     assert "/v1/audio/transcriptions" in calls and "/v1/chat/completions" not in calls
+
+
+VOXTRAL_RT = "mistralai/Voxtral-Mini-4B-Realtime-2602"
+
+
+def _sent_max_tokens(body: bytes) -> bytes:
+    return body.split(b'name="max_completion_tokens"')[1][:40].split(b"\r\n")[2]
+
+
+def test_a_streaming_model_is_stopped_where_its_audio_ends(load_shim):
+    """raven.eval#89: past its last audio frame Voxtral Realtime decodes on zero or
+    another request's audio, so the shim caps every request at the frames left."""
+    mod, bodies = _load_recording(load_shim, VOXTRAL_RT)
+    seen: list[tuple] = []
+
+    def frames(audio, model, revision, language):
+        seen.append((audio, model, revision, language))
+        return 57
+
+    mod._frames_after_prompt = frames
+    assert _post(mod, VOXTRAL_RT).status_code == 200
+    assert _sent_max_tokens(bodies[0]) == b"57"
+    # Computed for the served model at its pinned revision, on the uploaded bytes.
+    assert seen == [(b"RIFF....", VOXTRAL_RT, "2769294da9567371363522aac9bbcfdd19447add", "de")]
+
+
+def test_the_audio_end_never_raises_the_recipe_cap(load_shim):
+    mod, bodies = _load_recording(load_shim, VOXTRAL_RT)
+    mod._frames_after_prompt = lambda *_a: 5000
+    assert _post(mod, VOXTRAL_RT).status_code == 200
+    assert _sent_max_tokens(bodies[0]) == b"1024"
+
+
+def test_audio_too_short_for_the_prompt_is_refused(load_shim):
+    mod, bodies = _load_recording(load_shim, VOXTRAL_RT)
+    mod._frames_after_prompt = lambda *_a: 0
+    r = _post(mod, VOXTRAL_RT)
+    assert r.status_code == 400 and "too short" in r.text
+    assert bodies == []
+
+
+def test_models_without_the_flag_do_not_decode_the_audio(load_shim):
+    mod, bodies = _load_recording(load_shim, "Qwen/Qwen3-ASR-1.7B")
+
+    def boom(*_a):
+        raise AssertionError("only stop_at_audio_end recipes look at the audio")
+
+    mod._frames_after_prompt = boom
+    assert _post(mod, "Qwen/Qwen3-ASR-1.7B").status_code == 200
+    assert _sent_max_tokens(bodies[0]) == b"1024"
+
+
+def test_the_flag_is_reported_with_the_decoding(load_shim):
+    mod, _ = _load_recording(load_shim, VOXTRAL_RT)
+    mod._frames_after_prompt = lambda *_a: 57
+    x = _post(mod, VOXTRAL_RT).json()["x_raven"]
+    assert x["decoding"] == {"mode": "greedy", "max_tokens": 1024, "stop_at_audio_end": True}
