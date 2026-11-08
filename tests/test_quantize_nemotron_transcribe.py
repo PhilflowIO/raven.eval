@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -131,10 +132,47 @@ def test_shards_respect_the_limit_and_keep_the_ctc_head_apart(q, release):
     outs = q.plan(header)
     groups = q.shards(outs, limit=64)
     assert groups[-1] and all(o.name.startswith("ctc_timestamp.") for o in groups[-1])
-    for group in groups[:-1]:
+    assert groups[-2] and all(o.name.startswith("llm.mtp.") for o in groups[-2])
+    for group in groups[:-2]:
         assert not any(o.name.startswith("ctc_timestamp.") for o in group)
         assert len(group) == 1 or sum(q._nbytes(o.dtype, o.shape) for o in group) <= 64
     assert sorted(o.name for g in groups for o in g) == sorted(o.name for o in outs)
+
+
+def test_mtp_layers_get_their_own_file(q, release, tmp_path):
+    src, _, _ = release
+    work = tmp_path / "work"
+    q.convert(src, work)
+    index = json.loads((work / q.INDEX_FILE).read_text())["weight_map"]
+    mtp = [n for n in index if n.startswith("llm.mtp.")]
+    assert mtp and {index[n] for n in mtp} == {q.MTP_FILE}
+    assert all(index[n] != q.MTP_FILE for n in index if n not in mtp)
+    numbered = sorted(f for f in set(index.values()) if f not in (q.CTC_FILE, q.MTP_FILE))
+    assert numbered == [f"model-{i + 1:05d}-of-{len(numbered):05d}.safetensors" for i in range(len(numbered))]
+
+
+def test_restore_puts_the_split_mtp_tensors_back(q, release, tmp_path):
+    """model_free_ptq splits any 3-D tensor named *down_proj* and renames it: the
+    MTP layer's packed experts must come back byte-identical, under their names."""
+    src, _, _ = release
+    work, out = tmp_path / "work", tmp_path / "out"
+    q.convert(src, work)
+    shutil.copytree(work, out)
+    # What the quantizer does: the file holds other names, the index follows it.
+    original = (work / q.MTP_FILE).read_bytes()
+    (out / q.MTP_FILE).write_bytes(b"rewritten by the quantizer")
+    index = json.loads((out / q.INDEX_FILE).read_text())
+    split_name = "llm.mtp.layers.0.mixer.experts.down_projs"
+    assert index["weight_map"][split_name] == q.MTP_FILE
+    del index["weight_map"][split_name]
+    index["weight_map"]["llm.mtp.layers.0.mixer.experts.0.down_projs.weight"] = q.MTP_FILE
+    (out / q.INDEX_FILE).write_text(json.dumps(index))
+
+    q.restore_passthrough(work, out)
+
+    assert (out / q.MTP_FILE).read_bytes() == original
+    restored = json.loads((out / q.INDEX_FILE).read_text())["weight_map"]
+    assert restored == json.loads((work / q.INDEX_FILE).read_text())["weight_map"]
 
 
 def test_the_scheme_is_per_channel_int8_weight_only(q):
