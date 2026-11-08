@@ -104,8 +104,9 @@ def test_every_metric_module_is_registered() -> None:
     # `wer.uncertainty`, whose settings those blocks declare.
     shared_by_metrics = {"bootstrap"}
     # Not scorers at all: the strict loader for the contract this test reads,
-    # and the record of what produced a run. Neither computes a number.
-    not_scorers = {"contract", "run_manifest"}
+    # the record of what produced a run, and the cross-utterance leakage gate
+    # (it decides whether a subset is recorded, never changes a number).
+    not_scorers = {"contract", "run_manifest", "leakage"}
     unmapped = sorted(
         on_disk - {"__init__"} - set(module_to_metric) - shared_by_metrics
         - not_scorers

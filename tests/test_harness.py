@@ -560,3 +560,92 @@ def test_make_adapter_threads_the_output_format(monkeypatch: pytest.MonkeyPatch)
     captured = _capture_vllm_adapter(monkeypatch)
     runner._make_adapter(KNOWN_MODELS["OpenMOSS-Team/MOSS-Transcribe-Diarize"])
     assert captured["output_format"] == "moss-timed-speakers"
+
+
+_LEAK_REFS = [
+    f"satz nummer {n} erzählt von einem ganz anderen ort und einer anderen zeit {w}"
+    for n, w in zip(
+        ["eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht"],
+        ["berlin", "hamburg", "köln", "bremen", "essen", "leipzig", "dresden", "bonn"],
+        strict=True,
+    )
+]
+
+
+class _CrosstalkAdapter(_PerfectAdapter):
+    """Each transcript runs on into the next clip's words (raven.eval#89)."""
+
+    async def atranscribe(self, audio: np.ndarray, sample_rate: int) -> TranscribeResult:
+        key = float(audio[0])
+        nxt = self._registry.get(key + 1.0, self._registry[1.0])
+        return TranscribeResult(
+            text=f"{self._registry[key]} {nxt}", latency_s=0.001, raw={"mock": True}
+        )
+
+
+def _run_leaking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, adapter_cls) -> Path:
+    samples, registry = _make_samples("Tuda-De", _LEAK_REFS)
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda _s, **_kw: (_FakeLoader(samples), "Tuda-De"),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: adapter_cls(registry))
+    out_dir = tmp_path / "primeline-whisper-large-v3-german"
+    runner.run(
+        model_key="primeline/whisper-large-v3-german", subsets=["Tuda-De"],
+        limit=None, out_dir=out_dir, concurrency=4,
+    )
+    return out_dir
+
+
+def test_transcripts_with_text_of_other_clips_fail_the_subset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir = _run_leaking(tmp_path, monkeypatch, _CrosstalkAdapter)
+
+    assert not (out_dir / ".done_Tuda-De.json").exists()
+    report = json.loads((out_dir / ".leaked_Tuda-De.json").read_text())
+    assert (report["n_leaked"], report["n_utterances"]) == (8, 8)
+    first = report["examples"][0]
+    assert (first["sample_id"], first["text_of"]) == ("Tuda-De-0", "Tuda-De-1")
+    # Not scored: no WER row was written for the subset.
+    summary = out_dir / "summary.json"
+    assert not summary.exists() or not json.loads(summary.read_text()).get("results")
+    # The rows stay for inspection.
+    assert len((out_dir / "predictions_Tuda-De.jsonl").read_text().splitlines()) == 8
+
+
+def test_a_clean_pass_clears_an_old_leak_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir = tmp_path / "primeline-whisper-large-v3-german"
+    out_dir.mkdir()
+    (out_dir / ".leaked_Tuda-De.json").write_text("{}")
+    _run_leaking(tmp_path, monkeypatch, _PerfectAdapter)
+    assert not (out_dir / ".leaked_Tuda-De.json").exists()
+    assert (out_dir / ".done_Tuda-De.json").exists()
+
+
+def test_reproduce_exits_4_on_a_leaked_subset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from raven_asr import reproduce
+
+    out_root = tmp_path / "out"
+    label = KNOWN_MODELS["primeline/whisper-large-v3-german"].label
+
+    def fake_run(**kw: Any) -> Path:
+        out_dir = kw["out_dir"]
+        out_dir.mkdir(parents=True)
+        (out_dir / ".leaked_fleurs.json").write_text(json.dumps(
+            {"n_leaked": 9, "n_utterances": 20, "leaked_pct": 45.0}))
+        return out_dir / "model-index.yaml"
+
+    monkeypatch.setattr(reproduce, "run", fake_run)
+    rc = reproduce.main([
+        "--metric", "wer", "--dataset", "fleurs",
+        "--model", "primeline/whisper-large-v3-german", "--out", str(out_root),
+    ])
+    assert rc == reproduce.EXIT_LEAKED == 4
+    assert "9 of 20 transcripts" in capsys.readouterr().err
+    assert (out_root / label / ".leaked_fleurs.json").exists()

@@ -24,6 +24,12 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Added
+- **Cross-utterance leakage gate** (#89). After every subset the harness checks
+  whether transcripts carry a 6-word run of ANOTHER clip's reference and not of
+  their own (`raven_eval_core/leakage.py`). Above 2 % of the subset and more than
+  5 clips, the subset is not scored, gets no done marker, `.leaked_<subset>.json`
+  names examples, and `raven_asr.reproduce` exits 4. Calibrated on every finished
+  round-4 result: clean sets flag at most 1.12 %, the leaked Voxtral run 73 %.
 - **Engine groundwork for Nemotron-3.5-Transcribe-30B-A4B** (#78; its recipes
   follow with the quantized checkpoint). NeMo Speech's `nemo_speechlm` vLLM
   plugin is installed into the one vLLM 0.33.0 environment, pinned to a fork
