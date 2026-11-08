@@ -46,8 +46,9 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 - **Engine groundwork for Nemotron-3.5-Transcribe-30B-A4B** (#78; its recipes
   follow with the quantized checkpoint). NeMo Speech's `nemo_speechlm` vLLM
   plugin is installed into the one vLLM 0.33.0 environment, pinned to a fork
-  commit (`PhilflowIO/Speech@821e0367`) that adapts the plugin to vLLM 0.33's
-  moved chat parser (upstream: NVIDIA-NeMo/Speech#16505). A vLLM recipe names
+  commit (`PhilflowIO/Speech@2bd9dcb6`) that adapts the plugin to vLLM 0.33's
+  moved chat parser (upstream: NVIDIA-NeMo/Speech#16505) and corrects vLLM's
+  Marlin padding for gate-less MoE experts. A vLLM recipe names
   the plugins it needs (`vllm_plugins`), and the launcher sets `VLLM_PLUGINS`
   to exactly that list for every vLLM model, so no other model's engine loads
   the plugin. The shim gains the card's chat request for the model
@@ -112,6 +113,11 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   contract is unchanged.
 
 ### Fixed
+- **Nemotron-3.5-Transcribe W8A16 no longer dies at weight loading** (#78). vLLM
+  0.33 pads the per-card MoE intermediate size (928) to a Marlin tile (960), but
+  its padding assumes gated experts and NemotronH's are gate-less; the plugin's
+  runtime patch now reads the shard count off the weights. Every vLLM recipe hash
+  changes (vLLM requirements).
 - **Voxtral-Mini-4B-Realtime transcripts no longer mix requests** (#89). vLLM
   0.33.0 decodes this streaming model past its last audio frame; in a batch the
   realtime embedding path then hands one request's audio to another, and
