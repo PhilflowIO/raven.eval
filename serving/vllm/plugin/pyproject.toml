@@ -1,0 +1,19 @@
+# Installed into the vLLM environment from serving/vllm/requirements.txt, pinned
+# to a commit of this repository. No dependencies of its own: it patches the vLLM
+# of the environment it is installed into.
+[project]
+name = "raven-vllm-plugin"
+version = "0.1.0"
+description = "vLLM 0.33 fix for per-item encoding of audio clips of different lengths"
+requires-python = ">=3.10"
+license = "MIT"
+
+[project.entry-points."vllm.general_plugins"]
+raven_ragged_audio = "raven_vllm_plugin:register"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["raven_vllm_plugin"]
