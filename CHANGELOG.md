@@ -24,6 +24,12 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Added
+- **Cross-utterance leakage gate** (#89). After every subset the harness checks
+  whether transcripts carry a 6-word run of ANOTHER clip's reference and not of
+  their own (`raven_eval_core/leakage.py`). Above 2 % of the subset and more than
+  5 clips, the subset is not scored, gets no done marker, `.leaked_<subset>.json`
+  names examples, and `raven_asr.reproduce` exits 4. Calibrated on every finished
+  round-4 result: clean sets flag at most 1.12 %, the leaked Voxtral run 73 %.
 - **Engine groundwork for Nemotron-3.5-Transcribe-30B-A4B** (#78; its recipes
   follow with the quantized checkpoint). NeMo Speech's `nemo_speechlm` vLLM
   plugin is installed into the one vLLM 0.33.0 environment, pinned to a fork
@@ -93,6 +99,14 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   contract is unchanged.
 
 ### Fixed
+- **Voxtral-Mini-4B-Realtime transcripts no longer mix requests** (#89). vLLM
+  0.33.0 decodes this streaming model past its last audio frame; in a batch the
+  realtime embedding path then hands one request's audio to another, and
+  transcripts continued with other clips (20 FLEURS clips: 8-11 leaked at
+  concurrency 2-8). The recipe now sets `decoding.stop_at_audio_end`: the shim
+  caps each request at the frames left after the prompt (the bound
+  vllm-project/vllm#54516 proposes upstream). Its `gpu_mem` moves 0.6 -> 0.7:
+  at 0.6 the engine refuses to start (5.1 GiB KV cache, 16384 positions need 5.7).
 - **Resume no longer keeps rows measured under another setup** (#87). A
   complete subset was reused whenever the directory's `summary.json` matched the
   run — but every invocation rewrites that summary, so after the first dataset

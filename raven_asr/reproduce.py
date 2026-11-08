@@ -19,6 +19,10 @@ Exit status, for an unattended caller that only reads the code:
     1  the run finished but is incomplete (failed requests) — run it again
     3  the endpoint serves a different model than ``--model``, or its serving
        setup (raven_asr.serving) changed under the run; nothing recorded
+    4  the transcripts carry text of OTHER clips of the corpus (cross-utterance
+       leakage, raven_eval_core.leakage): the serving stack mixed requests. Not
+       scored, no done marker, ``.leaked_<subset>.json`` names the examples; a
+       re-run under the same serving fails the same way
 """
 
 from __future__ import annotations
@@ -30,12 +34,13 @@ from pathlib import Path
 
 from .adapters.base import ServedModelMismatchError
 from .config import FLOZI_SUBSETS, KNOWN_MODELS, WER_DATASETS, resolve_wer_dataset
-from .runner import _safe, run
+from .runner import _safe, leak_report_path, run
 
 _SUPPORTED_METRICS = ("wer",)
 
 EXIT_INCOMPLETE = 1
 EXIT_SERVED_MODEL_MISMATCH = 3
+EXIT_LEAKED = 4
 
 
 def _positive_int(value: str) -> int:
@@ -138,6 +143,16 @@ def main(argv: list[str] | None = None) -> int:
     if summary_path.exists():
         _print_benchmarks_row(summary_path, args.model)
     print(f"\nwrote {yaml_path}")
+    leak_report = leak_report_path(out_dir, args.dataset)
+    if leak_report.is_file():
+        report = json.loads(leak_report.read_text(encoding="utf-8"))
+        print(
+            f"error: {args.dataset}: {report['n_leaked']} of {report['n_utterances']} "
+            f"transcripts ({report['leaked_pct']}%) contain text of other clips — the "
+            f"serving stack mixed requests; not scored. Examples: {leak_report}",
+            file=sys.stderr,
+        )
+        return EXIT_LEAKED
     if not _subset_complete(out_dir, args.dataset):
         print(
             f"incomplete: {args.dataset} has failed or missing utterances; run "

@@ -52,13 +52,34 @@
 # The harness records the serving identity next to each result and aborts when
 # it changes during a run.
 #
+# AUDIO END (recipe decoding.stop_at_audio_end): a streaming model like Voxtral
+# Realtime decodes one position per 80 ms audio frame and adds that frame's
+# audio embedding to every position, the generated ones included. vLLM 0.33.0's
+# offline transcription path bounds generation only by max_completion_tokens /
+# max_model_len, so a request that has not emitted EOS by the last frame decodes
+# on without audio (voxtral_realtime.py:340 "empty multimodal embeddings ...
+# Returning zero embeddings"). In a batch that is worse than silence: the
+# realtime embed_input_ids (voxtral_realtime.py:324-356) concatenates the audio
+# rows of all scheduled requests and ignores which token they belong to, so once
+# one request has run out, its tokens take the next request's audio, and the
+# rows after that keep stale values of an earlier step (gpu/mm/encoder_runner.py
+# gather_mm_embeddings 241-292, get_inputs_embeds 303-307). Transcripts then
+# continue with the words of other clips (raven.eval#89). For such a recipe the
+# shim lowers max_completion_tokens to the frames left after the prompt, computed
+# with the engine's own decoder and the model's own tokenizer
+# (_frames_after_prompt) — the bound vllm-project/vllm#54516 adds to the engine.
+# With it no request is ever scheduled past its audio, alone or in a batch.
+#
 # One shared httpx.AsyncClient for the process instead of one per request: a
 # parallel client would otherwise pay a fresh connection per clip.
 """OpenAI-transcriptions → vLLM translation shim (identity-reporting)."""
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import functools
+import io
 import logging
 import os
 import sys
@@ -72,6 +93,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 # The recipe registry sits one directory up (serving/recipe.py).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from recipe import RecipeError, load_recipes, resolve  # noqa: E402
+from recipe import revision_of as recipe_revision  # noqa: E402
 from recipe import decoding as recipe_decoding  # noqa: E402
 from recipe import identity as recipe_identity  # noqa: E402
 from recipe import precision as recipe_precision  # noqa: E402
@@ -440,6 +462,76 @@ def _max_tokens(serving: dict[str, Any]) -> int:
     return int(dec["max_tokens"])
 
 
+@functools.lru_cache(maxsize=4)
+def _mistral_instruct(model: str, revision: str) -> Any:
+    """The model's mistral-common instruct tokenizer — the one vLLM loads for it
+    (``--tokenizer-mode mistral`` reads tekken.json of the same snapshot)."""
+    from huggingface_hub import hf_hub_download
+    from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+
+    path = hf_hub_download(model, "tekken.json", revision=revision)
+    return MistralTokenizer.from_file(path).instruct_tokenizer
+
+
+def _frames_after_prompt(audio: bytes, model: str, revision: str, language: str) -> int:
+    """Audio positions left after the transcription prompt — the most tokens the
+    model can generate with audio under every one of them.
+
+    The same steps as the engine, with the same libraries of this environment:
+    vLLM's decoder resamples the upload to the model's rate
+    (speech_to_text/base/serving.py _decode_and_chunk_speech), the model class
+    wraps it into mistral-common's OFFLINE streaming request
+    (voxtral_realtime.py get_generation_prompt), whose audio, padded left and
+    right, spans ``num_audio_tokens`` positions from position 0
+    (voxtral_realtime.py _maybe_apply_prompt_updates). The prompt takes the first
+    ``len(tokens)``; every position after it is one generated token.
+    """
+    from mistral_common.protocol.transcription.request import (
+        StreamingMode,
+        TranscriptionRequest,
+    )
+    from mistral_common.tokens.tokenizers.audio import Audio
+    from vllm.multimodal.media.audio import load_audio
+
+    instruct = _mistral_instruct(model, revision)
+    config = instruct.audio_encoder.audio_config
+    with io.BytesIO(audio) as buf:
+        samples, rate = load_audio(buf, sr=config.sampling_rate, mono=True)
+    request = TranscriptionRequest(
+        model=model,
+        audio=Audio(samples, int(rate), format="wav").to_base64("wav"),
+        language=language or None,
+        streaming=StreamingMode.OFFLINE,
+    )
+    tokenized = instruct.encode_transcription(request)
+    padded = tokenized.audios[0].audio_array
+    return int(config.num_audio_tokens(padded.shape[0])) - len(tokenized.tokens)
+
+
+async def _bounded_max_tokens(
+    max_tokens: int, serving: dict[str, Any], served: str | None, audio: bytes, language: str
+) -> int:
+    """The recipe's max_tokens, lowered to the audio end where the recipe asks for it."""
+    dec = serving.get("decoding") or {}
+    if not dec.get("stop_at_audio_end"):
+        return max_tokens
+    revision = recipe_revision(served) if served else None
+    if served is None or revision is None:
+        raise HTTPException(
+            status_code=503,
+            detail="stop_at_audio_end needs the served model's recipe revision",
+        )
+    try:
+        frames = await asyncio.to_thread(
+            _frames_after_prompt, audio, served, revision, language
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"audio not decodable: {exc}") from exc
+    if frames < 1:
+        raise HTTPException(status_code=400, detail="audio is too short for the transcription prompt")
+    return min(max_tokens, frames)
+
+
 def _detect_family(model_id: str) -> str:
     if FAMILY_OVERRIDE:
         if FAMILY_OVERRIDE in CHAT_BUILDERS:
@@ -570,7 +662,8 @@ async def transcriptions(
             form["language"] = language
         if prompt:
             form["prompt"] = prompt
-        form.update({k: str(v) for k, v in _greedy(max_tokens, "max_completion_tokens").items()})
+        bound = await _bounded_max_tokens(max_tokens, serving, served, audio, language)
+        form.update({k: str(v) for k, v in _greedy(bound, "max_completion_tokens").items()})
         upstream = await client.post(
             f"{UPSTREAM}/v1/audio/transcriptions",
             data=form,

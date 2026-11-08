@@ -23,6 +23,12 @@ from tqdm import tqdm
 
 from raven_eval_core.contract import resolved_contract
 from raven_eval_core.flozi_wer import evaluate, runaway_stats
+from raven_eval_core.leakage import (
+    LEAK_MAX_SHARE_PCT,
+    LEAK_MIN_FLAGGED,
+    LEAK_NGRAM,
+    cross_utterance_leaks,
+)
 from raven_eval_core.run_manifest import (
     MANIFEST_FIELDS,
     SCHEMA_VERSION,
@@ -775,12 +781,18 @@ def _legacy_progress_path(out_dir: Path, subset: str) -> Path:
     return out_dir / f".progress_{_safe(subset)}.json"
 
 
+def leak_report_path(out_dir: Path, subset: str) -> Path:
+    """Written instead of the ``.done_`` marker when a subset's transcripts leak."""
+    return out_dir / f".leaked_{_safe(subset)}.json"
+
+
 def _subset_files(out_dir: Path, subset: str) -> list[Path]:
     """Every file that records one subset's measurement, existing or not."""
     safe = _safe(subset)
     return [
         out_dir / f"predictions_{safe}.jsonl",
         out_dir / f".done_{safe}.json",
+        leak_report_path(out_dir, subset),
         _conditions_path(out_dir, subset),
         _legacy_progress_path(out_dir, subset),
         throughput.throughput_path(out_dir, safe),
@@ -1156,6 +1168,8 @@ def _record_subset(
     # The marker is rewritten below only if this pass is complete. An older one
     # must not outlive a pass that was not: it would be resumed as this run's.
     marker.unlink(missing_ok=True)
+    leak_report = leak_report_path(out_dir, subset)
+    leak_report.unlink(missing_ok=True)
     if not result.outcomes:
         logger.warning(
             "subset %s produced no samples; skipping (rows dropped by the "
@@ -1170,6 +1184,8 @@ def _record_subset(
             "[%s] subset %s: all %d requests failed; nothing to score",
             spec.label, subset, n_failed,
         )
+        return
+    if _leaked(out_dir, spec, result, leak_report):
         return
     refs = [o.reference for o in ok]
     preds = [cast(str, o.prediction) for o in ok]
@@ -1226,6 +1242,56 @@ def _record_subset(
         )
     # Roll outputs after every subset so a crash leaves usable artefacts.
     _write_outputs(out_dir, spec, entries, limit, manifest)
+
+
+def _leaked(out_dir: Path, spec: ModelSpec, result: _RunResult, report: Path) -> bool:
+    """Whether the subset's transcripts carry text of other clips; if so, say so.
+
+    A leaked subset is not scored and gets no ``.done_`` marker: its WER would
+    describe the serving stack mixing requests, not the model
+    (raven_eval_core.leakage, raven.eval#89). The predictions stay on disk for
+    inspection, and ``report`` names the share and the first examples.
+    """
+    outcomes = result.outcomes
+    leaks = cross_utterance_leaks(
+        [o.reference for o in outcomes], [o.prediction for o in outcomes]
+    )
+    if not leaks.failed:
+        if leaks.n_flagged:
+            logger.info(
+                "[%s] subset %s: %d of %d transcripts share a %d-word run with another "
+                "clip's reference only (natural corpus duplicates; the gate fails "
+                "above %d and %.1f%%)", spec.label, result.subset, leaks.n_flagged,
+                leaks.n_utterances, LEAK_NGRAM, LEAK_MIN_FLAGGED, LEAK_MAX_SHARE_PCT,
+            )
+        return False
+    examples = [
+        {
+            "sample_id": outcomes[i].sample_id,
+            "reference": outcomes[i].reference,
+            "prediction": outcomes[i].prediction,
+            "text_of": outcomes[j].sample_id,
+        }
+        for i, j in list(zip(leaks.flagged, leaks.sources, strict=True))[:5]
+    ]
+    report.write_text(json.dumps({
+        "subset": result.subset,
+        "n_leaked": leaks.n_flagged,
+        "n_utterances": leaks.n_utterances,
+        "leaked_pct": round(leaks.share_pct, 2),
+        "rule": {"ngram": LEAK_NGRAM, "max_share_pct": LEAK_MAX_SHARE_PCT,
+                 "min_flagged": LEAK_MIN_FLAGGED},
+        "examples": examples,
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.error(
+        "[%s] subset %s: %d of %d transcripts (%.1f%%) contain a %d-word run of ANOTHER "
+        "clip's reference and not of their own — the serving stack mixed requests. "
+        "Not scored, no done marker; first example: %s got text of %s. Report: %s",
+        spec.label, result.subset, leaks.n_flagged, leaks.n_utterances,
+        leaks.share_pct, LEAK_NGRAM, examples[0]["sample_id"], examples[0]["text_of"],
+        report,
+    )
+    return True
 
 
 def _dataset_id_for_subset(subset: str) -> str:
