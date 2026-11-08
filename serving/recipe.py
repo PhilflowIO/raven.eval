@@ -350,7 +350,13 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
 #:   nemo_speechlm  NeMo Speech's SpeechLM models (nemo_toolkit, pinned in
 #:                  vllm/requirements.txt); the vendor's own serving command for
 #:                  Nemotron-3.5-Transcribe sets VLLM_PLUGINS=nemo_speechlm too.
-VLLM_PLUGINS: dict[str, str] = {"nemo_speechlm": "nemo_toolkit"}
+#:   raven_ragged_audio  serving/vllm/plugin of this repository, pinned in
+#:                  vllm/requirements.txt: per-clip audio kwargs as batches of one
+#:                  (raven.eval#93).
+VLLM_PLUGINS: dict[str, str] = {
+    "nemo_speechlm": "nemo_toolkit",
+    "raven_ragged_audio": "raven-vllm-plugin",
+}
 
 
 def _plugins_problem(plugins: object) -> str:

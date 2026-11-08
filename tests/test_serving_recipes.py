@@ -737,9 +737,10 @@ def test_every_vllm_engine_loads_exactly_the_plugins_its_recipe_names() -> None:
         assert env["VLLM_PLUGINS"] == ",".join(r.get("vllm_plugins", [])), rid
 
 
-def test_only_the_nemotron_transcribe_rows_load_the_nemo_plugin() -> None:
+def test_only_the_rows_that_need_a_plugin_load_one() -> None:
     with_plugins = {rid: r["vllm_plugins"] for rid, r in RECIPES.items() if r.get("vllm_plugins")}
     assert with_plugins == {
+        "vibevoice-asr": ["raven_ragged_audio"],
         "nemotron-3.5-transcribe-30b-a4b-w8a16": ["nemo_speechlm"],
         "nemotron-3.5-transcribe-30b-a4b-bf16-control": ["nemo_speechlm"],
     }
