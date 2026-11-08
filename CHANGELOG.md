@@ -30,6 +30,19 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   5 clips, the subset is not scored, gets no done marker, `.leaked_<subset>.json`
   names examples, and `raven_asr.reproduce` exits 4. Calibrated on every finished
   round-4 result: clean sets flag at most 1.12 %, the leaked Voxtral run 73 %.
+- **Nemotron-3.5-Transcribe-30B-A4B**, quantized and split over two cards (#78):
+  our own int8 weight-only build
+  (`PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16`, made by
+  `serving/quantize/nemotron_transcribe_w8a16.py`: int8 per-channel RTN on the
+  decoder Linears, audio encoder and everything else bf16) served W8A16 at
+  tensor-parallel 2, plus its **bf16 control** (NVIDIA's release with 16 GB per
+  card offloaded to host RAM, FLEURS-de only). Both load through the
+  `nemo_speechlm` plugin and are not forced to German (the card's prompt says
+  "Language: as spoken"). A vLLM scheme can now pin kernels with `vllm serve`
+  flags as well as the environment: the new `int8-w8a16-marlin` disables the
+  Humming kernel for the dense linears and passes `--moe-backend marlin` for the
+  experts, and a recipe's `args` may not set a flag a scheme owns. Every vLLM
+  recipe hash changes.
 - **Engine groundwork for Nemotron-3.5-Transcribe-30B-A4B** (#78; its recipes
   follow with the quantized checkpoint). NeMo Speech's `nemo_speechlm` vLLM
   plugin is installed into the one vLLM 0.33.0 environment, pinned to a fork

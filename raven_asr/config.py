@@ -420,6 +420,10 @@ VLLM_SERVED_MODELS: Final[dict[str, str]] = {
     # bf16 control (CPU offload, FLEURS-de only).
     "RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic": "voxtral-small-24b-2507-fp8",
     "mistralai/Voxtral-Small-24B-2507": "voxtral-small-24b-2507-bf16-control",
+    # The same, our own int8 weight-only build (serving/quantize/) and NVIDIA's
+    # bf16 release as its control; both through NeMo Speech's vLLM plugin.
+    "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+    "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B": "nemotron-3.5-transcribe-30b-a4b-bf16-control",
 }
 
 
@@ -444,7 +448,7 @@ def _self_hosted(model_id: str, label: str, url_env: str) -> ModelSpec:
     )
 
 
-#: The 20 self-hosted models, keyed by HF repo id. Of these, only the models in
+#: The 24 self-hosted models, keyed by HF repo id. Of these, only the models in
 #: FLOZI_REFERENCE_WER carry a flozi-published anchor; the others deliberately
 #: have none (no published number on that dataset to sanity-check against).
 SELF_HOSTED_MODELS: Final[dict[str, ModelSpec]] = {

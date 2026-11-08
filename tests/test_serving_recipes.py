@@ -501,6 +501,7 @@ _MEASURED_PRECISION = {
     "moonshine-streaming-small-de": ("fp32", "fp32"),
     "granite-speech-5.0-470m-turboctc": ("bf16", "bf16"),
     "voxtral-small-24b-2507-bf16-control": ("bf16", "bf16"),
+    "nemotron-3.5-transcribe-30b-a4b-bf16-control": ("bf16", "bf16"),
 }
 
 #: The recipes split over two cards: (weights, activations, scheme, checkpoint).
@@ -510,6 +511,12 @@ _SPLIT_PRECISION = {
     "voxtral-small-24b-2507-fp8": ("fp8-e4m3", "bf16", "fp8-w8a16-marlin", {
         "source": "third-party", "repo": "RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic",
         "revision": "a5dba05c66c6f06ec358dbf6531087a858ab141d", "dtype": "fp8-e4m3"}),
+    # Our own build (serving/quantize/nemotron_transcribe_w8a16.py): int8
+    # per-channel weights on the decoder Linears, published under PhilflowIO.
+    "nemotron-3.5-transcribe-30b-a4b-w8a16": ("int8", "bf16", "int8-w8a16-marlin", {
+        "source": "self", "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+        "dtype": "int8", "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+        "revision": RECIPES["nemotron-3.5-transcribe-30b-a4b-w8a16"]["revision"]}),
 }
 
 
@@ -728,6 +735,35 @@ def test_every_vllm_engine_loads_exactly_the_plugins_its_recipe_names() -> None:
             continue
         _, env = launch.build(r, rid, {"VLLM_PLUGINS": "nemo_speechlm"}, python=PY)
         assert env["VLLM_PLUGINS"] == ",".join(r.get("vllm_plugins", [])), rid
+
+
+def test_only_the_nemotron_transcribe_rows_load_the_nemo_plugin() -> None:
+    with_plugins = {rid: r["vllm_plugins"] for rid, r in RECIPES.items() if r.get("vllm_plugins")}
+    assert with_plugins == {
+        "nemotron-3.5-transcribe-30b-a4b-w8a16": ["nemo_speechlm"],
+        "nemotron-3.5-transcribe-30b-a4b-bf16-control": ["nemo_speechlm"],
+    }
+
+
+def test_the_nemotron_transcribe_pair_serves_one_model_two_ways() -> None:
+    """The quantized row and its control: the control serves the very release the
+    build was made from, and only precision, offload and batch size differ."""
+    q = RECIPES["nemotron-3.5-transcribe-30b-a4b-w8a16"]
+    c = RECIPES["nemotron-3.5-transcribe-30b-a4b-bf16-control"]
+    script = (SERVING / "quantize" / "nemotron_transcribe_w8a16.py").read_text()
+    assert f'REPO = "{c["model"]}"' in script and f'REVISION = "{c["revision"]}"' in script
+    assert q["precision"]["checkpoint"]["repo"] == q["model"]
+    assert q["precision"]["checkpoint"]["revision"] == q["revision"]
+    assert (SERVING.parent / q["precision"]["checkpoint"]["recipe"]).is_file()
+    assert c["precision"]["control"] == "nemotron-3.5-transcribe-30b-a4b-w8a16"
+    assert c["args"] == [*q["args"], "--cpu-offload-gb", "16"]
+    for key in ("max_model_len", "trust_remote_code", "decoding", "vllm_plugins"):
+        assert q[key] == c[key], key
+    argv, env = launch.build(q, "q", {}, python=PY)
+    assert _flag(argv, "--moe-backend") == "marlin"
+    assert env["VLLM_DISABLED_KERNELS"] == "HummingLinearKernel"
+    argv, env = launch.build(c, "c", {}, python=PY)
+    assert "--moe-backend" not in argv and "VLLM_DISABLED_KERNELS" not in env
 
 
 def test_a_recipe_names_only_installed_plugins(tmp_path: Path) -> None:
