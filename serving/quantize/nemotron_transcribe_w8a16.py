@@ -72,7 +72,7 @@ REVISION = "c17667641642c4265ff2b7037dd101b7d4567634"
 SOURCE_FILE = "model.safetensors"
 #: The NeMo plugin commit whose weight renames ``convert`` reproduces
 #: (serving/vllm/requirements.txt pins the same one).
-PLUGIN_COMMIT = "821e036741a60332ca90b160243d88d13a90ec84"
+PLUGIN_COMMIT = "2bd9dcb68570d254684c6ecdf21dc3bbfdb1ead2"
 
 SHARD_BYTES = 5 * 2**30
 CTC_FILE = "model-ctc-bf16.safetensors"

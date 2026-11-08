@@ -44,9 +44,12 @@
 # Pinned to a fork commit, not a release: NeMo pins its `vllm` extra to 0.32.0,
 # and on 0.33.0 the plugin aborted `vllm serve` because vLLM moved the chat
 # parser it adapts (runtime_compat.py vs vllm/renderers/chat_utils/
-# chat_message.py). The fork commit is NeMo main e5d79d5a plus that one fix,
-# proposed upstream as https://github.com/NVIDIA-NeMo/Speech/pull/16505; move
-# back to an NVIDIA-NeMo/Speech commit or release once it is merged (#78). The
+# chat_message.py), and vLLM's Marlin padding of a misaligned MoE intermediate
+# size reshapes w13 as two shards, which aborts loading of NemotronH's gate-less
+# experts at tensor-parallel 2 (N = 928 per card). The fork commit is NeMo main
+# e5d79d5a plus those two fixes, the first proposed upstream as
+# https://github.com/NVIDIA-NeMo/Speech/pull/16505; move back to an
+# NVIDIA-NeMo/Speech commit or release once both are merged (#78). The
 # `vllm` extra is NOT installed (it would pull vllm 0.32.0); peft is the rest of
 # it. Resolved with the lines above (uv pip compile, Python 3.12, x86_64 Linux,
 # 2026-11-02): vllm, torch, transformers, flashinfer, librosa and numpy stay
@@ -64,5 +67,5 @@ fastapi>=0.115
 uvicorn>=0.30
 httpx>=0.27
 python-multipart>=0.0.9
-nemo_toolkit[asr] @ git+https://github.com/PhilflowIO/Speech.git@821e036741a60332ca90b160243d88d13a90ec84
+nemo_toolkit[asr] @ git+https://github.com/PhilflowIO/Speech.git@2bd9dcb68570d254684c6ecdf21dc3bbfdb1ead2
 peft==0.21.2
