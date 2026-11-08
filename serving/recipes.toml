@@ -1,4 +1,4 @@
-# Serving recipes of the 22 self-hosted models (raven_asr.config.SELF_HOSTED_MODELS).
+# Serving recipes of the 24 self-hosted models (raven_asr.config.SELF_HOSTED_MODELS).
 #
 # One table per model, keyed by the model's result-directory label. `launch.py`
 # turns a table into the server process; the servers report the table's id and
@@ -46,7 +46,7 @@
 #                 are in that format; nothing is left to vLLM's "auto". A
 #                 quantized checkpoint's weights are in the format its
 #                 quantization_config names, and the launcher pins the kernel
-#                 the scheme names (recipe.py, VLLM_SCHEME_ENV).
+#                 the scheme names (recipe.py, VLLM_SCHEMES: environment and flags).
 #   NeMo          (the pinned commit, as 3.0.0 before it) restore_from keeps the
 #                 stored fp32 and transcribe() runs no
 #                 autocast: fp32 throughout (PyTorch defaults, i.e. TF32 for
@@ -396,6 +396,38 @@ max_num_seqs = 4
 args = ["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "mistral", "--cpu-offload-gb", "14"]
 chunking = "engine: vLLM's transcription endpoint; 32k-token context (~30 min of audio)"
 notes = "The bf16 control of voxtral-small-24b-2507-fp8, run on FLEURS-de only. consolidated.safetensors (48.5 GB) is ~24.3 GB per card at TP 2; --cpu-offload-gb 14 (per GPU, vllm/config/offload.py:23-32) keeps ~14 GB of each card's share in pinned host RAM (28 GB of the host's 125 GB) and streams it over PCIe in every forward pass, which leaves ~8 GB per card for the KV cache and activations at gpu_mem 0.9. Slow by design; the numbers it produces are the bf16 model's. The weights are the ones RedHat quantized: consolidated.safetensors has the same LFS sha256 (421cd598…abea7e) at the repo's first commit (2025-07-15) and at the pinned one."
+
+[recipes."nemotron-3.5-transcribe-30b-a4b-w8a16"]
+model = "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16"
+revision = "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+engine = "vllm"
+vllm_plugins = ["nemo_speechlm"]
+decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "int8", activations = "bf16", scheme = "int8-w8a16-marlin", tensor_parallel = 2, checkpoint = { source = "self", recipe = "serving/quantize/nemotron_transcribe_w8a16.py", dtype = "int8", repo = "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16", revision = "1992cdbec71a512d336a4a21f192d78faf30bbfe" } }
+weights_gb = 36
+gpu_mem = 0.9
+max_num_seqs = 16
+max_model_len = 16384
+trust_remote_code = true
+args = ["--no-enable-prefix-caching", "--mm-processor-cache-gb", "0", "--limit-mm-per-prompt", "{\"audio\":1}"]
+chunking = "none: the whole clip goes into one chat request, bounded by max_model_len 16384"
+notes = "NVIDIA's bf16 release (nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B@c17667641642c4265ff2b7037dd101b7d4567634, 67.5 GB) does not fit two 24 GB cards with room to serve, and NVIDIA's FP8 build quantizes the audio encoder too, whose FP8 GEMM has no sm86 kernel. This is our own build of it, made by serving/quantize/nemotron_transcribe_w8a16.py: every Linear of the language model's decoder layers (6004) in int8, one scale per output channel, symmetric round-to-nearest, no calibration data; the audio encoder (perception) and its projector, the CTC timestamp head, MTP layers, embeddings, lm_head, MoE routers, Mamba conv1d and every norm stay bit-identical bf16/fp32. Checkpoint hash (sha256 of its SHA256SUMS, serving/quantize/nemotron_transcribe_w8a16.SHA256SUMS): c65f885abdb13143e7f003d8aab827215e1b9aed62b03a23b24cb846dd386638. ~36 GB, ~18 GB per card at TP 2. Served as compressed-tensors W8A16 with bf16 activations; the launcher pins Marlin for the dense linears (Humming disabled) and for the experts (--moe-backend marlin), as the scheme says. Loaded by NeMo Speech's vLLM plugin (vllm_plugins, pinned in vllm/requirements.txt); --trust-remote-code is the card's own flag. The shim sends the card's chat request (verbatim benchmark instruction, reasoning off); its instruction says 'Language: as spoken', so the model is NOT forced to German. Its control is nemotron-3.5-transcribe-30b-a4b-bf16-control. License OpenMDW-1.1, as the source. German: the card lists 'German ✓ Leading' and reports FLEURS German WER 2.73 and CoVoST2 German 2.98 — https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
+
+[recipes."nemotron-3.5-transcribe-30b-a4b-bf16-control"]
+model = "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
+revision = "c17667641642c4265ff2b7037dd101b7d4567634"
+engine = "vllm"
+vllm_plugins = ["nemo_speechlm"]
+decoding = { mode = "greedy", max_tokens = 1024 }
+precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 2, control = "nemotron-3.5-transcribe-30b-a4b-w8a16", checkpoint = { source = "published", dtype = "bf16" } }
+weights_gb = 68
+gpu_mem = 0.9
+max_num_seqs = 4
+max_model_len = 16384
+trust_remote_code = true
+args = ["--no-enable-prefix-caching", "--mm-processor-cache-gb", "0", "--limit-mm-per-prompt", "{\"audio\":1}", "--cpu-offload-gb", "16"]
+chunking = "none: the whole clip goes into one chat request, bounded by max_model_len 16384"
+notes = "The bf16 control of nemotron-3.5-transcribe-30b-a4b-w8a16, run on FLEURS-de only. NVIDIA's release as published (one model.safetensors, 67.5 GB, NeMo layout that the plugin renames on load), ~34 GB per card at TP 2; --cpu-offload-gb 16 (per GPU, vllm/config/offload.py:23-32) keeps 16 GB of each card's share in pinned host RAM (~32 GB of the host's 125 GB) and streams it over PCIe in every forward pass. Slow by design; the numbers it produces are the bf16 model's. The weights are the ones the quantized build was made from (same repo and revision). Same plugin, request and prompt as the quantized row: not forced to German ('Language: as spoken'). License OpenMDW-1.1. German: 'German ✓ Leading', FLEURS German WER 2.73, CoVoST2 German 2.98 — https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
 
 # ── transformers stand-in (behind the same shim) ────────────────────────────
 
