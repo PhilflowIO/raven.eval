@@ -304,10 +304,19 @@ def require_key(authorization: str = Header(default="")) -> None:
 #       <|AUDIO_DURATION|> seconds audio, please transcribe it with these keys:
 #       Start time, End time, Speaker ID, Content"; the processor fills in the
 #       duration). A text part would become "extra info" context in that
-#       template, so a request prompt is passed as exactly that and nothing is
-#       added otherwise — no language: the card says the model "requires no
-#       explicit language setting". The answer is a JSON list of speaker turns;
-#       the harness parses it (raven_asr.output_formats "vibevoice-json").
+#       template, so a request prompt is passed as exactly that. The model has
+#       no language parameter (the card: it "requires no explicit language
+#       setting"; transformers' apply_transcription_request takes only that
+#       prompt). Language is told through the same channel, the one Microsoft
+#       documents for it: context_info "hotwords, metadata" in the original
+#       processor, customized_context "domain-specific terms or context
+#       sentences" in its fine-tuning data. With the recipe's
+#       decoding.language_forced, language=de becomes the context sentence
+#       "The audio is in German." (VIBEVOICE_LANGUAGE_CONTEXT, raven.eval#104);
+#       before it, no language was sent and ~38 of the XSID German control
+#       answers came back in another language. The answer is a JSON list of
+#       speaker turns; the harness parses it (raven_asr.output_formats
+#       "vibevoice-json").
 #   * nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B (and builds of it) — family
 #       "nemotron-transcribe". Served by NeMo Speech's vLLM plugin
 #       (vllm_plugins = ["nemo_speechlm"]): a chat model with no transcription
@@ -337,6 +346,14 @@ NEMOTRON_TRANSCRIBE_PROMPT = (
     "and repetitions. Formatting: punctuation and capitalization. Output: transcript only."
 )
 
+#: The context sentence VibeVoice-ASR gets per request language when its recipe
+#: sets decoding.language_forced. Only languages listed here can be forced: an
+#: unknown code is refused rather than passed on raw.
+VIBEVOICE_LANGUAGE_CONTEXT = {
+    "de": "The audio is in German.",
+    "en": "The audio is in English.",
+}
+
 FAMILY_BY_PREFIX: list[tuple[str, str]] = [
     ("phi-4-multimodal", "phi4mm"),
     ("phi4", "phi4mm"),
@@ -356,10 +373,11 @@ def _build_phi4mm(
     audio_b64: str,
     audio_format: str,
     language: str,
+    language_forced: bool,
     user_prompt: str,
     max_tokens: int,
 ) -> dict[str, Any]:
-    del model  # the served LoRA module name is what matters, not the request's
+    del model, language_forced  # the LoRA module name matters; language: below
     prompt = user_prompt or PHI4_DEFAULT_PROMPT
     if language and not user_prompt:
         # UNVERIFIED: no documented language-pinning prompt for Phi-4-mm ASR;
@@ -390,13 +408,24 @@ def _build_vibevoice(
     audio_b64: str,
     audio_format: str,
     language: str,
+    language_forced: bool,
     user_prompt: str,
     max_tokens: int,
 ) -> dict[str, Any]:
-    del language  # the model takes none; see the routing table above
+    context = [user_prompt] if user_prompt else []
+    if language_forced:
+        # The template takes ONE text part as its "extra info"; a request prompt
+        # and the language sentence share it.
+        if language not in VIBEVOICE_LANGUAGE_CONTEXT:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"recipe forces the language but language={language!r} has no "
+                        f"VibeVoice context sentence ({sorted(VIBEVOICE_LANGUAGE_CONTEXT)})"),
+            )
+        context.append(VIBEVOICE_LANGUAGE_CONTEXT[language])
     content: list[dict[str, Any]] = []
-    if user_prompt:
-        content.append({"type": "text", "text": user_prompt})
+    if context:
+        content.append({"type": "text", "text": " ".join(context)})
     content.append(
         {"type": "input_audio", "input_audio": {"data": audio_b64, "format": audio_format}}
     )
@@ -413,10 +442,11 @@ def _build_nemotron_transcribe(
     audio_b64: str,
     audio_format: str,
     language: str,
+    language_forced: bool,
     user_prompt: str,
     max_tokens: int,
 ) -> dict[str, Any]:
-    del language  # "Language: as spoken"; see the routing table above
+    del language, language_forced  # "Language: as spoken"; see the routing table
     return {
         "model": model,
         "messages": [
@@ -703,6 +733,7 @@ async def transcriptions(
         audio_b64=base64.b64encode(audio).decode("ascii"),
         audio_format=_audio_format(file.filename, file.content_type),
         language=language,
+        language_forced=bool((serving.get("decoding") or {}).get("language_forced")),
         user_prompt=prompt,
         max_tokens=max_tokens,
     )
