@@ -90,6 +90,11 @@ DECODING_MODES = frozenset({"greedy"})
 #:                        max_tokens per request to the frames left after the
 #:                        prompt, so generation ends where the audio ends
 #:                        (shim._frames_after_prompt, raven.eval#89).
+#:                        language_forced (vllm only, optional) — a chat-translated
+#:                        model with no language parameter is told the request's
+#:                        language in the form its own processor documents (VibeVoice-ASR:
+#:                        the "extra info" context sentence, shim._build_vibevoice).
+#:                        Absent: the shim sends no language to such a model.
 #:   nemo                 the checkpoint's own decoding config, which the server
 #:                        does not change; it refuses to start when the restored
 #:                        checkpoint disagrees. Transducers (strategy
@@ -98,7 +103,7 @@ DECODING_MODES = frozenset({"greedy"})
 #:                        greedy) at most max_generation_delta tokens beyond the
 #:                        encoder length. Those are their length bounds.
 DECODING_KEYS: dict[str, frozenset[str]] = {
-    "vllm": frozenset({"mode", "max_tokens", "stop_at_audio_end"}),
+    "vllm": frozenset({"mode", "max_tokens", "stop_at_audio_end", "language_forced"}),
     "transformers": frozenset({"mode", "max_tokens"}),
     "nemo": frozenset({"mode", "strategy", "max_symbols", "beam_size", "len_pen",
                        "max_generation_delta"}),
@@ -127,6 +132,8 @@ def _decoding_problem(engine: str, decoding: object) -> str:
         return "decoding.max_tokens must be a positive integer"
     if "stop_at_audio_end" in decoding and decoding["stop_at_audio_end"] is not True:
         return "decoding.stop_at_audio_end is either true or absent"
+    if "language_forced" in decoding and decoding["language_forced"] is not True:
+        return "decoding.language_forced is either true or absent"
     return ""
 
 

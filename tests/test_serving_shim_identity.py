@@ -211,10 +211,12 @@ def test_a_sampling_temperature_is_refused(load_shim):
     assert "/v1/audio/transcriptions" not in calls
 
 
-def test_vibevoice_gets_the_audio_alone_so_its_template_writes_the_instruction(load_shim):
+def test_vibevoice_is_told_german_as_its_context_sentence(load_shim):
     """VibeVoice-ASR runs on vLLM's Transformers backend, which has no transcription
-    endpoint. Its chat template turns a text part into "extra info" context, so the
-    request carries the audio and nothing else — no language, no instruction."""
+    endpoint, and it has no language parameter. Its chat template turns the one text
+    part into "extra info" context, the channel Microsoft documents for metadata, so
+    the recipe's decoding.language_forced makes language=de that sentence and the
+    template writes the instruction around it (raven.eval#104)."""
     import json as _json
 
     mod, bodies = _load_recording(load_shim, "microsoft/VibeVoice-ASR-HF")
@@ -223,11 +225,58 @@ def test_vibevoice_gets_the_audio_alone_so_its_template_writes_the_instruction(l
     payload = _json.loads(bodies[0])
     assert payload["model"] == "microsoft/VibeVoice-ASR-HF"
     (message,) = payload["messages"]
-    assert [part["type"] for part in message["content"]] == ["input_audio"]
-    assert message["content"][0]["input_audio"]["format"] == "wav"
+    assert [part["type"] for part in message["content"]] == ["text", "input_audio"]
+    assert message["content"][0]["text"] == "The audio is in German."
+    assert message["content"][1]["input_audio"]["format"] == "wav"
     assert (payload["temperature"], payload["repetition_penalty"], payload["max_tokens"]) == (
         0.0, 1.0, 1024)
-    assert r.json()["x_raven"]["recipe"] == _recipe("vibevoice-asr")
+    x_raven = r.json()["x_raven"]
+    assert x_raven["recipe"] == _recipe("vibevoice-asr")
+    assert x_raven["decoding"]["language_forced"] is True
+
+
+def test_vibevoice_request_prompt_and_language_share_the_one_context_part(load_shim):
+    import json as _json
+
+    mod, bodies = _load_recording(load_shim, "microsoft/VibeVoice-ASR-HF")
+    r = TestClient(mod.app).post(
+        "/v1/audio/transcriptions",
+        files={"file": ("a.wav", b"RIFF....", "audio/wav")},
+        data={"model": "microsoft/VibeVoice-ASR-HF", "language": "de",
+              "prompt": "About VibeVoice"},
+    )
+    assert r.status_code == 200
+    (message,) = _json.loads(bodies[0])["messages"]
+    assert message["content"][0] == {
+        "type": "text", "text": "About VibeVoice The audio is in German."}
+
+
+@pytest.mark.parametrize("language", ["", "xx"])
+def test_vibevoice_refuses_a_language_it_cannot_be_told(load_shim, language):
+    """The recipe forces the language: a request without one, or with a code that has
+    no context sentence, must fail loudly instead of running unforced."""
+    mod, bodies = _load_recording(load_shim, "microsoft/VibeVoice-ASR-HF")
+    r = TestClient(mod.app).post(
+        "/v1/audio/transcriptions",
+        files={"file": ("a.wav", b"RIFF....", "audio/wav")},
+        data={"model": "microsoft/VibeVoice-ASR-HF", "language": language},
+    )
+    assert r.status_code == 400
+    assert not [b for b in bodies if b"chat" in b or b"messages" in b]
+
+
+def test_vibevoice_without_language_forced_sends_the_audio_alone(load_shim, monkeypatch):
+    """Without the recipe flag nothing is added: the template writes its plain
+    instruction (the pre-#104 request)."""
+    import json as _json
+
+    mod, bodies = _load_recording(load_shim, "microsoft/VibeVoice-ASR-HF")
+    monkeypatch.setattr(mod, "recipe_decoding",
+                        lambda served: {"mode": "greedy", "max_tokens": 1024})
+    r = _post(mod, "microsoft/VibeVoice-ASR-HF")
+    assert r.status_code == 200
+    (message,) = _json.loads(bodies[0])["messages"]
+    assert [part["type"] for part in message["content"]] == ["input_audio"]
 
 
 @pytest.mark.parametrize("model", [
@@ -245,7 +294,7 @@ def test_nemotron_transcribe_gets_the_cards_benchmark_request(load_shim, model):
     family = mod._detect_family(model)
     assert family == "nemotron-transcribe"
     payload = mod.CHAT_BUILDERS[family](
-        model=model, audio_b64="UklGRg==", audio_format="wav", language="de",
+        model=model, audio_b64="UklGRg==", audio_format="wav", language="de", language_forced=False,
         user_prompt="", max_tokens=1024,
     )
     assert payload["model"] == model

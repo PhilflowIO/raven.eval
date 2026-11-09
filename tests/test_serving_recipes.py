@@ -461,6 +461,8 @@ def test_every_recipe_decodes_greedily_and_bounds_its_output() -> None:
         ('decoding = { mode = "greedy", max_tokens = 1024, top_k = 5 }', "do not apply"),
         ('decoding = { mode = "greedy", max_tokens = 1024, stop_at_audio_end = false }',
          "true or absent"),
+        ('decoding = { mode = "greedy", max_tokens = 1024, language_forced = false }',
+         "true or absent"),
     ],
 )
 def test_a_malformed_decoding_table_is_refused(tmp_path: Path, decoding: str, match: str) -> None:
