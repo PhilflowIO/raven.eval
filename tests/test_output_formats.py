@@ -156,6 +156,45 @@ def test_vibevoice_plain_and_empty_answers():
     assert parse_vibevoice('[{"Start":0,"End":1,"Speaker":0,"Content":""}]').text == ""
 
 
+def test_vibevoice_non_speech_tags_are_not_spoken():
+    raw = (
+        'assistant\n[{"Start":0.0,"End":4.0,"Speaker":0,"Content":"[Noise] Guten Tag."},'
+        '{"Start":4.0,"End":12.0,"Content":"[Silence]"},'
+        '{"Start":12.0,"End":13.0,"Speaker":0,"Content":"[Unintelligible Speech]"},'
+        '{"Start":13.0,"End":14.0,"Speaker":0,"Content":"Danke [Noise] sehr."},'
+        '{"Start":14.0,"End":15.0,"Speaker":0,"Content":"[Noise] [Noise]"},'
+        '{"Start":15.0,"End":16.0,"Speaker":0,"Content":"[Mus'
+    )
+    parsed = parse_vibevoice(raw)
+    assert parsed.text == "Guten Tag. Danke sehr."
+    assert [s.text for s in parsed.segments] == ["Guten Tag.", "Danke sehr."]
+    assert parsed.segments[0].speaker == "S00"
+    assert parsed.segments[0].end_s == 4.0
+
+
+def test_vibevoice_answer_of_only_tags_is_no_speech():
+    raw = '[{"Start":0,"End":9,"Speaker":0,"Content":"[Silence]"},{"Start":9,"End":10,"Speaker":0,"Content":"[Noise]"}]'
+    parsed = parse_vibevoice(raw)
+    assert parsed.text == ""
+    assert parsed.segments == []
+
+
+def test_vibevoice_brackets_outside_the_tag_list_stay_for_the_scoring_contract():
+    raw = '[{"Start":0,"End":1,"Speaker":0,"Content":"[Heidi] kam."}]'
+    assert parse_vibevoice(raw).text == "[Heidi] kam."
+
+
+def test_vibevoice_loop_on_words_keeps_every_word_for_the_runaway_count():
+    turn = '{"Start":0,"End":1,"Speaker":0,"Content":"und dann"}'
+    tag = '{"Start":0,"End":1,"Speaker":0,"Content":"[Noise]"}'
+    raw = "[" + ",".join([tag] * 5 + [turn] * 40) + "]"
+    parsed = parse_vibevoice(raw)
+    assert parsed.text == " ".join(["und dann"] * 40)
+    from raven_eval_core.flozi_wer import runaway_stats
+    stats = runaway_stats(["und dann auch"], [parsed.text], 3.0)
+    assert stats.n_runaway == 1
+
+
 def test_vibevoice_parsed_output_scores_like_the_plain_transcript():
     ref = "Guten Tag und willkommen. Danke, schön hier zu sein."
     assert corpus_wer_pct([ref], [parse_vibevoice(VV).text]) == 0

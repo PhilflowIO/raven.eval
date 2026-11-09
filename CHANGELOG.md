@@ -23,6 +23,15 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 
 ## [Unreleased]
 
+### Changed
+- **VibeVoice-ASR is told its clip's duration, and its non-speech tags are not
+  scored** (#96). vLLM left the chat template's duration placeholder unfilled, so
+  the model never knew how long a clip was and ran on to the output cap in invented
+  `[Noise]`/`[Silence]` turns; the recipe now names a plugin that fills it as the
+  model's own processor does. Separately, those tags stay out of `prediction` and
+  `segments` and remain in `raw_prediction`. No VibeVoice number predates this. A
+  model that loops on words keeps its words and is still counted by `wer.runaway`.
+
 ### Added
 - **Cross-utterance leakage gate** (#89). After every subset the harness checks
   whether transcripts carry a 6-word run of ANOTHER clip's reference and not of

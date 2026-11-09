@@ -338,11 +338,11 @@ def test_voxtral_realtime_is_served_offline_with_the_card_flags() -> None:
     assert _flag(argv, "--max-model-len") == "16384"
 
 
-def test_vibevoice_is_the_transformers_format_release_with_a_card_to_itself() -> None:
+def test_vibevoice_is_the_transformers_format_release_on_most_of_one_card() -> None:
     argv, _ = _build("microsoft/VibeVoice-ASR-HF")
     assert argv[2] == "microsoft/VibeVoice-ASR-HF"
     assert _flag(argv, "--revision") == "f22241c2062b3b25272bf117397e03d73381037a"
-    assert float(_flag(argv, "--gpu-memory-utilization")) >= 0.9
+    assert float(_flag(argv, "--gpu-memory-utilization")) >= 0.85
     assert _flag(argv, "--max-num-seqs") == "4"
     assert "--trust-remote-code" not in argv  # native in the pinned transformers
 
@@ -740,7 +740,7 @@ def test_every_vllm_engine_loads_exactly_the_plugins_its_recipe_names() -> None:
 def test_only_the_rows_that_need_a_plugin_load_one() -> None:
     with_plugins = {rid: r["vllm_plugins"] for rid, r in RECIPES.items() if r.get("vllm_plugins")}
     assert with_plugins == {
-        "vibevoice-asr": ["raven_ragged_audio"],
+        "vibevoice-asr": ["raven_ragged_audio", "raven_audio_duration"],
         "nemotron-3.5-transcribe-30b-a4b-w8a16": ["nemo_speechlm"],
         "nemotron-3.5-transcribe-30b-a4b-bf16-control": ["nemo_speechlm"],
     }
