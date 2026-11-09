@@ -1,0 +1,669 @@
+{
+  "schema_version": 2,
+  "model_id": "OpenMOSS-Team/MOSS-Transcribe-Diarize",
+  "label": "moss-transcribe-diarize",
+  "adapter": "vllm_openai",
+  "model_revision": null,
+  "limit_per_subset": null,
+  "output_format": "moss-timed-speakers",
+  "results": [
+    {
+      "subset": "xsid-de-control",
+      "n_samples": 800,
+      "n_attempted": 800,
+      "n_ok": 800,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "0.2",
+      "dataset_sha256": null,
+      "wer_pct": 14.6201,
+      "wer_filler_tolerant_pct": 14.6201,
+      "cer_pct": 10.5604,
+      "entity_hit_rate_pct": 80.0,
+      "n_entities": 250,
+      "n_utterances_with_entities": 214,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-02T21:38:48.533Z",
+            "finished_at": "2026-11-02T21:39:24.196Z",
+            "wall_s": 35.663,
+            "n_requests": 800,
+            "n_ok": 800,
+            "audio_s": 2734.76,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "moss-transcribe-diarize",
+                "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              }
+            }
+          }
+        ],
+        "total_wall_s": 35.663,
+        "total_audio_s": 2734.76,
+        "n_ok": 800,
+        "rtfx": 76.6834,
+        "utterances_per_s": 22.4322,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "moss-transcribe-diarize",
+          "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        }
+      }
+    },
+    {
+      "subset": "avemio-german-mixed-test",
+      "n_samples": 9799,
+      "n_attempted": 9799,
+      "n_ok": 9799,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "17bcbc196567bca7eae3e94942588b5678fd748e",
+      "dataset_sha256": null,
+      "wer_pct": 6.7278,
+      "wer_filler_tolerant_pct": 6.7296,
+      "cer_pct": 3.8124,
+      "entity_hit_rate_pct": 96.2759,
+      "n_entities": 725,
+      "n_utterances_with_entities": 605,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-02T21:14:02.099Z",
+            "finished_at": "2026-11-02T21:24:01.081Z",
+            "wall_s": 598.982,
+            "n_requests": 9799,
+            "n_ok": 9799,
+            "audio_s": 95357.552,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "moss-transcribe-diarize",
+                "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              }
+            }
+          }
+        ],
+        "total_wall_s": 598.982,
+        "total_audio_s": 95357.552,
+        "n_ok": 9799,
+        "rtfx": 159.1994,
+        "utterances_per_s": 16.3594,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "moss-transcribe-diarize",
+          "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        }
+      }
+    },
+    {
+      "subset": "fhnw-all-dialects",
+      "n_samples": 2875,
+      "n_attempted": 2875,
+      "n_ok": 2875,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": null,
+      "dataset_sha256": "7ca2492143b6d418ca42d6407f939ce8d2c53f66999e05906931ccefe6ff3148",
+      "wer_pct": 50.3655,
+      "wer_filler_tolerant_pct": 50.3566,
+      "cer_pct": 24.5144,
+      "entity_hit_rate_pct": 84.0336,
+      "n_entities": 119,
+      "n_utterances_with_entities": 107,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-02T21:35:45.262Z",
+            "finished_at": "2026-11-02T21:38:08.876Z",
+            "wall_s": 143.614,
+            "n_requests": 2875,
+            "n_ok": 2875,
+            "audio_s": 22961.622,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "moss-transcribe-diarize",
+                "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              }
+            }
+          }
+        ],
+        "total_wall_s": 143.614,
+        "total_audio_s": 22961.622,
+        "n_ok": 2875,
+        "rtfx": 159.8843,
+        "utterances_per_s": 20.0189,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "moss-transcribe-diarize",
+          "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        }
+      }
+    },
+    {
+      "subset": "fleurs",
+      "n_samples": 862,
+      "n_attempted": 862,
+      "n_ok": 862,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+      "dataset_sha256": null,
+      "wer_pct": 7.4242,
+      "wer_filler_tolerant_pct": 7.4266,
+      "cer_pct": 4.0305,
+      "entity_hit_rate_pct": 88.9262,
+      "n_entities": 298,
+      "n_utterances_with_entities": 207,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-02T21:24:08.994Z",
+            "finished_at": "2026-11-02T21:25:08.121Z",
+            "wall_s": 59.127,
+            "n_requests": 862,
+            "n_ok": 862,
+            "audio_s": 11349.3,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "moss-transcribe-diarize",
+                "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              }
+            }
+          }
+        ],
+        "total_wall_s": 59.127,
+        "total_audio_s": 11349.3,
+        "n_ok": 862,
+        "rtfx": 191.9478,
+        "utterances_per_s": 14.5788,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "moss-transcribe-diarize",
+          "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        }
+      }
+    },
+    {
+      "subset": "mls-de",
+      "n_samples": 3394,
+      "n_attempted": 3394,
+      "n_ok": 3394,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "2e83e61823b4c47dcbcb1980bb88601274127609",
+      "dataset_sha256": null,
+      "wer_pct": 7.65,
+      "wer_filler_tolerant_pct": 7.6499,
+      "cer_pct": 9.5138,
+      "entity_hit_rate_pct": 96.1783,
+      "n_entities": 471,
+      "n_utterances_with_entities": 350,
+      "n_runaway": 3,
+      "runaway_pct": 0.0884,
+      "runaway_edit_share_pct": 0.29,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-02T21:25:10.590Z",
+            "finished_at": "2026-11-02T21:30:21.359Z",
+            "wall_s": 310.77,
+            "n_requests": 3394,
+            "n_ok": 3394,
+            "audio_s": 51454.882,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "moss-transcribe-diarize",
+                "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              }
+            }
+          }
+        ],
+        "total_wall_s": 310.77,
+        "total_audio_s": 51454.882,
+        "n_ok": 3394,
+        "rtfx": 165.5722,
+        "utterances_per_s": 10.9213,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "moss-transcribe-diarize",
+          "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        }
+      }
+    },
+    {
+      "subset": "spc-test",
+      "n_samples": 3332,
+      "n_attempted": 3332,
+      "n_ok": 3332,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "48c389fb6b88c8e80f03273a677a422729183e06",
+      "dataset_sha256": null,
+      "wer_pct": 52.5047,
+      "wer_filler_tolerant_pct": 52.4276,
+      "cer_pct": 29.2157,
+      "entity_hit_rate_pct": 66.7224,
+      "n_entities": 598,
+      "n_utterances_with_entities": 428,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-02T21:32:37.263Z",
+            "finished_at": "2026-11-02T21:35:42.443Z",
+            "wall_s": 185.18,
+            "n_requests": 3332,
+            "n_ok": 3332,
+            "audio_s": 21676.184,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "moss-transcribe-diarize",
+                "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              }
+            }
+          }
+        ],
+        "total_wall_s": 185.18,
+        "total_audio_s": 21676.184,
+        "n_ok": 3332,
+        "rtfx": 117.0547,
+        "utterances_per_s": 17.9933,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "moss-transcribe-diarize",
+          "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        }
+      }
+    },
+    {
+      "subset": "voxpopuli-de",
+      "n_samples": 1968,
+      "n_attempted": 1968,
+      "n_ok": 1968,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "42f01879c780b4a2e90ec0b4f616c2ece526e4f1",
+      "dataset_sha256": null,
+      "wer_pct": 14.6569,
+      "wer_filler_tolerant_pct": 14.6323,
+      "cer_pct": 10.6763,
+      "entity_hit_rate_pct": 81.3889,
+      "n_entities": 360,
+      "n_utterances_with_entities": 246,
+      "n_runaway": 2,
+      "runaway_pct": 0.1016,
+      "runaway_edit_share_pct": 6.2332,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-02T21:30:28.124Z",
+            "finished_at": "2026-11-02T21:32:35.012Z",
+            "wall_s": 126.888,
+            "n_requests": 1968,
+            "n_ok": 1968,
+            "audio_s": 17724.227,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "moss-transcribe-diarize",
+                "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              }
+            }
+          }
+        ],
+        "total_wall_s": 126.888,
+        "total_audio_s": 17724.227,
+        "n_ok": 1968,
+        "rtfx": 139.684,
+        "utterances_per_s": 15.5097,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "moss-transcribe-diarize",
+          "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        }
+      }
+    },
+    {
+      "subset": "xsid-bar",
+      "n_samples": 800,
+      "n_attempted": 800,
+      "n_ok": 800,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "0.2",
+      "dataset_sha256": null,
+      "wer_pct": 69.0655,
+      "wer_filler_tolerant_pct": 69.0131,
+      "cer_pct": 46.2102,
+      "entity_hit_rate_pct": 53.6,
+      "n_entities": 250,
+      "n_utterances_with_entities": 214,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-02T21:38:11.220Z",
+            "finished_at": "2026-11-02T21:38:46.914Z",
+            "wall_s": 35.695,
+            "n_requests": 800,
+            "n_ok": 800,
+            "audio_s": 2691.08,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "moss-transcribe-diarize",
+                "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              }
+            }
+          }
+        ],
+        "total_wall_s": 35.695,
+        "total_audio_s": 2691.08,
+        "n_ok": 800,
+        "rtfx": 75.391,
+        "utterances_per_s": 22.4121,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "moss-transcribe-diarize",
+          "sha256": "e2307b681085c827970f95af971bf34bfe7a90bfa040e9916323bcf6d399eb0d"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        }
+      }
+    }
+  ],
+  "run_manifest": {
+    "git": {
+      "sha": "f25c72ed3185208e98fb63800c40826d3b8ad49c",
+      "dirty": false
+    },
+    "uv_lock_sha256": "f92a954b7d17dcfeff41d442ce940c0e3d4c68ca940c6235d3c88d19b826ce11",
+    "python": "3.11.15",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.39",
+    "libraries": {
+      "datasets": "5.0.1",
+      "httpx": "0.28.1",
+      "jiwer": "4.0.0",
+      "modal": null,
+      "num2words": "0.5.14",
+      "numpy": "2.4.6",
+      "pyannote.core": "6.0.1",
+      "pyannote.metrics": "4.1",
+      "raven-eval-core": "0.1.0",
+      "sacrebleu": "2.6.0",
+      "soundfile": "0.14.0",
+      "text2num": "3.0.2",
+      "unidecode": "1.4.0"
+    },
+    "gpu": null,
+    "config_sha256": "bf5877a56d19b7e1ce722cda45a6e0add8dc6f76daef683550032627e9f97f91",
+    "argv": [
+      "python",
+      "-m",
+      "raven_asr.reproduce",
+      "--metric",
+      "wer",
+      "--dataset",
+      "xsid-de-control",
+      "--model",
+      "OpenMOSS-Team/MOSS-Transcribe-Diarize",
+      "--concurrency",
+      "8",
+      "--out",
+      "/mnt/modelle/stt-bench/results/OpenMOSS-Team__MOSS-Transcribe-Diarize"
+    ]
+  },
+  "post_hoc": [
+    {
+      "step": "resummarize",
+      "adopted_without_manifest": [
+        "avemio-german-mixed-test",
+        "fhnw-all-dialects",
+        "fleurs",
+        "mls-de",
+        "spc-test",
+        "voxpopuli-de",
+        "xsid-bar"
+      ],
+      "why": "these subsets finished before per-subset manifests were recorded; the operator states they ran under this summary's run_manifest",
+      "tool": "raven_asr.resummarize",
+      "at": "2026-11-09T17:15:38.168Z"
+    }
+  ]
+}

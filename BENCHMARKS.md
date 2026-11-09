@@ -413,6 +413,410 @@ Parakeet-TDT-0.6B-v3 by one character (WER unchanged, CER +0.0008 pp).
 > cannot be published (consent) and are reported separately (Tier 3) — the rows
 > here are the public-dataset numbers anyone can re-score.
 
+### The 2026-11 campaign: 22 self-hosted models on full test splits
+
+**In one paragraph.** Between 2026-11-02 and 2026-11-09, 22 open models were
+served from the recipes in `serving/` and run over the **whole** test split of
+eight German sets: the four read-aloud sets `fleurs` (862), `avemio-german-mixed-test`
+(9,799), `mls-de` (3,394) and `voxpopuli-de` (1,968), and the dialect and probe
+sets `spc-test` (3,332), `fhnw-all-dialects` (2,875), `xsid-bar` (800) and
+`xsid-de-control` (800). That is 23,830 utterances per model and 524,260 in all,
+with zero failed requests. The runs came from five raven.eval commits (each row's
+commit is in the serving table below) on two machines with the same card type,
+and two of the models are quantized and carry a bf16 control. Every row links
+its artifact; `make verify` re-scores all of them.
+
+The tables are per dataset and sorted by WER. Sorting is for reading, not a
+ranking: rows whose intervals overlap are not ordered by this page, and no row
+carries a winner mark. Read-aloud sets first, then the dialect and probe sets,
+where the Swiss sets are translation-shaped and BLEU is the headline (listed
+above each of those tables).
+
+² Nine models (Cohere Transcribe, Granite Speech 4.1, Phi-4-multimodal,
+Voxtral-Mini-3B, Moonshine Streaming, Whisper large-v3, MOSS Transcribe-Diarize,
+Primeline Whisper turbo German, Qwen3-ASR) ran on raven.eval `f25c72ed`, before
+runs recorded their precision (#81) and before each subset kept its own run
+manifest. Their `precision` cell therefore says `not recorded`; the format they
+were served in is the one their recipe in `serving/recipes.toml` pins (bf16;
+fp16 for Whisper large-v3; fp32 for Moonshine), and the Raven page shows it as
+taken from the recipe. Their summaries were completed by
+`raven_asr.resummarize --adopt-unrecorded`, which says so in `post_hoc`.
+
+#### `fleurs`
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | fleurs | 2.43 | [2.15, 2.71] | 1.47 | 862 | 94.30 | [90.67, 97.35] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-fp8/voxtral-small-24b-2507-fp8/) | — |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | fleurs | 3.80 | [3.34, 4.30] | 4.18 | 862 | 79.19 | [73.54, 84.56] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-w8a16/nemotron-3.5-transcribe-30b-a4b-w8a16/) | — |
+| mistralai/Voxtral-Mini-3B-2507 | not recorded² | fleurs | 3.82 | [3.45, 4.20] | 2.09 | 862 | 88.59 | [81.58, 94.74] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-3b-2507/voxtral-mini-3b-2507/) | — |
+| openai/whisper-large-v3 | not recorded² | fleurs | 3.85 | [3.49, 4.24] | 2.37 | 862 | 86.91 | [80.39, 92.66] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3/openai-whisper-large-v3/) | — |
+| CohereLabs/cohere-transcribe-03-2026 | not recorded² | fleurs | 3.90 | [3.52, 4.30] | 2.19 | 862 | 86.24 | [79.56, 92.17] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/) | — |
+| Qwen/Qwen3-ASR-1.7B | not recorded² | fleurs | 4.17 | [3.73, 4.62] | 2.25 | 862 | 87.92 | [80.88, 94.04] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-qwen3-asr-1.7b/qwen3-asr-1.7b/) | — |
+| primeline/whisper-large-v3-turbo-german | not recorded² | fleurs | 4.18 | [3.81, 4.56] | 2.92 | 862 | 82.21 | [75.68, 88.32] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-turbo-german/primeline-whisper-large-v3-turbo-german/) | — |
+| nvidia/canary-1b-v2 | fp32 | fleurs | 4.30 | [3.89, 4.72] | 2.26 | 862 | 85.23 | [78.34, 91.38] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-canary-1b-v2/nvidia-canary-1b-v2/) | — |
+| primeline/whisper-large-v3-german | bf16 | fleurs | 4.36 | [3.93, 4.80] | 4.52 | 862 | 69.46 | [63.12, 75.48] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-german/primeline-whisper-large-v3-german/) | — |
+| openai/whisper-large-v3-turbo | fp16 | fleurs | 4.58 | [4.13, 5.04] | 2.45 | 862 | 89.93 | [84.78, 94.31] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3-turbo/openai-whisper-large-v3-turbo/) | — |
+| primeline/parakeet-primeline | fp32 | fleurs | 4.58 | [4.16, 5.00] | 2.84 | 862 | 83.56 | [77.32, 89.12] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-parakeet/primeline-parakeet/) | — |
+| nvidia/parakeet-tdt-0.6b-v3 | fp32 | fleurs | 4.83 | [4.41, 5.26] | 2.30 | 862 | 84.23 | [77.63, 90.41] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-parakeet-tdt-0.6b-v3/nvidia-parakeet-tdt-0.6b-v3/) | — |
+| nvidia/nemotron-labs-unified-asr-0.6b | fp32 | fleurs | 4.89 | [4.44, 5.35] | 2.75 | 862 | 85.23 | [79.73, 90.32] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b/) | — |
+| ibm-granite/granite-speech-5.0-470m-turboctc | bf16 | fleurs | 5.02 | [4.59, 5.46] | 3.43 | 862 | 68.79 | [62.50, 75.00] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-470m-turboctc/granite-speech-5.0-470m-turboctc/) | — |
+| ibm-granite/granite-speech-5.0-2b | bf16 | fleurs | 5.24 | [4.76, 5.74] | 9.89 | 862 | 72.15 | [66.12, 78.14] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-2b/granite-speech-5.0-2b/) | — |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | bf16 | fleurs | 5.59 | [4.93, 6.31] | 3.23 | 862 | 85.57 | [79.55, 90.97] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-4b-realtime-2602/voxtral-mini-4b-realtime-2602/) | — |
+| microsoft/Phi-4-multimodal-instruct | not recorded² | fleurs | 5.62 | [5.17, 6.10] | 3.66 | 862 | 89.93 | [84.57, 94.43] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-phi-4-multimodal/phi-4-multimodal/) | — |
+| ibm-granite/granite-speech-4.1-2b-plus | not recorded² | fleurs | 6.61 | [6.08, 7.16] | 10.07 | 862 | 69.46 | [63.42, 75.24] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-4.1-2b-plus/granite-speech-4.1-2b-plus/) | — |
+| moonshine-ai/moonshine-streaming-small-de | not recorded² | fleurs | 6.69 | [6.19, 7.21] | 4.13 | 862 | 79.87 | [72.79, 86.38] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moonshine-streaming-small-de/moonshine-streaming-small-de/) | — |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | not recorded² | fleurs | 7.42 | [6.88, 7.97] | 4.03 | 862 | 88.93 | [84.38, 92.99] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moss-transcribe-diarize/moss-transcribe-diarize/) | — |
+| microsoft/VibeVoice-ASR-HF | bf16 | fleurs | 7.69 | [5.99, 10.57] | 6.88 | 862 | 84.56 | [79.08, 89.74] | 298 | 1 | 15.81 | [2026-11](./artifacts/2026-11-campaign-vibevoice-asr/vibevoice-asr/) | — |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | fp32 | fleurs | 11.10 | [10.32, 11.89] | 7.38 | 862 | 67.45 | [61.17, 73.72] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-3.5-asr-streaming-0.6b/nvidia-nemotron-3.5-asr-streaming-0.6b/) | — |
+| nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B | bf16, TP 2, control | fleurs | 3.76 | [3.30, 4.26] | 4.14 | 862 | 79.19 | [73.52, 84.54] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-bf16-control/nemotron-3.5-transcribe-30b-a4b-bf16-control/) | — |
+| mistralai/Voxtral-Small-24B-2507 | bf16, TP 2, control | fleurs | 2.43 | [2.15, 2.71] | 1.48 | 862 | 94.30 | [90.67, 97.35] | 298 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-bf16-control/voxtral-small-24b-2507-bf16-control/) | — |
+
+#### `avemio-german-mixed-test`
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| primeline/whisper-large-v3-turbo-german | not recorded² | avemio-german-mixed-test | 2.60 | [2.49, 2.72] | 1.40 | 9799 | 97.52 | [96.35, 98.60] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-turbo-german/primeline-whisper-large-v3-turbo-german/) | — |
+| primeline/whisper-large-v3-german | bf16 | avemio-german-mixed-test | 2.83 | [2.68, 3.00] | 4.16 | 9799 | 96.28 | [94.61, 97.78] | 725 | 4 | 2.47 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-german/primeline-whisper-large-v3-german/) | — |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | avemio-german-mixed-test | 2.84 | [2.72, 2.96] | 2.27 | 9799 | 97.38 | [95.91, 98.65] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-w8a16/nemotron-3.5-transcribe-30b-a4b-w8a16/) | — |
+| CohereLabs/cohere-transcribe-03-2026 | not recorded² | avemio-german-mixed-test | 2.94 | [2.82, 3.06] | 5.05 | 9799 | 94.48 | [92.63, 96.24] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/) | — |
+| primeline/parakeet-primeline | fp32 | avemio-german-mixed-test | 2.94 | [2.83, 3.07] | 1.60 | 9799 | 96.69 | [95.18, 98.04] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-parakeet/primeline-parakeet/) | — |
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | avemio-german-mixed-test | 2.97 | [2.85, 3.10] | 4.12 | 9799 | 96.28 | [94.77, 97.60] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-fp8/voxtral-small-24b-2507-fp8/) | — |
+| ibm-granite/granite-speech-5.0-2b | bf16 | avemio-german-mixed-test | 3.07 | [2.95, 3.19] | 7.21 | 9799 | 94.90 | [92.73, 96.79] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-2b/granite-speech-5.0-2b/) | — |
+| ibm-granite/granite-speech-5.0-470m-turboctc | bf16 | avemio-german-mixed-test | 3.12 | [3.00, 3.25] | 2.59 | 9799 | 93.38 | [91.33, 95.32] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-470m-turboctc/granite-speech-5.0-470m-turboctc/) | — |
+| openai/whisper-large-v3 | not recorded² | avemio-german-mixed-test | 3.27 | [3.14, 3.40] | 5.30 | 9799 | 94.07 | [92.20, 95.82] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3/openai-whisper-large-v3/) | — |
+| openai/whisper-large-v3-turbo | fp16 | avemio-german-mixed-test | 3.61 | [3.47, 3.74] | 5.39 | 9799 | 92.69 | [90.66, 94.59] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3-turbo/openai-whisper-large-v3-turbo/) | — |
+| nvidia/parakeet-tdt-0.6b-v3 | fp32 | avemio-german-mixed-test | 3.63 | [3.50, 3.77] | 2.43 | 9799 | 97.10 | [95.68, 98.40] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-parakeet-tdt-0.6b-v3/nvidia-parakeet-tdt-0.6b-v3/) | — |
+| nvidia/canary-1b-v2 | fp32 | avemio-german-mixed-test | 3.64 | [3.51, 3.77] | 2.36 | 9799 | 96.69 | [95.21, 98.03] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-canary-1b-v2/nvidia-canary-1b-v2/) | — |
+| nvidia/nemotron-labs-unified-asr-0.6b | fp32 | avemio-german-mixed-test | 3.64 | [3.50, 3.78] | 2.45 | 9799 | 97.66 | [96.43, 98.74] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b/) | — |
+| ibm-granite/granite-speech-4.1-2b-plus | not recorded² | avemio-german-mixed-test | 3.81 | [3.67, 3.95] | 7.53 | 9799 | 92.14 | [89.64, 94.44] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-4.1-2b-plus/granite-speech-4.1-2b-plus/) | — |
+| Qwen/Qwen3-ASR-1.7B | not recorded² | avemio-german-mixed-test | 3.99 | [3.86, 4.14] | 2.70 | 9799 | 97.10 | [95.59, 98.44] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-qwen3-asr-1.7b/qwen3-asr-1.7b/) | — |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | bf16 | avemio-german-mixed-test | 4.37 | [4.18, 4.57] | 3.24 | 9799 | 95.86 | [94.10, 97.48] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-4b-realtime-2602/voxtral-mini-4b-realtime-2602/) | — |
+| moonshine-ai/moonshine-streaming-small-de | not recorded² | avemio-german-mixed-test | 4.48 | [4.32, 4.65] | 5.68 | 9799 | 94.21 | [92.20, 95.99] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moonshine-streaming-small-de/moonshine-streaming-small-de/) | — |
+| mistralai/Voxtral-Mini-3B-2507 | not recorded² | avemio-german-mixed-test | 4.50 | [4.36, 4.66] | 5.13 | 9799 | 95.17 | [93.42, 96.75] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-3b-2507/voxtral-mini-3b-2507/) | — |
+| microsoft/Phi-4-multimodal-instruct | not recorded² | avemio-german-mixed-test | 4.87 | [4.72, 5.03] | 3.95 | 9799 | 94.21 | [92.23, 96.03] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-phi-4-multimodal/phi-4-multimodal/) | — |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | fp32 | avemio-german-mixed-test | 6.24 | [6.05, 6.44] | 3.84 | 9799 | 93.10 | [90.66, 95.37] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-3.5-asr-streaming-0.6b/nvidia-nemotron-3.5-asr-streaming-0.6b/) | — |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | not recorded² | avemio-german-mixed-test | 6.73 | [6.54, 6.92] | 3.81 | 9799 | 96.28 | [94.64, 97.70] | 725 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moss-transcribe-diarize/moss-transcribe-diarize/) | — |
+| microsoft/VibeVoice-ASR-HF | bf16 | avemio-german-mixed-test | 8.25 | [7.51, 9.31] | 5.91 | 9799 | 93.52 | [91.21, 95.57] | 725 | 4 | 8.59 | [2026-11](./artifacts/2026-11-campaign-vibevoice-asr/vibevoice-asr/) | — |
+
+#### `mls-de`
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| CohereLabs/cohere-transcribe-03-2026 | not recorded² | mls-de | 3.46 | [3.29, 3.63] | 2.19 | 3394 | 79.62 | [74.74, 84.23] | 471 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/) | — |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | mls-de | 3.72 | [3.53, 3.91] | 8.41 | 3394 | 97.45 | [95.37, 99.15] | 471 | 3 | 0.60 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-w8a16/nemotron-3.5-transcribe-30b-a4b-w8a16/) | — |
+| ibm-granite/granite-speech-5.0-470m-turboctc | bf16 | mls-de | 3.95 | [3.76, 4.15] | 8.66 | 3394 | 79.41 | [74.49, 84.19] | 471 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-470m-turboctc/granite-speech-5.0-470m-turboctc/) | — |
+| ibm-granite/granite-speech-5.0-2b | bf16 | mls-de | 4.11 | [3.94, 4.29] | 2.04 | 3394 | 83.01 | [78.80, 87.09] | 471 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-2b/granite-speech-5.0-2b/) | — |
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | mls-de | 4.29 | [4.12, 4.47] | 7.08 | 3394 | 90.66 | [87.42, 93.63] | 471 | 2 | 0.27 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-fp8/voxtral-small-24b-2507-fp8/) | — |
+| openai/whisper-large-v3 | not recorded² | mls-de | 4.41 | [4.22, 4.60] | 2.89 | 3394 | 77.71 | [72.78, 82.60] | 471 | 2 | 0.26 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3/openai-whisper-large-v3/) | — |
+| nvidia/canary-1b-v2 | fp32 | mls-de | 4.52 | [4.33, 4.73] | 8.48 | 3394 | 88.53 | [84.89, 91.95] | 471 | 2 | 0.25 | [2026-11](./artifacts/2026-11-campaign-nvidia-canary-1b-v2/nvidia-canary-1b-v2/) | — |
+| primeline/whisper-large-v3-turbo-german | not recorded² | mls-de | 4.59 | [4.41, 4.77] | 8.61 | 3394 | 90.66 | [87.45, 93.74] | 471 | 2 | 0.25 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-turbo-german/primeline-whisper-large-v3-turbo-german/) | — |
+| primeline/parakeet-primeline | fp32 | mls-de | 5.25 | [5.06, 5.44] | 8.68 | 3394 | 90.87 | [87.63, 93.83] | 471 | 2 | 0.28 | [2026-11](./artifacts/2026-11-campaign-primeline-parakeet/primeline-parakeet/) | — |
+| openai/whisper-large-v3-turbo | fp16 | mls-de | 5.42 | [5.07, 5.81] | 4.73 | 3394 | 78.77 | [73.77, 83.44] | 471 | 1 | 0.11 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3-turbo/openai-whisper-large-v3-turbo/) | — |
+| primeline/whisper-large-v3-german | bf16 | mls-de | 5.44 | [5.25, 5.64] | 6.71 | 3394 | 92.36 | [89.75, 94.74] | 471 | 1 | 0.11 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-german/primeline-whisper-large-v3-german/) | — |
+| ibm-granite/granite-speech-4.1-2b-plus | not recorded² | mls-de | 5.63 | [5.41, 5.86] | 2.91 | 3394 | 75.80 | [70.85, 80.58] | 471 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-4.1-2b-plus/granite-speech-4.1-2b-plus/) | — |
+| Qwen/Qwen3-ASR-1.7B | not recorded² | mls-de | 5.73 | [5.49, 5.99] | 9.06 | 3394 | 94.06 | [91.26, 96.41] | 471 | 3 | 0.39 | [2026-11](./artifacts/2026-11-campaign-qwen3-asr-1.7b/qwen3-asr-1.7b/) | — |
+| nvidia/nemotron-labs-unified-asr-0.6b | fp32 | mls-de | 5.86 | [5.60, 6.13] | 8.49 | 3394 | 90.02 | [86.27, 93.41] | 471 | 3 | 0.38 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b/) | — |
+| nvidia/parakeet-tdt-0.6b-v3 | fp32 | mls-de | 6.29 | [6.01, 6.59] | 9.06 | 3394 | 89.60 | [85.80, 93.04] | 471 | 3 | 0.35 | [2026-11](./artifacts/2026-11-campaign-nvidia-parakeet-tdt-0.6b-v3/nvidia-parakeet-tdt-0.6b-v3/) | — |
+| moonshine-ai/moonshine-streaming-small-de | not recorded² | mls-de | 6.36 | [6.11, 6.61] | 3.32 | 3394 | 79.41 | [74.89, 83.73] | 471 | 1 | 0.09 | [2026-11](./artifacts/2026-11-campaign-moonshine-streaming-small-de/moonshine-streaming-small-de/) | — |
+| mistralai/Voxtral-Mini-3B-2507 | not recorded² | mls-de | 6.43 | [6.20, 6.66] | 6.39 | 3394 | 87.69 | [83.71, 91.33] | 471 | 3 | 0.35 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-3b-2507/voxtral-mini-3b-2507/) | — |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | bf16 | mls-de | 6.54 | [6.23, 6.85] | 9.63 | 3394 | 90.23 | [86.64, 93.53] | 471 | 3 | 0.34 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-4b-realtime-2602/voxtral-mini-4b-realtime-2602/) | — |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | not recorded² | mls-de | 7.65 | [7.42, 7.89] | 9.51 | 3394 | 96.18 | [93.70, 98.13] | 471 | 3 | 0.29 | [2026-11](./artifacts/2026-11-campaign-moss-transcribe-diarize/moss-transcribe-diarize/) | — |
+| microsoft/VibeVoice-ASR-HF | bf16 | mls-de | 8.43 | [6.90, 10.56] | 11.00 | 3394 | 95.75 | [93.15, 97.89] | 471 | 5 | 18.43 | [2026-11](./artifacts/2026-11-campaign-vibevoice-asr/vibevoice-asr/) | — |
+| microsoft/Phi-4-multimodal-instruct | not recorded² | mls-de | 8.84 | [7.44, 10.88] | 11.39 | 3394 | 81.53 | [77.12, 85.66] | 471 | 3 | 13.31 | [2026-11](./artifacts/2026-11-campaign-phi-4-multimodal/phi-4-multimodal/) | — |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | fp32 | mls-de | 9.74 | [9.44, 10.04] | 9.26 | 3394 | 84.08 | [79.87, 87.93] | 471 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-3.5-asr-streaming-0.6b/nvidia-nemotron-3.5-asr-streaming-0.6b/) | — |
+
+#### `voxpopuli-de`
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| CohereLabs/cohere-transcribe-03-2026 | not recorded² | voxpopuli-de | 7.51 | [6.87, 8.28] | 4.88 | 1968 | 89.72 | [85.84, 93.24] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/) | — |
+| ibm-granite/granite-speech-5.0-470m-turboctc | bf16 | voxpopuli-de | 8.43 | [7.82, 9.16] | 5.68 | 1968 | 86.67 | [82.45, 90.54] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-470m-turboctc/granite-speech-5.0-470m-turboctc/) | — |
+| nvidia/parakeet-tdt-0.6b-v3 | fp32 | voxpopuli-de | 8.88 | [8.25, 9.62] | 6.63 | 1968 | 76.39 | [71.27, 81.40] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-parakeet-tdt-0.6b-v3/nvidia-parakeet-tdt-0.6b-v3/) | — |
+| nvidia/canary-1b-v2 | fp32 | voxpopuli-de | 8.89 | [8.29, 9.59] | 6.50 | 1968 | 73.06 | [67.55, 78.63] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-canary-1b-v2/nvidia-canary-1b-v2/) | — |
+| nvidia/nemotron-labs-unified-asr-0.6b | fp32 | voxpopuli-de | 9.14 | [8.50, 9.89] | 6.93 | 1968 | 76.94 | [71.74, 81.96] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b/) | — |
+| primeline/whisper-large-v3-german | bf16 | voxpopuli-de | 9.28 | [8.43, 10.40] | 6.19 | 1968 | 88.06 | [84.06, 91.83] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-german/primeline-whisper-large-v3-german/) | — |
+| ibm-granite/granite-speech-5.0-2b | bf16 | voxpopuli-de | 9.37 | [8.74, 10.15] | 11.37 | 1968 | 72.50 | [67.04, 78.00] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-2b/granite-speech-5.0-2b/) | — |
+| primeline/parakeet-primeline | fp32 | voxpopuli-de | 10.52 | [9.85, 11.27] | 7.00 | 1968 | 83.89 | [79.59, 87.96] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-parakeet/primeline-parakeet/) | — |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | voxpopuli-de | 10.64 | [9.98, 11.40] | 8.13 | 1968 | 73.89 | [68.44, 79.18] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-w8a16/nemotron-3.5-transcribe-30b-a4b-w8a16/) | — |
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | voxpopuli-de | 11.03 | [10.39, 11.75] | 7.40 | 1968 | 88.33 | [84.43, 91.83] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-fp8/voxtral-small-24b-2507-fp8/) | — |
+| moonshine-ai/moonshine-streaming-small-de | not recorded² | voxpopuli-de | 11.43 | [10.51, 12.66] | 12.21 | 1968 | 71.11 | [65.55, 76.84] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moonshine-streaming-small-de/moonshine-streaming-small-de/) | — |
+| mistralai/Voxtral-Mini-3B-2507 | not recorded² | voxpopuli-de | 11.68 | [11.03, 12.42] | 7.86 | 1968 | 87.22 | [83.16, 90.88] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-3b-2507/voxtral-mini-3b-2507/) | — |
+| ibm-granite/granite-speech-4.1-2b-plus | not recorded² | voxpopuli-de | 12.15 | [10.09, 15.76] | 12.95 | 1968 | 70.56 | [64.99, 76.26] | 360 | 1 | 13.40 | [2026-11](./artifacts/2026-11-campaign-granite-speech-4.1-2b-plus/granite-speech-4.1-2b-plus/) | — |
+| microsoft/Phi-4-multimodal-instruct | not recorded² | voxpopuli-de | 12.72 | [12.02, 13.52] | 8.89 | 1968 | 87.22 | [83.00, 90.96] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-phi-4-multimodal/phi-4-multimodal/) | — |
+| primeline/whisper-large-v3-turbo-german | not recorded² | voxpopuli-de | 12.85 | [10.74, 15.68] | 8.93 | 1968 | 85.00 | [80.62, 89.02] | 360 | 2 | 13.03 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-turbo-german/primeline-whisper-large-v3-turbo-german/) | — |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | bf16 | voxpopuli-de | 13.74 | [12.89, 14.68] | 9.53 | 1968 | 84.72 | [80.18, 88.89] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-4b-realtime-2602/voxtral-mini-4b-realtime-2602/) | — |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | not recorded² | voxpopuli-de | 14.66 | [13.33, 16.32] | 10.68 | 1968 | 81.39 | [76.45, 86.04] | 360 | 2 | 6.23 | [2026-11](./artifacts/2026-11-campaign-moss-transcribe-diarize/moss-transcribe-diarize/) | — |
+| Qwen/Qwen3-ASR-1.7B | not recorded² | voxpopuli-de | 15.85 | [11.36, 22.77] | 11.03 | 1968 | 87.22 | [83.33, 90.86] | 360 | 3 | 27.32 | [2026-11](./artifacts/2026-11-campaign-qwen3-asr-1.7b/qwen3-asr-1.7b/) | — |
+| microsoft/VibeVoice-ASR-HF | bf16 | voxpopuli-de | 16.62 | [14.61, 19.76] | 11.19 | 1968 | 84.72 | [80.48, 88.60] | 360 | 3 | 10.92 | [2026-11](./artifacts/2026-11-campaign-vibevoice-asr/vibevoice-asr/) | — |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | fp32 | voxpopuli-de | 17.71 | [16.72, 18.73] | 12.36 | 1968 | 62.50 | [56.70, 68.66] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-3.5-asr-streaming-0.6b/nvidia-nemotron-3.5-asr-streaming-0.6b/) | — |
+| openai/whisper-large-v3 | not recorded² | voxpopuli-de | 17.96 | [16.64, 19.34] | 14.08 | 1968 | 81.94 | [76.78, 86.72] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3/openai-whisper-large-v3/) | — |
+| openai/whisper-large-v3-turbo | fp16 | voxpopuli-de | 20.84 | [19.30, 22.46] | 16.69 | 1968 | 79.72 | [74.21, 84.81] | 360 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3-turbo/openai-whisper-large-v3-turbo/) | — |
+
+#### `spc-test`
+
+BLEU (headline for translation-shaped sets; WER beside it is a floor): openai/whisper-large-v3 55.43, openai/whisper-large-v3-turbo 54.00, RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic 53.38, CohereLabs/cohere-transcribe-03-2026 53.37, primeline/whisper-large-v3-german 53.32, primeline/whisper-large-v3-turbo-german 50.94, mistralai/Voxtral-Mini-3B-2507 50.27, moonshine-ai/moonshine-streaming-small-de 49.74, primeline/parakeet-primeline 47.49, nvidia/parakeet-tdt-0.6b-v3 44.70, nvidia/nemotron-labs-unified-asr-0.6b 39.63, Qwen/Qwen3-ASR-1.7B 39.32, PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 35.85, mistralai/Voxtral-Mini-4B-Realtime-2602 32.38, nvidia/canary-1b-v2 30.39, OpenMOSS-Team/MOSS-Transcribe-Diarize 30.31, microsoft/VibeVoice-ASR-HF 25.78, microsoft/Phi-4-multimodal-instruct 20.18, ibm-granite/granite-speech-5.0-470m-turboctc 17.22, nvidia/nemotron-3.5-asr-streaming-0.6b 11.00, ibm-granite/granite-speech-5.0-2b 7.03, ibm-granite/granite-speech-4.1-2b-plus 2.05.
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| openai/whisper-large-v3 | not recorded² | spc-test | 29.30 | [28.54, 30.03] | 18.21 | 3332 | 88.96 | [85.99, 91.77] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3/openai-whisper-large-v3/) | — |
+| openai/whisper-large-v3-turbo | fp16 | spc-test | 30.00 | [29.27, 30.74] | 18.34 | 3332 | 86.45 | [83.17, 89.61] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3-turbo/openai-whisper-large-v3-turbo/) | — |
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | spc-test | 30.81 | [30.04, 31.56] | 18.94 | 3332 | 88.80 | [85.85, 91.65] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-fp8/voxtral-small-24b-2507-fp8/) | — |
+| CohereLabs/cohere-transcribe-03-2026 | not recorded² | spc-test | 31.04 | [29.42, 33.54] | 18.89 | 3332 | 87.12 | [83.99, 90.19] | 598 | 1 | 3.37 | [2026-11](./artifacts/2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/) | — |
+| primeline/whisper-large-v3-german | bf16 | spc-test | 32.56 | [31.77, 33.35] | 19.46 | 3332 | 81.94 | [78.44, 85.29] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-german/primeline-whisper-large-v3-german/) | — |
+| mistralai/Voxtral-Mini-3B-2507 | not recorded² | spc-test | 33.32 | [32.55, 34.10] | 20.67 | 3332 | 84.45 | [81.07, 87.75] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-3b-2507/voxtral-mini-3b-2507/) | — |
+| primeline/whisper-large-v3-turbo-german | not recorded² | spc-test | 33.54 | [32.49, 34.82] | 19.74 | 3332 | 78.60 | [74.87, 82.26] | 598 | 1 | 1.36 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-turbo-german/primeline-whisper-large-v3-turbo-german/) | — |
+| moonshine-ai/moonshine-streaming-small-de | not recorded² | spc-test | 34.46 | [33.68, 35.26] | 20.55 | 3332 | 80.43 | [76.68, 84.07] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moonshine-streaming-small-de/moonshine-streaming-small-de/) | — |
+| primeline/parakeet-primeline | fp32 | spc-test | 35.93 | [35.17, 36.67] | 20.79 | 3332 | 78.93 | [75.21, 82.62] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-parakeet/primeline-parakeet/) | — |
+| nvidia/parakeet-tdt-0.6b-v3 | fp32 | spc-test | 37.24 | [36.47, 38.01] | 21.99 | 3332 | 66.56 | [62.25, 70.77] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-parakeet-tdt-0.6b-v3/nvidia-parakeet-tdt-0.6b-v3/) | — |
+| nvidia/nemotron-labs-unified-asr-0.6b | fp32 | spc-test | 40.32 | [39.54, 41.10] | 24.05 | 3332 | 67.73 | [63.51, 71.93] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b/) | — |
+| Qwen/Qwen3-ASR-1.7B | not recorded² | spc-test | 42.78 | [41.94, 43.59] | 24.47 | 3332 | 69.90 | [65.92, 73.90] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-qwen3-asr-1.7b/qwen3-asr-1.7b/) | — |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | spc-test | 48.72 | [47.71, 49.69] | 27.17 | 3332 | 57.86 | [53.48, 62.30] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-w8a16/nemotron-3.5-transcribe-30b-a4b-w8a16/) | — |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | not recorded² | spc-test | 52.50 | [51.61, 53.38] | 29.22 | 3332 | 66.72 | [62.44, 71.00] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moss-transcribe-diarize/moss-transcribe-diarize/) | — |
+| nvidia/canary-1b-v2 | fp32 | spc-test | 54.70 | [53.71, 55.69] | 32.04 | 3332 | 61.54 | [57.10, 65.85] | 598 | 2 | 0.49 | [2026-11](./artifacts/2026-11-campaign-nvidia-canary-1b-v2/nvidia-canary-1b-v2/) | — |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | bf16 | spc-test | 55.42 | [54.31, 56.54] | 35.18 | 3332 | 70.57 | [66.10, 74.96] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-4b-realtime-2602/voxtral-mini-4b-realtime-2602/) | — |
+| microsoft/VibeVoice-ASR-HF | bf16 | spc-test | 66.11 | [61.57, 71.94] | 38.14 | 3332 | 62.04 | [57.67, 66.43] | 598 | 10 | 10.31 | [2026-11](./artifacts/2026-11-campaign-vibevoice-asr/vibevoice-asr/) | — |
+| ibm-granite/granite-speech-5.0-470m-turboctc | bf16 | spc-test | 67.50 | [66.60, 68.40] | 40.56 | 3332 | 39.13 | [34.99, 43.37] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-470m-turboctc/granite-speech-5.0-470m-turboctc/) | — |
+| ibm-granite/granite-speech-5.0-2b | bf16 | spc-test | 68.44 | [66.51, 71.03] | 42.40 | 3332 | 34.95 | [30.92, 39.15] | 598 | 2 | 2.25 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-2b/granite-speech-5.0-2b/) | — |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | fp32 | spc-test | 74.70 | [73.84, 75.55] | 52.16 | 3332 | 23.41 | [19.90, 27.09] | 598 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-3.5-asr-streaming-0.6b/nvidia-nemotron-3.5-asr-streaming-0.6b/) | — |
+| microsoft/Phi-4-multimodal-instruct | not recorded² | spc-test | 75.34 | [68.83, 83.52] | 51.11 | 3332 | 40.47 | [36.27, 44.85] | 598 | 8 | 12.89 | [2026-11](./artifacts/2026-11-campaign-phi-4-multimodal/phi-4-multimodal/) | — |
+| ibm-granite/granite-speech-4.1-2b-plus | not recorded² | spc-test | 232.92 | [205.25, 262.47] | 158.11 | 3332 | 24.25 | [20.66, 27.91] | 598 | 119 | 67.88 | [2026-11](./artifacts/2026-11-campaign-granite-speech-4.1-2b-plus/granite-speech-4.1-2b-plus/) | — |
+
+#### `fhnw-all-dialects`
+
+BLEU (headline for translation-shaped sets; WER beside it is a floor): RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic 58.70, openai/whisper-large-v3 58.18, mistralai/Voxtral-Mini-3B-2507 55.89, openai/whisper-large-v3-turbo 54.65, primeline/whisper-large-v3-german 51.61, CohereLabs/cohere-transcribe-03-2026 51.07, primeline/whisper-large-v3-turbo-german 48.81, primeline/parakeet-primeline 48.73, moonshine-ai/moonshine-streaming-small-de 48.65, Qwen/Qwen3-ASR-1.7B 44.29, nvidia/parakeet-tdt-0.6b-v3 43.45, nvidia/nemotron-labs-unified-asr-0.6b 41.87, PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 34.82, mistralai/Voxtral-Mini-4B-Realtime-2602 32.58, OpenMOSS-Team/MOSS-Transcribe-Diarize 30.06, nvidia/canary-1b-v2 29.77, microsoft/VibeVoice-ASR-HF 24.63, microsoft/Phi-4-multimodal-instruct 24.28, ibm-granite/granite-speech-5.0-470m-turboctc 21.36, nvidia/nemotron-3.5-asr-streaming-0.6b 8.73, ibm-granite/granite-speech-5.0-2b 7.84, ibm-granite/granite-speech-4.1-2b-plus 6.50.
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| openai/whisper-large-v3 | not recorded² | fhnw-all-dialects | 23.77 | [23.01, 24.56] | 12.97 | 2875 | 95.80 | [91.74, 99.15] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3/openai-whisper-large-v3/) | — |
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | fhnw-all-dialects | 24.77 | [23.97, 25.59] | 14.54 | 2875 | 100.00 | [100.00, 100.00] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-fp8/voxtral-small-24b-2507-fp8/) | — |
+| mistralai/Voxtral-Mini-3B-2507 | not recorded² | fhnw-all-dialects | 26.53 | [25.73, 27.33] | 15.35 | 2875 | 98.32 | [95.69, 100.00] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-3b-2507/voxtral-mini-3b-2507/) | — |
+| openai/whisper-large-v3-turbo | fp16 | fhnw-all-dialects | 26.60 | [25.79, 27.42] | 14.02 | 2875 | 95.80 | [91.74, 99.16] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3-turbo/openai-whisper-large-v3-turbo/) | — |
+| primeline/whisper-large-v3-german | bf16 | fhnw-all-dialects | 29.14 | [28.32, 29.96] | 15.89 | 2875 | 94.12 | [89.47, 98.23] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-german/primeline-whisper-large-v3-german/) | — |
+| CohereLabs/cohere-transcribe-03-2026 | not recorded² | fhnw-all-dialects | 30.39 | [29.58, 31.25] | 16.73 | 2875 | 94.12 | [89.47, 98.23] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/) | — |
+| primeline/parakeet-primeline | fp32 | fhnw-all-dialects | 31.05 | [30.25, 31.87] | 16.43 | 2875 | 93.28 | [88.50, 97.48] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-parakeet/primeline-parakeet/) | — |
+| primeline/whisper-large-v3-turbo-german | not recorded² | fhnw-all-dialects | 31.29 | [30.45, 32.14] | 16.35 | 2875 | 92.44 | [87.39, 96.69] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-turbo-german/primeline-whisper-large-v3-turbo-german/) | — |
+| moonshine-ai/moonshine-streaming-small-de | not recorded² | fhnw-all-dialects | 32.11 | [31.25, 32.98] | 17.16 | 2875 | 90.76 | [85.25, 95.69] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moonshine-streaming-small-de/moonshine-streaming-small-de/) | — |
+| Qwen/Qwen3-ASR-1.7B | not recorded² | fhnw-all-dialects | 36.01 | [35.14, 36.91] | 18.96 | 2875 | 93.28 | [88.33, 97.48] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-qwen3-asr-1.7b/qwen3-asr-1.7b/) | — |
+| nvidia/parakeet-tdt-0.6b-v3 | fp32 | fhnw-all-dialects | 36.39 | [35.49, 37.28] | 18.60 | 2875 | 85.71 | [79.13, 91.67] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-parakeet-tdt-0.6b-v3/nvidia-parakeet-tdt-0.6b-v3/) | — |
+| nvidia/nemotron-labs-unified-asr-0.6b | fp32 | fhnw-all-dialects | 36.58 | [35.74, 37.42] | 18.56 | 2875 | 87.39 | [81.36, 93.04] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b/) | — |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | fhnw-all-dialects | 48.13 | [47.00, 49.29] | 22.62 | 2875 | 74.79 | [66.39, 82.64] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-w8a16/nemotron-3.5-transcribe-30b-a4b-w8a16/) | — |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | not recorded² | fhnw-all-dialects | 50.37 | [49.36, 51.36] | 24.51 | 2875 | 84.03 | [77.39, 90.24] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moss-transcribe-diarize/moss-transcribe-diarize/) | — |
+| nvidia/canary-1b-v2 | fp32 | fhnw-all-dialects | 52.08 | [51.09, 53.09] | 27.03 | 2875 | 68.07 | [59.65, 76.27] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-canary-1b-v2/nvidia-canary-1b-v2/) | — |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | bf16 | fhnw-all-dialects | 52.84 | [51.75, 53.97] | 28.86 | 2875 | 78.99 | [71.54, 86.07] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-4b-realtime-2602/voxtral-mini-4b-realtime-2602/) | — |
+| ibm-granite/granite-speech-5.0-2b | bf16 | fhnw-all-dialects | 57.56 | [56.61, 58.52] | 32.18 | 2875 | 60.50 | [52.10, 69.03] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-2b/granite-speech-5.0-2b/) | — |
+| ibm-granite/granite-speech-5.0-470m-turboctc | bf16 | fhnw-all-dialects | 58.83 | [57.90, 59.76] | 28.10 | 2875 | 47.90 | [38.71, 57.14] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-470m-turboctc/granite-speech-5.0-470m-turboctc/) | — |
+| microsoft/Phi-4-multimodal-instruct | not recorded² | fhnw-all-dialects | 62.86 | [57.99, 69.56] | 39.72 | 2875 | 54.62 | [45.00, 63.93] | 119 | 3 | 7.84 | [2026-11](./artifacts/2026-11-campaign-phi-4-multimodal/phi-4-multimodal/) | — |
+| ibm-granite/granite-speech-4.1-2b-plus | not recorded² | fhnw-all-dialects | 67.12 | [62.68, 75.05] | 36.89 | 2875 | 51.26 | [42.37, 60.17] | 119 | 1 | 5.47 | [2026-11](./artifacts/2026-11-campaign-granite-speech-4.1-2b-plus/granite-speech-4.1-2b-plus/) | — |
+| microsoft/VibeVoice-ASR-HF | bf16 | fhnw-all-dialects | 68.15 | [61.41, 76.87] | 37.61 | 2875 | 73.11 | [64.91, 80.67] | 119 | 5 | 12.38 | [2026-11](./artifacts/2026-11-campaign-vibevoice-asr/vibevoice-asr/) | — |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | fp32 | fhnw-all-dialects | 76.88 | [76.04, 77.73] | 46.67 | 2875 | 36.13 | [27.59, 44.92] | 119 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-3.5-asr-streaming-0.6b/nvidia-nemotron-3.5-asr-streaming-0.6b/) | — |
+
+#### `xsid-bar`
+
+BLEU (headline for translation-shaped sets; WER beside it is a floor): RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic 20.94, openai/whisper-large-v3 20.55, Qwen/Qwen3-ASR-1.7B 19.40, openai/whisper-large-v3-turbo 18.82, mistralai/Voxtral-Mini-3B-2507 18.54, mistralai/Voxtral-Mini-4B-Realtime-2602 18.23, nvidia/canary-1b-v2 18.17, primeline/parakeet-primeline 17.70, microsoft/Phi-4-multimodal-instruct 17.55, PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 17.40, nvidia/nemotron-labs-unified-asr-0.6b 17.08, primeline/whisper-large-v3-turbo-german 17.03, microsoft/VibeVoice-ASR-HF 16.79, nvidia/parakeet-tdt-0.6b-v3 16.61, primeline/whisper-large-v3-german 16.34, CohereLabs/cohere-transcribe-03-2026 16.28, moonshine-ai/moonshine-streaming-small-de 16.14, ibm-granite/granite-speech-5.0-470m-turboctc 14.22, OpenMOSS-Team/MOSS-Transcribe-Diarize 13.00, nvidia/nemotron-3.5-asr-streaming-0.6b 10.87, ibm-granite/granite-speech-5.0-2b 2.73, ibm-granite/granite-speech-4.1-2b-plus 2.57.
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | xsid-bar | 59.14 | [57.23, 61.07] | 40.94 | 800 | 68.80 | [62.81, 74.58] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-fp8/voxtral-small-24b-2507-fp8/) | — |
+| Qwen/Qwen3-ASR-1.7B | not recorded² | xsid-bar | 59.39 | [57.48, 61.28] | 41.92 | 800 | 60.80 | [54.72, 66.67] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-qwen3-asr-1.7b/qwen3-asr-1.7b/) | — |
+| openai/whisper-large-v3 | not recorded² | xsid-bar | 60.82 | [58.95, 62.68] | 41.10 | 800 | 70.40 | [64.63, 75.98] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3/openai-whisper-large-v3/) | — |
+| mistralai/Voxtral-Mini-3B-2507 | not recorded² | xsid-bar | 60.89 | [58.99, 62.79] | 42.28 | 800 | 68.00 | [62.10, 73.68] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-3b-2507/voxtral-mini-3b-2507/) | — |
+| microsoft/Phi-4-multimodal-instruct | not recorded² | xsid-bar | 61.55 | [59.74, 63.36] | 42.82 | 800 | 56.40 | [50.20, 62.65] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-phi-4-multimodal/phi-4-multimodal/) | — |
+| openai/whisper-large-v3-turbo | fp16 | xsid-bar | 61.99 | [60.14, 63.81] | 41.69 | 800 | 69.20 | [63.10, 75.10] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3-turbo/openai-whisper-large-v3-turbo/) | — |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | xsid-bar | 62.25 | [60.27, 64.21] | 44.76 | 800 | 57.20 | [51.02, 63.35] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-w8a16/nemotron-3.5-transcribe-30b-a4b-w8a16/) | — |
+| CohereLabs/cohere-transcribe-03-2026 | not recorded² | xsid-bar | 63.37 | [61.58, 65.22] | 43.27 | 800 | 52.00 | [45.56, 58.54] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/) | — |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | bf16 | xsid-bar | 63.90 | [62.04, 65.76] | 44.24 | 800 | 62.40 | [56.05, 68.63] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-4b-realtime-2602/voxtral-mini-4b-realtime-2602/) | — |
+| primeline/parakeet-primeline | fp32 | xsid-bar | 63.93 | [62.15, 65.66] | 42.83 | 800 | 52.80 | [46.75, 58.94] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-parakeet/primeline-parakeet/) | — |
+| primeline/whisper-large-v3-german | bf16 | xsid-bar | 64.02 | [62.16, 65.86] | 44.37 | 800 | 50.40 | [44.22, 56.79] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-german/primeline-whisper-large-v3-german/) | — |
+| primeline/whisper-large-v3-turbo-german | not recorded² | xsid-bar | 64.17 | [62.38, 65.99] | 43.39 | 800 | 50.00 | [43.67, 56.35] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-turbo-german/primeline-whisper-large-v3-turbo-german/) | — |
+| nvidia/parakeet-tdt-0.6b-v3 | fp32 | xsid-bar | 64.82 | [62.98, 66.63] | 43.30 | 800 | 50.00 | [43.87, 56.20] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-parakeet-tdt-0.6b-v3/nvidia-parakeet-tdt-0.6b-v3/) | — |
+| nvidia/nemotron-labs-unified-asr-0.6b | fp32 | xsid-bar | 65.00 | [63.21, 66.80] | 42.23 | 800 | 61.20 | [55.12, 67.46] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b/) | — |
+| moonshine-ai/moonshine-streaming-small-de | not recorded² | xsid-bar | 65.12 | [63.35, 66.89] | 44.04 | 800 | 60.00 | [54.10, 65.88] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moonshine-streaming-small-de/moonshine-streaming-small-de/) | — |
+| nvidia/canary-1b-v2 | fp32 | xsid-bar | 65.68 | [63.76, 67.58] | 44.95 | 800 | 60.00 | [53.67, 66.14] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-canary-1b-v2/nvidia-canary-1b-v2/) | — |
+| ibm-granite/granite-speech-5.0-470m-turboctc | bf16 | xsid-bar | 65.83 | [64.04, 67.65] | 45.09 | 800 | 48.40 | [42.17, 54.69] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-470m-turboctc/granite-speech-5.0-470m-turboctc/) | — |
+| ibm-granite/granite-speech-5.0-2b | bf16 | xsid-bar | 66.06 | [64.27, 67.88] | 49.47 | 800 | 49.20 | [42.91, 55.47] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-2b/granite-speech-5.0-2b/) | — |
+| microsoft/VibeVoice-ASR-HF | bf16 | xsid-bar | 66.32 | [62.92, 71.18] | 46.26 | 800 | 64.00 | [57.96, 70.04] | 250 | 1 | 2.98 | [2026-11](./artifacts/2026-11-campaign-vibevoice-asr/vibevoice-asr/) | — |
+| ibm-granite/granite-speech-4.1-2b-plus | not recorded² | xsid-bar | 68.63 | [66.78, 70.50] | 51.33 | 800 | 50.00 | [43.70, 56.38] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-4.1-2b-plus/granite-speech-4.1-2b-plus/) | — |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | not recorded² | xsid-bar | 69.07 | [67.26, 70.87] | 46.21 | 800 | 53.60 | [47.41, 59.84] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moss-transcribe-diarize/moss-transcribe-diarize/) | — |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | fp32 | xsid-bar | 71.35 | [69.65, 73.07] | 48.62 | 800 | 49.60 | [43.43, 55.93] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-3.5-asr-streaming-0.6b/nvidia-nemotron-3.5-asr-streaming-0.6b/) | — |
+
+#### `xsid-de-control`
+
+| model | precision | dataset | WER strict % | 95 % CI | CER % | n | numbers hit % | 95 % CI | numbers | loops | loop edits % | run | flozi ref WER |
+|-------|-----------|---------|------------:|--------:|------:|--:|--------------:|--------:|--------:|------:|-------------:|-----|--------------:|
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | xsid-de-control | 8.23 | [7.15, 9.37] | 6.83 | 800 | 91.60 | [88.07, 94.84] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-small-24b-2507-fp8/voxtral-small-24b-2507-fp8/) | — |
+| openai/whisper-large-v3 | not recorded² | xsid-de-control | 8.47 | [7.37, 9.62] | 6.63 | 800 | 89.60 | [85.66, 93.18] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3/openai-whisper-large-v3/) | — |
+| CohereLabs/cohere-transcribe-03-2026 | not recorded² | xsid-de-control | 8.89 | [7.72, 10.10] | 8.56 | 800 | 77.20 | [72.09, 82.00] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/) | — |
+| openai/whisper-large-v3-turbo | fp16 | xsid-de-control | 9.45 | [8.30, 10.61] | 6.94 | 800 | 89.60 | [85.60, 93.23] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-openai-whisper-large-v3-turbo/openai-whisper-large-v3-turbo/) | — |
+| primeline/parakeet-primeline | fp32 | xsid-de-control | 9.87 | [8.73, 11.07] | 8.55 | 800 | 75.20 | [69.80, 80.41] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-parakeet/primeline-parakeet/) | — |
+| Qwen/Qwen3-ASR-1.7B | not recorded² | xsid-de-control | 9.97 | [8.80, 11.21] | 9.46 | 800 | 76.80 | [71.72, 81.89] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-qwen3-asr-1.7b/qwen3-asr-1.7b/) | — |
+| ibm-granite/granite-speech-5.0-470m-turboctc | bf16 | xsid-de-control | 10.11 | [8.96, 11.29] | 10.39 | 800 | 74.00 | [68.75, 79.12] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-470m-turboctc/granite-speech-5.0-470m-turboctc/) | — |
+| primeline/whisper-large-v3-turbo-german | not recorded² | xsid-de-control | 10.31 | [9.18, 11.46] | 8.31 | 800 | 76.80 | [71.60, 81.78] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-turbo-german/primeline-whisper-large-v3-turbo-german/) | — |
+| primeline/whisper-large-v3-german | bf16 | xsid-de-control | 10.41 | [9.20, 11.62] | 10.44 | 800 | 72.80 | [67.47, 78.04] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-primeline-whisper-large-v3-german/primeline-whisper-large-v3-german/) | — |
+| nvidia/parakeet-tdt-0.6b-v3 | fp32 | xsid-de-control | 10.52 | [9.32, 11.72] | 8.77 | 800 | 75.20 | [69.77, 80.33] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-parakeet-tdt-0.6b-v3/nvidia-parakeet-tdt-0.6b-v3/) | — |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | xsid-de-control | 10.88 | [9.60, 12.17] | 10.89 | 800 | 72.80 | [67.49, 77.96] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nemotron-3.5-transcribe-30b-a4b-w8a16/nemotron-3.5-transcribe-30b-a4b-w8a16/) | — |
+| mistralai/Voxtral-Mini-3B-2507 | not recorded² | xsid-de-control | 10.97 | [9.71, 12.25] | 8.47 | 800 | 90.40 | [86.61, 93.88] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-3b-2507/voxtral-mini-3b-2507/) | — |
+| microsoft/Phi-4-multimodal-instruct | not recorded² | xsid-de-control | 11.00 | [9.82, 12.21] | 8.95 | 800 | 62.00 | [55.78, 68.09] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-phi-4-multimodal/phi-4-multimodal/) | — |
+| ibm-granite/granite-speech-5.0-2b | bf16 | xsid-de-control | 11.13 | [9.87, 12.42] | 17.20 | 800 | 74.80 | [69.53, 79.92] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-5.0-2b/granite-speech-5.0-2b/) | — |
+| nvidia/nemotron-labs-unified-asr-0.6b | fp32 | xsid-de-control | 11.13 | [9.92, 12.39] | 7.43 | 800 | 87.20 | [82.72, 91.27] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b/) | — |
+| nvidia/canary-1b-v2 | fp32 | xsid-de-control | 11.74 | [10.34, 13.15] | 9.00 | 800 | 85.60 | [81.30, 89.75] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-canary-1b-v2/nvidia-canary-1b-v2/) | — |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | bf16 | xsid-de-control | 11.98 | [10.62, 13.39] | 8.23 | 800 | 87.20 | [83.00, 91.16] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-voxtral-mini-4b-realtime-2602/voxtral-mini-4b-realtime-2602/) | — |
+| microsoft/VibeVoice-ASR-HF | bf16 | xsid-de-control | 13.35 | [11.91, 14.80] | 10.61 | 800 | 81.20 | [76.47, 85.77] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-vibevoice-asr/vibevoice-asr/) | — |
+| moonshine-ai/moonshine-streaming-small-de | not recorded² | xsid-de-control | 13.43 | [12.07, 14.79] | 9.68 | 800 | 82.00 | [77.20, 86.48] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moonshine-streaming-small-de/moonshine-streaming-small-de/) | — |
+| ibm-granite/granite-speech-4.1-2b-plus | not recorded² | xsid-de-control | 13.87 | [12.54, 15.24] | 18.27 | 800 | 73.60 | [68.29, 78.80] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-granite-speech-4.1-2b-plus/granite-speech-4.1-2b-plus/) | — |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | not recorded² | xsid-de-control | 14.62 | [13.23, 16.03] | 10.56 | 800 | 80.00 | [75.10, 84.88] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-moss-transcribe-diarize/moss-transcribe-diarize/) | — |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | fp32 | xsid-de-control | 15.32 | [13.86, 16.82] | 11.83 | 800 | 71.60 | [66.28, 76.83] | 250 | 0 | 0.00 | [2026-11](./artifacts/2026-11-campaign-nvidia-nemotron-3.5-asr-streaming-0.6b/nvidia-nemotron-3.5-asr-streaming-0.6b/) | — |
+
+#### Throughput (× real time, whole set, parallel requests)
+
+| model | parallel | hardware | fleurs | avemio-german-mixed-test | mls-de | voxpopuli-de | spc-test | fhnw-all-dialects | xsid-bar | xsid-de-control |
+|-------|---------:|----------|------:|------:|------:|------:|------:|------:|------:|------:|
+| CohereLabs/cohere-transcribe-03-2026 | 8 | 1x RTX 3090, driver 580.178.04 | 277.3 | 244.5 | 242.2 | 215.8 | 191.5 | 244.2 | 123.9 | 126.0 |
+| ibm-granite/granite-speech-4.1-2b-plus | 8 | 1x RTX 3090, driver 580.178.04 | 166.7 | 151.6 | 157.4 | 130.5 | 69.5 | 157.8 | 93.8 | 91.7 |
+| ibm-granite/granite-speech-5.0-2b | 8 | 1x RTX 3090, driver 615.71.09 | 173.2 | 183.4 | 152.9 | 83.1 | 73.8 | 100.7 | 70.1 | 68.6 |
+| ibm-granite/granite-speech-5.0-470m-turboctc | 4 | 1x RTX 3090, driver 615.71.09 | 913.2 | 520.4 | 588.4 | 648.4 | 403.0 | 255.5 | 161.3 | 193.6 |
+| microsoft/Phi-4-multimodal-instruct | 8 | 1x RTX 3090, driver 580.178.04 | 92.9 | 79.1 | 79.6 | 71.5 | 60.1 | 84.7 | 46.1 | 45.7 |
+| microsoft/VibeVoice-ASR-HF | 4 | 1x RTX 3090, driver 615.71.09 | 25.3 | 25.5 | 25.6 | 22.6 | 19.2 | 21.8 | 14.1 | 14.1 |
+| mistralai/Voxtral-Mini-3B-2507 | 8 | 1x RTX 3090, driver 580.178.04 | 84.7 | 69.3 | 81.7 | 61.0 | 48.8 | 65.8 | 29.7 | 29.9 |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | 8 | 1x RTX 3090, driver 615.71.09 | 33.0 | 32.6 | 33.2 | 32.2 | 31.4 | 32.3 | 27.8 | 27.9 |
+| moonshine-ai/moonshine-streaming-small-de | 4 | 1x RTX 3090, driver 580.178.04 | 36.8 | 34.0 | 31.5 | 30.0 | 27.9 | 41.9 | 21.5 | 22.4 |
+| nvidia/canary-1b-v2 | 8 | 1x RTX 3090, driver 615.71.09 | 85.3 | 55.9 | 77.8 | 55.9 | 58.3 | 119.4 | 83.3 | 83.6 |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | 8 | 1x RTX 3090, driver 580.178.04 | 73.8 | 58.2 | 84.5 | 60.2 | 41.1 | 48.9 | 21.7 | 21.9 |
+| nvidia/nemotron-labs-unified-asr-0.6b | 8 | 1x RTX 3090, driver 615.71.09 | 144.4 | 130.6 | 149.2 | 137.3 | 108.3 | 144.9 | 74.8 | 70.2 |
+| nvidia/parakeet-tdt-0.6b-v3 | 8 | 1x RTX 3090, driver 615.71.09 | 263.0 | 210.6 | 302.1 | 201.5 | 162.4 | 204.0 | 109.7 | 110.7 |
+| openai/whisper-large-v3 | 8 | 1x RTX 3090, driver 580.178.04 | 127.4 | 105.1 | 124.7 | 95.1 | 75.0 | 99.7 | 45.6 | 46.3 |
+| openai/whisper-large-v3-turbo | 8 | 1x RTX 3090, driver 615.71.09 | 119.4 | 93.0 | 132.8 | 84.8 | 63.2 | 75.1 | 33.2 | 35.6 |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | 8 | 1x RTX 3090, driver 580.178.04 | 191.9 | 159.2 | 165.6 | 139.7 | 117.1 | 159.9 | 75.4 | 76.7 |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | 8 | 2x RTX 3090 TP 2, driver 580.178.04 | 105.3 | 85.3 | 103.2 | 74.7 | 62.9 | 92.4 | 46.2 | 48.3 |
+| primeline/parakeet-primeline | 8 | 1x RTX 3090, driver 615.71.09 | 265.8 | 188.9 | 307.6 | 182.0 | 137.1 | 187.9 | 79.1 | 86.7 |
+| primeline/whisper-large-v3-german | 8 | 1x RTX 3090, driver 615.71.09 | 137.2 | 113.8 | 131.9 | 101.5 | 82.3 | 108.5 | 50.3 | 50.8 |
+| primeline/whisper-large-v3-turbo-german | 8 | 1x RTX 3090, driver 580.178.04 | 213.0 | 164.8 | 230.7 | 151.3 | 114.4 | 141.9 | 62.0 | 62.9 |
+| Qwen/Qwen3-ASR-1.7B | 8 | 1x RTX 3090, driver 580.178.04 | 220.2 | 197.5 | 175.5 | 168.4 | 157.1 | 221.0 | 128.2 | 127.1 |
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | 8 | 2x RTX 3090 TP 2, driver 580.178.04 | 46.9 | 37.8 | 46.3 | 33.6 | 26.4 | 35.0 | 15.5 | 15.7 |
+
+#### Serving recipe per model
+
+| model | raven.eval commit | engine | recipe sha256 (first 10) | precision source |
+|-------|-------------------|--------|--------------------------|------------------|
+| CohereLabs/cohere-transcribe-03-2026 | `f25c72ed` | vllm 0.33.0 | `8403015c83` | recipe (`serving/recipes.toml`)² |
+| ibm-granite/granite-speech-4.1-2b-plus | `f25c72ed` | vllm 0.33.0 | `512bf402d0` | recipe (`serving/recipes.toml`)² |
+| ibm-granite/granite-speech-5.0-2b | `b0f6b6f7` | vllm 0.33.0 | `8c27e5884b` | recorded |
+| ibm-granite/granite-speech-5.0-470m-turboctc | `b0f6b6f7` | transformers 5.20.2 (torch 2.14.0+cu130) | `d8ce3611c0` | recorded |
+| microsoft/Phi-4-multimodal-instruct | `f25c72ed` | vllm 0.33.0 | `4a20920ac3` | recipe (`serving/recipes.toml`)² |
+| microsoft/VibeVoice-ASR-HF | `edd9cba0` | vllm 0.33.0 | `6cda85b39d` | recorded |
+| mistralai/Voxtral-Mini-3B-2507 | `f25c72ed` | vllm 0.33.0 | `3b2d3e5727` | recipe (`serving/recipes.toml`)² |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | `3055509b` | vllm 0.33.0 | `f1d189dd8e` | recorded |
+| mistralai/Voxtral-Small-24B-2507 (bf16 control) | `dfb0247e` | vllm 0.33.0 | `5bdd2ff433` | recorded |
+| moonshine-ai/moonshine-streaming-small-de | `f25c72ed` | transformers 5.20.2 (torch 2.14.0+cu130) | `023fdf3e52` | recipe (`serving/recipes.toml`)² |
+| nvidia/canary-1b-v2 | `b0f6b6f7` | nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130) | `20af60ed56` | recorded |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | `b0f6b6f7` | nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130) | `5d37c6fbef` | recorded |
+| nvidia/nemotron-labs-unified-asr-0.6b | `b0f6b6f7` | nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130) | `c0c6e7de7b` | recorded |
+| nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B (bf16 control) | `b3f06027` | vllm 0.33.0 | `ff0e218084` | recorded |
+| nvidia/parakeet-tdt-0.6b-v3 | `b0f6b6f7` | nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130) | `a3be3abdd6` | recorded |
+| openai/whisper-large-v3 | `f25c72ed` | vllm 0.33.0 | `a3fe32dfbb` | recipe (`serving/recipes.toml`)² |
+| openai/whisper-large-v3-turbo | `b0f6b6f7` | vllm 0.33.0 | `baace10895` | recorded |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | `f25c72ed` | vllm 0.33.0 | `e2307b6810` | recipe (`serving/recipes.toml`)² |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | `dfb0247e` | vllm 0.33.0 | `33991fd0a8` | recorded |
+| primeline/parakeet-primeline | `b0f6b6f7` | nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130) | `3dad374b76` | recorded |
+| primeline/whisper-large-v3-german | `b0f6b6f7` | vllm 0.33.0 | `caf8f9c723` | recorded |
+| primeline/whisper-large-v3-turbo-german | `f25c72ed` | vllm 0.33.0 | `3cb230d5df` | recipe (`serving/recipes.toml`)² |
+| Qwen/Qwen3-ASR-1.7B | `f25c72ed` | vllm 0.33.0 | `2fbf998c60` | recipe (`serving/recipes.toml`)² |
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | `b0f6b6f7` | vllm 0.33.0 | `53c9bb99b9` | recorded |
+
+#### Loops per model and set
+
+| model | fleurs | avemio-german-mixed-test | mls-de | voxpopuli-de | spc-test | fhnw-all-dialects | xsid-bar | xsid-de-control | total |
+|-------|------:|------:|------:|------:|------:|------:|------:|------:|------:|
+| CohereLabs/cohere-transcribe-03-2026 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 1 |
+| ibm-granite/granite-speech-4.1-2b-plus | 0 | 0 | 0 | 1 | 119 | 1 | 0 | 0 | 121 |
+| ibm-granite/granite-speech-5.0-2b | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 2 |
+| ibm-granite/granite-speech-5.0-470m-turboctc | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| microsoft/Phi-4-multimodal-instruct | 0 | 0 | 3 | 0 | 8 | 3 | 0 | 0 | 14 |
+| microsoft/VibeVoice-ASR-HF | 1 | 4 | 5 | 3 | 10 | 5 | 1 | 0 | 29 |
+| mistralai/Voxtral-Mini-3B-2507 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 3 |
+| mistralai/Voxtral-Mini-4B-Realtime-2602 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 3 |
+| moonshine-ai/moonshine-streaming-small-de | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 |
+| nvidia/canary-1b-v2 | 0 | 0 | 2 | 0 | 2 | 0 | 0 | 0 | 4 |
+| nvidia/nemotron-3.5-asr-streaming-0.6b | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| nvidia/nemotron-labs-unified-asr-0.6b | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 3 |
+| nvidia/parakeet-tdt-0.6b-v3 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 3 |
+| openai/whisper-large-v3 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 2 |
+| openai/whisper-large-v3-turbo | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 |
+| OpenMOSS-Team/MOSS-Transcribe-Diarize | 0 | 0 | 3 | 2 | 0 | 0 | 0 | 0 | 5 |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 3 |
+| primeline/parakeet-primeline | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 2 |
+| primeline/whisper-large-v3-german | 0 | 4 | 1 | 0 | 0 | 0 | 0 | 0 | 5 |
+| primeline/whisper-large-v3-turbo-german | 0 | 0 | 2 | 2 | 1 | 0 | 0 | 0 | 5 |
+| Qwen/Qwen3-ASR-1.7B | 0 | 0 | 3 | 3 | 0 | 0 | 0 | 0 | 6 |
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 2 |
+
+**Throughput and hardware.** The speed is a throughput: audio seconds of the whole
+set over wall-clock seconds, with the stated number of requests in flight against
+a batching server. It is not a per-request latency and is not comparable to one.
+Two machines did the measuring, each with RTX 3090 cards; the driver version in
+the hardware column tells them apart (580 and 615). On the 615 machine a small
+text-embedding service was found sharing the card on 2026-11-09, the day of the
+VibeVoice-ASR run; WER is untouched by it, throughput there may be slightly low.
+Whether it also ran during that machine's earlier runs (2026-11-04 to 11-08) can
+no longer be established. The two `TP 2` rows split one
+model over two NVLinked cards and are not comparable to the one-card rows.
+
+**Batching drift.** The full sets ran batched. The single-request cross-check on
+`fleurs` (Parakeet-TDT-0.6B-v3, see "Serving" above) changed 2 of 862 transcripts
+by one character, WER unchanged; the raw transcripts of that cross-check are not
+among the artifacts.
+
+**Quantization controls.** Both quantized models were also run in bf16 on
+`fleurs` (two cards, CPU offload for the weights that do not fit), on the same 862
+utterances. Paired difference quantized − bf16 in this page's lens (`make analyse
+ARTIFACT=<quantized> COMPARE=<control>`, 10,000 resamples):
+
+| quantized model | precision | WER quantized | WER bf16 | quantized − bf16 (pp) | 95 % CI | reads as |
+|-----------------|-----------|--------------:|---------:|----------------------:|--------:|----------|
+| RedHatAI/Voxtral-Small-24B-2507-FP8-dynamic | fp8-e4m3 fp8-w8a16-marlin, TP 2 | 2.43 | 2.43 | +0.00 | [−0.05, +0.05] | no measurable cost |
+| PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16 | int8 int8-w8a16-marlin, TP 2 | 3.80 | 3.76 | +0.04 | [−0.08, +0.16] | no measurable cost |
+
+The Raven benchmark page scores with its own strict-de lens and shows the same
+comparison as +0.01 pp [−0.05, +0.07] and +0.07 pp [−0.04, +0.20]; both lenses
+say the same thing. The Nemotron W8A16 checkpoint is our own quantization. A
+first bf16 control of Nemotron returned 110.7 % WER because offloaded Mamba
+layers convolved with unloaded memory (#101, fixed in #103); it was discarded and
+re-measured, and is not among the artifacts.
+
+**Loops.** 215 of 524,260 utterances ran into a repetition loop (more than 3× the
+reference's words), counted per model and set in the table above and included in
+every WER. Granite Speech 4.1 on `spc-test` accounts for 119 of them.
+
+**Model-specific notes.**
+
+- **Nemotron 3.5 ASR Streaming** writes locale tags such as `<de-DE>` into the
+  middle of a transcript, not only at its end; 2,320 of 3,394 `mls-de` answers
+  carried one. The server stripped only a trailing tag; #98 strips all of them
+  (`nemotron-locale-tags` output format), and the recorded runs were corrected by
+  `make reparse` (raw text kept in `raw_prediction`, the step recorded in
+  `post_hoc`). `mls-de` moves from 12.82 % to the 9.74 % shown here.
+- **VibeVoice-ASR** has no language parameter: neither its model card, nor
+  transformers, nor Microsoft's own code offers one. Its only input besides audio
+  is a context text ("This is a N seconds audio, with extra info: …"), which
+  Microsoft documents for hotwords and metadata. Since #104 the harness sends
+  "The audio is in German." there when a run asks for German. That is a hint the
+  model learned to read, not a hard switch like Canary's language token. Without
+  it `xsid-de-control` scored 24.73 %, 600 of its 1,379 word errors from a single
+  clip that looped in Spanish; with it 13.34 %, and answers in a wrong language
+  dropped on every set (e.g. `spc-test` 287 → 105). On `mls-de` and
+  `voxpopuli-de` the new run is worse only through a few greedy repetition loops
+  ("die Rose, die Rose, …"); without the ten clips that changed most it is 6.83 %
+  and 14.78 %. The run without the hint is not published.
+- **Empty answers** count as 100 % WER for the utterance and are model behaviour,
+  not failures: Nemotron 3.5 ASR Streaming 1,293 (`spc-test` 706,
+  `fhnw-all-dialects` 477, identical over two measurements), Voxtral-Mini-4B
+  Realtime 374 (`spc-test` 267), VibeVoice-ASR 307 (`avemio-german-mixed-test`
+  181, `fhnw-all-dialects` 112), Nemotron Labs Unified 53, Parakeet-TDT-0.6B-v3
+  37; every other model has 11 or fewer.
+- **Host label.** The hardware label of the runs on the 615 machine named the
+  host after the driver version. A public artifact names hardware, not
+  infrastructure (`raven_asr/throughput.py`), so it was removed from those
+  artifacts; each one records the step in `post_hoc`.
+
 ### Numbers — the error WER hides (numeric entity hit rate)
 
 A wrong digit in a date, an amount or a count is the costliest error a meeting

@@ -1,0 +1,20 @@
+{
+  "fleurs": {
+    "wer_pct": 2.4261,
+    "cer_pct": 1.4792,
+    "n_samples": 862,
+    "n_dropped": 0,
+    "dropped_by_reason": {},
+    "wer_strict_de_pct": 2.658,
+    "wer_ci_lo": 2.1503,
+    "wer_ci_hi": 2.7103,
+    "entity_hit_rate_pct": 94.2953,
+    "n_entities": 298,
+    "n_utterances_with_entities": 207,
+    "entity_ci_lo": 90.6667,
+    "entity_ci_hi": 97.351,
+    "n_runaway": 0,
+    "runaway_pct": 0.0,
+    "runaway_edit_share_pct": 0.0
+  }
+}

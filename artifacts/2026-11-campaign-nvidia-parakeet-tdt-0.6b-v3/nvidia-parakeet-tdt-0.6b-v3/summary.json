@@ -1,0 +1,879 @@
+{
+  "schema_version": 2,
+  "model_id": "nvidia/parakeet-tdt-0.6b-v3",
+  "label": "nvidia-parakeet-tdt-0.6b-v3",
+  "adapter": "vllm_openai",
+  "model_revision": null,
+  "limit_per_subset": null,
+  "output_format": null,
+  "results": [
+    {
+      "subset": "xsid-de-control",
+      "n_samples": 800,
+      "n_attempted": 800,
+      "n_ok": 800,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "0.2",
+      "dataset_sha256": null,
+      "wer_pct": 10.5153,
+      "wer_filler_tolerant_pct": 10.5153,
+      "cer_pct": 8.7725,
+      "entity_hit_rate_pct": 75.2,
+      "n_entities": 250,
+      "n_utterances_with_entities": 214,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-04T21:21:58.552Z",
+            "finished_at": "2026-11-04T21:22:23.266Z",
+            "wall_s": 24.715,
+            "n_requests": 800,
+            "n_ok": 800,
+            "audio_s": 2734.76,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+            "interrupted": false,
+            "serving": {
+              "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+              "recipe": {
+                "id": "nvidia-parakeet-tdt-0.6b-v3",
+                "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+              },
+              "batching": {
+                "max_batch": 16,
+                "wait_ms": 20.0,
+                "max_audio_s": 40.0
+              },
+              "decoding": {
+                "mode": "greedy",
+                "strategy": "greedy_batch",
+                "max_symbols": 10
+              },
+              "precision": {
+                "weights": "fp32",
+                "activations": "fp32",
+                "scheme": "none",
+                "tensor_parallel": 1,
+                "checkpoint": {
+                  "source": "published",
+                  "dtype": "fp32"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 24.715,
+        "total_audio_s": 2734.76,
+        "n_ok": 800,
+        "rtfx": 110.6518,
+        "utterances_per_s": 32.369,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+        "recipe": {
+          "id": "nvidia-parakeet-tdt-0.6b-v3",
+          "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+        },
+        "batching": {
+          "max_batch": 16,
+          "wait_ms": 20.0,
+          "max_audio_s": 40.0
+        },
+        "decoding": {
+          "mode": "greedy",
+          "strategy": "greedy_batch",
+          "max_symbols": 10
+        },
+        "precision": {
+          "weights": "fp32",
+          "activations": "fp32",
+          "scheme": "none",
+          "tensor_parallel": 1,
+          "checkpoint": {
+            "source": "published",
+            "dtype": "fp32"
+          }
+        }
+      }
+    },
+    {
+      "subset": "avemio-german-mixed-test",
+      "n_samples": 9799,
+      "n_attempted": 9799,
+      "n_ok": 9799,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "17bcbc196567bca7eae3e94942588b5678fd748e",
+      "dataset_sha256": null,
+      "wer_pct": 3.632,
+      "wer_filler_tolerant_pct": 3.6327,
+      "cer_pct": 2.4281,
+      "entity_hit_rate_pct": 97.1034,
+      "n_entities": 725,
+      "n_utterances_with_entities": 605,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-04T21:04:33.362Z",
+            "finished_at": "2026-11-04T21:12:06.244Z",
+            "wall_s": 452.882,
+            "n_requests": 9799,
+            "n_ok": 9799,
+            "audio_s": 95357.552,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+            "interrupted": false,
+            "serving": {
+              "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+              "recipe": {
+                "id": "nvidia-parakeet-tdt-0.6b-v3",
+                "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+              },
+              "batching": {
+                "max_batch": 16,
+                "wait_ms": 20.0,
+                "max_audio_s": 40.0
+              },
+              "decoding": {
+                "mode": "greedy",
+                "strategy": "greedy_batch",
+                "max_symbols": 10
+              },
+              "precision": {
+                "weights": "fp32",
+                "activations": "fp32",
+                "scheme": "none",
+                "tensor_parallel": 1,
+                "checkpoint": {
+                  "source": "published",
+                  "dtype": "fp32"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 452.882,
+        "total_audio_s": 95357.552,
+        "n_ok": 9799,
+        "rtfx": 210.5572,
+        "utterances_per_s": 21.637,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+        "recipe": {
+          "id": "nvidia-parakeet-tdt-0.6b-v3",
+          "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+        },
+        "batching": {
+          "max_batch": 16,
+          "wait_ms": 20.0,
+          "max_audio_s": 40.0
+        },
+        "decoding": {
+          "mode": "greedy",
+          "strategy": "greedy_batch",
+          "max_symbols": 10
+        },
+        "precision": {
+          "weights": "fp32",
+          "activations": "fp32",
+          "scheme": "none",
+          "tensor_parallel": 1,
+          "checkpoint": {
+            "source": "published",
+            "dtype": "fp32"
+          }
+        }
+      }
+    },
+    {
+      "subset": "fhnw-all-dialects",
+      "n_samples": 2875,
+      "n_attempted": 2875,
+      "n_ok": 2875,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": null,
+      "dataset_sha256": "7ca2492143b6d418ca42d6407f939ce8d2c53f66999e05906931ccefe6ff3148",
+      "wer_pct": 36.3879,
+      "wer_filler_tolerant_pct": 36.3997,
+      "cer_pct": 18.6007,
+      "entity_hit_rate_pct": 85.7143,
+      "n_entities": 119,
+      "n_utterances_with_entities": 107,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-04T21:19:38.560Z",
+            "finished_at": "2026-11-04T21:21:31.119Z",
+            "wall_s": 112.559,
+            "n_requests": 2875,
+            "n_ok": 2875,
+            "audio_s": 22961.622,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+            "interrupted": false,
+            "serving": {
+              "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+              "recipe": {
+                "id": "nvidia-parakeet-tdt-0.6b-v3",
+                "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+              },
+              "batching": {
+                "max_batch": 16,
+                "wait_ms": 20.0,
+                "max_audio_s": 40.0
+              },
+              "decoding": {
+                "mode": "greedy",
+                "strategy": "greedy_batch",
+                "max_symbols": 10
+              },
+              "precision": {
+                "weights": "fp32",
+                "activations": "fp32",
+                "scheme": "none",
+                "tensor_parallel": 1,
+                "checkpoint": {
+                  "source": "published",
+                  "dtype": "fp32"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 112.559,
+        "total_audio_s": 22961.622,
+        "n_ok": 2875,
+        "rtfx": 203.9963,
+        "utterances_per_s": 25.5422,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+        "recipe": {
+          "id": "nvidia-parakeet-tdt-0.6b-v3",
+          "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+        },
+        "batching": {
+          "max_batch": 16,
+          "wait_ms": 20.0,
+          "max_audio_s": 40.0
+        },
+        "decoding": {
+          "mode": "greedy",
+          "strategy": "greedy_batch",
+          "max_symbols": 10
+        },
+        "precision": {
+          "weights": "fp32",
+          "activations": "fp32",
+          "scheme": "none",
+          "tensor_parallel": 1,
+          "checkpoint": {
+            "source": "published",
+            "dtype": "fp32"
+          }
+        }
+      }
+    },
+    {
+      "subset": "fleurs",
+      "n_samples": 862,
+      "n_attempted": 862,
+      "n_ok": 862,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+      "dataset_sha256": null,
+      "wer_pct": 4.8252,
+      "wer_filler_tolerant_pct": 4.8268,
+      "cer_pct": 2.2988,
+      "entity_hit_rate_pct": 84.2282,
+      "n_entities": 298,
+      "n_utterances_with_entities": 207,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-04T21:12:11.903Z",
+            "finished_at": "2026-11-04T21:12:55.050Z",
+            "wall_s": 43.147,
+            "n_requests": 862,
+            "n_ok": 862,
+            "audio_s": 11349.3,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+            "interrupted": false,
+            "serving": {
+              "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+              "recipe": {
+                "id": "nvidia-parakeet-tdt-0.6b-v3",
+                "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+              },
+              "batching": {
+                "max_batch": 16,
+                "wait_ms": 20.0,
+                "max_audio_s": 40.0
+              },
+              "decoding": {
+                "mode": "greedy",
+                "strategy": "greedy_batch",
+                "max_symbols": 10
+              },
+              "precision": {
+                "weights": "fp32",
+                "activations": "fp32",
+                "scheme": "none",
+                "tensor_parallel": 1,
+                "checkpoint": {
+                  "source": "published",
+                  "dtype": "fp32"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 43.147,
+        "total_audio_s": 11349.3,
+        "n_ok": 862,
+        "rtfx": 263.038,
+        "utterances_per_s": 19.9782,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+        "recipe": {
+          "id": "nvidia-parakeet-tdt-0.6b-v3",
+          "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+        },
+        "batching": {
+          "max_batch": 16,
+          "wait_ms": 20.0,
+          "max_audio_s": 40.0
+        },
+        "decoding": {
+          "mode": "greedy",
+          "strategy": "greedy_batch",
+          "max_symbols": 10
+        },
+        "precision": {
+          "weights": "fp32",
+          "activations": "fp32",
+          "scheme": "none",
+          "tensor_parallel": 1,
+          "checkpoint": {
+            "source": "published",
+            "dtype": "fp32"
+          }
+        }
+      }
+    },
+    {
+      "subset": "mls-de",
+      "n_samples": 3394,
+      "n_attempted": 3394,
+      "n_ok": 3394,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "2e83e61823b4c47dcbcb1980bb88601274127609",
+      "dataset_sha256": null,
+      "wer_pct": 6.294,
+      "wer_filler_tolerant_pct": 6.2904,
+      "cer_pct": 9.0581,
+      "entity_hit_rate_pct": 89.5966,
+      "n_entities": 471,
+      "n_utterances_with_entities": 350,
+      "n_runaway": 3,
+      "runaway_pct": 0.0884,
+      "runaway_edit_share_pct": 0.3525,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-04T21:12:58.289Z",
+            "finished_at": "2026-11-04T21:15:48.591Z",
+            "wall_s": 170.302,
+            "n_requests": 3394,
+            "n_ok": 3394,
+            "audio_s": 51454.882,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+            "interrupted": false,
+            "serving": {
+              "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+              "recipe": {
+                "id": "nvidia-parakeet-tdt-0.6b-v3",
+                "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+              },
+              "batching": {
+                "max_batch": 16,
+                "wait_ms": 20.0,
+                "max_audio_s": 40.0
+              },
+              "decoding": {
+                "mode": "greedy",
+                "strategy": "greedy_batch",
+                "max_symbols": 10
+              },
+              "precision": {
+                "weights": "fp32",
+                "activations": "fp32",
+                "scheme": "none",
+                "tensor_parallel": 1,
+                "checkpoint": {
+                  "source": "published",
+                  "dtype": "fp32"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 170.302,
+        "total_audio_s": 51454.882,
+        "n_ok": 3394,
+        "rtfx": 302.139,
+        "utterances_per_s": 19.9293,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+        "recipe": {
+          "id": "nvidia-parakeet-tdt-0.6b-v3",
+          "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+        },
+        "batching": {
+          "max_batch": 16,
+          "wait_ms": 20.0,
+          "max_audio_s": 40.0
+        },
+        "decoding": {
+          "mode": "greedy",
+          "strategy": "greedy_batch",
+          "max_symbols": 10
+        },
+        "precision": {
+          "weights": "fp32",
+          "activations": "fp32",
+          "scheme": "none",
+          "tensor_parallel": 1,
+          "checkpoint": {
+            "source": "published",
+            "dtype": "fp32"
+          }
+        }
+      }
+    },
+    {
+      "subset": "spc-test",
+      "n_samples": 3332,
+      "n_attempted": 3332,
+      "n_ok": 3332,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "48c389fb6b88c8e80f03273a677a422729183e06",
+      "dataset_sha256": null,
+      "wer_pct": 37.2355,
+      "wer_filler_tolerant_pct": 37.1999,
+      "cer_pct": 21.9921,
+      "entity_hit_rate_pct": 66.5552,
+      "n_entities": 598,
+      "n_utterances_with_entities": 428,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-04T21:17:23.162Z",
+            "finished_at": "2026-11-04T21:19:36.667Z",
+            "wall_s": 133.505,
+            "n_requests": 3332,
+            "n_ok": 3332,
+            "audio_s": 21676.184,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+            "interrupted": false,
+            "serving": {
+              "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+              "recipe": {
+                "id": "nvidia-parakeet-tdt-0.6b-v3",
+                "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+              },
+              "batching": {
+                "max_batch": 16,
+                "wait_ms": 20.0,
+                "max_audio_s": 40.0
+              },
+              "decoding": {
+                "mode": "greedy",
+                "strategy": "greedy_batch",
+                "max_symbols": 10
+              },
+              "precision": {
+                "weights": "fp32",
+                "activations": "fp32",
+                "scheme": "none",
+                "tensor_parallel": 1,
+                "checkpoint": {
+                  "source": "published",
+                  "dtype": "fp32"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 133.505,
+        "total_audio_s": 21676.184,
+        "n_ok": 3332,
+        "rtfx": 162.3623,
+        "utterances_per_s": 24.9579,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+        "recipe": {
+          "id": "nvidia-parakeet-tdt-0.6b-v3",
+          "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+        },
+        "batching": {
+          "max_batch": 16,
+          "wait_ms": 20.0,
+          "max_audio_s": 40.0
+        },
+        "decoding": {
+          "mode": "greedy",
+          "strategy": "greedy_batch",
+          "max_symbols": 10
+        },
+        "precision": {
+          "weights": "fp32",
+          "activations": "fp32",
+          "scheme": "none",
+          "tensor_parallel": 1,
+          "checkpoint": {
+            "source": "published",
+            "dtype": "fp32"
+          }
+        }
+      }
+    },
+    {
+      "subset": "voxpopuli-de",
+      "n_samples": 1968,
+      "n_attempted": 1968,
+      "n_ok": 1968,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "42f01879c780b4a2e90ec0b4f616c2ece526e4f1",
+      "dataset_sha256": null,
+      "wer_pct": 8.8806,
+      "wer_filler_tolerant_pct": 8.8625,
+      "cer_pct": 6.6285,
+      "entity_hit_rate_pct": 76.3889,
+      "n_entities": 360,
+      "n_utterances_with_entities": 246,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-04T21:15:53.768Z",
+            "finished_at": "2026-11-04T21:17:21.712Z",
+            "wall_s": 87.944,
+            "n_requests": 1968,
+            "n_ok": 1968,
+            "audio_s": 17724.227,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+            "interrupted": false,
+            "serving": {
+              "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+              "recipe": {
+                "id": "nvidia-parakeet-tdt-0.6b-v3",
+                "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+              },
+              "batching": {
+                "max_batch": 16,
+                "wait_ms": 20.0,
+                "max_audio_s": 40.0
+              },
+              "decoding": {
+                "mode": "greedy",
+                "strategy": "greedy_batch",
+                "max_symbols": 10
+              },
+              "precision": {
+                "weights": "fp32",
+                "activations": "fp32",
+                "scheme": "none",
+                "tensor_parallel": 1,
+                "checkpoint": {
+                  "source": "published",
+                  "dtype": "fp32"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 87.944,
+        "total_audio_s": 17724.227,
+        "n_ok": 1968,
+        "rtfx": 201.5399,
+        "utterances_per_s": 22.3779,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+        "recipe": {
+          "id": "nvidia-parakeet-tdt-0.6b-v3",
+          "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+        },
+        "batching": {
+          "max_batch": 16,
+          "wait_ms": 20.0,
+          "max_audio_s": 40.0
+        },
+        "decoding": {
+          "mode": "greedy",
+          "strategy": "greedy_batch",
+          "max_symbols": 10
+        },
+        "precision": {
+          "weights": "fp32",
+          "activations": "fp32",
+          "scheme": "none",
+          "tensor_parallel": 1,
+          "checkpoint": {
+            "source": "published",
+            "dtype": "fp32"
+          }
+        }
+      }
+    },
+    {
+      "subset": "xsid-bar",
+      "n_samples": 800,
+      "n_attempted": 800,
+      "n_ok": 800,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "0.2",
+      "dataset_sha256": null,
+      "wer_pct": 64.821,
+      "wer_filler_tolerant_pct": 64.8035,
+      "cer_pct": 43.3027,
+      "entity_hit_rate_pct": 50.0,
+      "n_entities": 250,
+      "n_utterances_with_entities": 214,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-04T21:21:32.751Z",
+            "finished_at": "2026-11-04T21:21:57.290Z",
+            "wall_s": 24.538,
+            "n_requests": 800,
+            "n_ok": 800,
+            "audio_s": 2691.08,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+            "interrupted": false,
+            "serving": {
+              "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+              "recipe": {
+                "id": "nvidia-parakeet-tdt-0.6b-v3",
+                "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+              },
+              "batching": {
+                "max_batch": 16,
+                "wait_ms": 20.0,
+                "max_audio_s": 40.0
+              },
+              "decoding": {
+                "mode": "greedy",
+                "strategy": "greedy_batch",
+                "max_symbols": 10
+              },
+              "precision": {
+                "weights": "fp32",
+                "activations": "fp32",
+                "scheme": "none",
+                "tensor_parallel": 1,
+                "checkpoint": {
+                  "source": "published",
+                  "dtype": "fp32"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 24.538,
+        "total_audio_s": 2691.08,
+        "n_ok": 800,
+        "rtfx": 109.6699,
+        "utterances_per_s": 32.6025,
+        "concurrency": 8,
+        "hardware": "1x NVIDIA GeForce RTX 3090 24GB, driver 615.71.09",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "nemo 3.1.0+b19b1a79d (torch 2.14.1+cu130)",
+        "recipe": {
+          "id": "nvidia-parakeet-tdt-0.6b-v3",
+          "sha256": "a3be3abdd67d4deb27460248628e4773fc19fbedf8c4c19d6d2345dcdb1d229a"
+        },
+        "batching": {
+          "max_batch": 16,
+          "wait_ms": 20.0,
+          "max_audio_s": 40.0
+        },
+        "decoding": {
+          "mode": "greedy",
+          "strategy": "greedy_batch",
+          "max_symbols": 10
+        },
+        "precision": {
+          "weights": "fp32",
+          "activations": "fp32",
+          "scheme": "none",
+          "tensor_parallel": 1,
+          "checkpoint": {
+            "source": "published",
+            "dtype": "fp32"
+          }
+        }
+      }
+    }
+  ],
+  "run_manifest": {
+    "git": {
+      "sha": "b0f6b6f7df6350b0c6351dacb3bb2886e9759bc0",
+      "dirty": false
+    },
+    "uv_lock_sha256": "f92a954b7d17dcfeff41d442ce940c0e3d4c68ca940c6235d3c88d19b826ce11",
+    "python": "3.11.15",
+    "platform": "Linux-7.2.9-arch1-1-x86_64-with-glibc2.44",
+    "libraries": {
+      "datasets": "5.0.1",
+      "httpx": "0.28.1",
+      "jiwer": "4.0.0",
+      "modal": null,
+      "num2words": "0.5.14",
+      "numpy": "2.4.6",
+      "pyannote.core": "6.0.1",
+      "pyannote.metrics": "4.1",
+      "raven-eval-core": "0.1.0",
+      "sacrebleu": "2.6.0",
+      "soundfile": "0.14.0",
+      "text2num": "3.0.2",
+      "unidecode": "1.4.0"
+    },
+    "gpu": null,
+    "config_sha256": "dd19dcc700a953d8b675f19ea2dfd1a9adc7bee6c3c3fcf468a6795477662df0",
+    "argv": [
+      "python",
+      "-m",
+      "raven_asr.reproduce",
+      "--metric",
+      "wer",
+      "--dataset",
+      "xsid-de-control",
+      "--model",
+      "nvidia/parakeet-tdt-0.6b-v3",
+      "--concurrency",
+      "8",
+      "--out",
+      "/mnt/daten/stt-bench/results/nvidia__parakeet-tdt-0.6b-v3"
+    ]
+  },
+  "post_hoc": [
+    {
+      "step": "hardware-label-redact",
+      "removed": "the host name after the driver version",
+      "files": [
+        "summary.json",
+        "throughput_avemio-german-mixed-test.jsonl",
+        "throughput_fhnw-all-dialects.jsonl",
+        "throughput_fleurs.jsonl",
+        "throughput_mls-de.jsonl",
+        "throughput_spc-test.jsonl",
+        "throughput_voxpopuli-de.jsonl",
+        "throughput_xsid-bar.jsonl",
+        "throughput_xsid-de-control.jsonl"
+      ],
+      "at": "2026-11-09T17:35:07.518Z",
+      "why": "the operator's hardware label named the host; a public artifact names hardware, not infrastructure (raven_asr/throughput.py)"
+    }
+  ]
+}
