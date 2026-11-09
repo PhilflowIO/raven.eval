@@ -353,9 +353,12 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
 #:   raven_ragged_audio  serving/vllm/plugin of this repository, pinned in
 #:                  vllm/requirements.txt: per-clip audio kwargs as batches of one
 #:                  (raven.eval#93).
+#:   raven_audio_duration  same package: fills the chat template's duration
+#:                  placeholder that vLLM leaves unfilled (raven.eval#96).
 VLLM_PLUGINS: dict[str, str] = {
     "nemo_speechlm": "nemo_toolkit",
     "raven_ragged_audio": "raven-vllm-plugin",
+    "raven_audio_duration": "raven-vllm-plugin",
 }
 
 

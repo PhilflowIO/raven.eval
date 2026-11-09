@@ -113,8 +113,12 @@ def test_register_is_loud_when_vllm_no_longer_has_the_method(monkeypatch: pytest
 def test_the_entry_point_is_the_plugin_recipes_name() -> None:
     project = tomllib.loads((PLUGIN_DIR / "pyproject.toml").read_text())["project"]
     entries = project["entry-points"]["vllm.general_plugins"]
-    assert entries == {"raven_ragged_audio": "raven_vllm_plugin:register"}
+    assert entries == {
+        "raven_ragged_audio": "raven_vllm_plugin:register",
+        "raven_audio_duration": "raven_vllm_plugin:register_audio_duration",
+    }
     assert recipe.VLLM_PLUGINS["raven_ragged_audio"] == project["name"]
+    assert recipe.VLLM_PLUGINS["raven_audio_duration"] == project["name"]
 
 
 def test_the_plugin_is_installed_from_a_commit_of_this_repository() -> None:
@@ -129,6 +133,110 @@ def test_the_plugin_is_installed_from_a_commit_of_this_repository() -> None:
 
 def test_only_vibevoice_loads_it() -> None:
     recipes = recipe.load_recipes()
-    assert [rid for rid, r in recipes.items() if "raven_ragged_audio" in r.get("vllm_plugins", [])] == [
-        "vibevoice-asr"
-    ]
+    for plugin in ("raven_ragged_audio", "raven_audio_duration"):
+        assert [rid for rid, r in recipes.items() if plugin in r.get("vllm_plugins", [])] == [
+            "vibevoice-asr"
+        ]
+
+
+# ── raven_audio_duration ─────────────────────────────────────────────────────
+# Pinned against what vLLM 0.33.0 does: the rendered chat template arrives as
+# token ids (ProcessorInputs.prompt), with the placeholder still in it. Fakes for
+# the tokenizer and the mm items: what matters is the wrapper's contract.
+
+_PROMPT = "user\nThis is a <|AUDIO_DURATION|> seconds audio.\n"
+_TOKEN = "<|AUDIO_DURATION|>"
+
+
+class _Tok:
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+        assert add_special_tokens is False
+        return [ord(c) for c in text]
+
+    def decode(self, ids: list[int], **kwargs: Any) -> str:
+        assert kwargs == {"skip_special_tokens": False, "clean_up_tokenization_spaces": False}
+        return "".join(map(chr, ids))
+
+
+class _Audio:
+    def __init__(self, *clips: Any) -> None:
+        self.clips = clips
+
+    def get_count(self) -> int:
+        return len(self.clips)
+
+    def get(self, index: int) -> Any:
+        return self.clips[index]
+
+
+def _inputs(prompt: str, *clips: Any) -> Any:
+    import dataclasses
+
+    @dataclasses.dataclass
+    class Inputs:
+        prompt: list[int]
+        mm_data_items: dict[str, Any]
+        hf_processor_mm_kwargs: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    return Inputs(_Tok().encode(prompt), {"audio": _Audio(*clips)})
+
+
+def _processor(token: str | None = _TOKEN) -> Any:
+    hf = types.SimpleNamespace(feature_extractor=types.SimpleNamespace(sampling_rate=24000))
+    if token is not None:
+        hf.audio_duration_token = token
+    info = types.SimpleNamespace(get_hf_processor=lambda **_: hf, get_tokenizer=_Tok)
+    return types.SimpleNamespace(info=info)
+
+
+def _apply(token: str | None, inputs: Any) -> list[int]:
+    plugin = _load()
+    wrapped = plugin.with_audio_duration(lambda _self, passed, _ctx: passed.prompt)
+    return wrapped(_processor(token), inputs, object())
+
+
+def test_the_prompt_states_the_clips_duration_like_the_hf_processor() -> None:
+    got = _apply(_TOKEN, _inputs(_PROMPT, [0] * int(24000 * 4.63)))
+    assert "".join(map(chr, got)) == "user\nThis is a 4.63 seconds audio.\n"
+
+
+def test_a_prompt_without_the_placeholder_passes_through_untouched() -> None:
+    prompt = "user\nNo placeholder here.\n"
+    assert "".join(map(chr, _apply(_TOKEN, _inputs(prompt, [0] * 24000)))) == prompt
+
+
+def test_a_processor_without_the_token_passes_through_untouched() -> None:
+    assert "".join(map(chr, _apply(None, _inputs(_PROMPT, [0] * 24000)))) == _PROMPT
+
+
+@pytest.mark.parametrize("clips", [(), ([0] * 24000, [0] * 12000)])
+def test_placeholders_that_do_not_pair_up_with_clips_are_refused(clips: tuple) -> None:
+    with pytest.raises(ValueError, match="placeholders"):
+        _apply(_TOKEN, _inputs(_PROMPT, *clips))
+
+
+def test_a_clip_with_no_data_is_refused() -> None:
+    with pytest.raises(ValueError, match="cached-only"):
+        _apply(_TOKEN, _inputs(_PROMPT, None))
+
+
+def test_register_audio_duration_is_idempotent_and_loud(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Proc:
+        def apply(self, inputs: Any, ctx: Any) -> Any:
+            return inputs
+
+    module = types.ModuleType("vllm.model_executor.models.transformers.multimodal")
+    module.MultiModalProcessor = Proc
+    for name in ("vllm", "vllm.model_executor", "vllm.model_executor.models", "vllm.model_executor.models.transformers"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    plugin = _load()
+    plugin.register_audio_duration()
+    patched = Proc.apply
+    plugin.register_audio_duration()
+    assert Proc.apply is patched
+    del Proc.apply
+    Proc2 = type("Proc2", (), {})
+    module.MultiModalProcessor = Proc2
+    with pytest.raises(AttributeError):
+        _load().register_audio_duration()
