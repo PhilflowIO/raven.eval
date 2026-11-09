@@ -125,6 +125,25 @@ def _refuse_incomplete(summary: dict, preds: list[Path]) -> None:
         )
 
 
+def _refuse_unsummarized(summary: dict, preds: list[Path], results_dir: Path) -> None:
+    """Raise if a predictions file has no row in the summary.
+
+    Its numbers would be committed without an ``expected.json`` entry, which
+    ``make verify`` rejects. A directory written one subset per invocation before
+    the runner kept every finished subset holds such files; re-summarize it first.
+    """
+    rows = {re.sub(r"[^A-Za-z0-9._-]+", "_", str(r.get("subset")))
+            for r in summary.get("results", []) if isinstance(r, dict)}
+    missing = sorted(p.name for p in preds
+                     if p.name.removeprefix("predictions_").removesuffix(".jsonl") not in rows)
+    if missing:
+        raise ValueError(
+            f"{results_dir}: no summary row for {', '.join(missing)}. Rebuild the "
+            f"summary from the finished subsets first: python -m raven_asr.resummarize "
+            f"{results_dir}"
+        )
+
+
 def _read_pairs(path: Path) -> tuple[list[str], list[str]]:
     refs: list[str] = []
     preds: list[str] = []
@@ -309,6 +328,7 @@ def promote(
     if problem := summary_problem(summary):
         raise ValueError(f"{summary_path}: {problem}")
     _refuse_incomplete(summary, preds)
+    _refuse_unsummarized(summary, preds, results_dir)
     # The serving block travels inside summary.json; refuse one that contradicts
     # its own passes rather than publish it for verify to fail.
     for row in summary.get("results", []):
