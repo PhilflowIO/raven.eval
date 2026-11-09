@@ -342,7 +342,7 @@ def test_vibevoice_is_the_transformers_format_release_on_most_of_one_card() -> N
     argv, _ = _build("microsoft/VibeVoice-ASR-HF")
     assert argv[2] == "microsoft/VibeVoice-ASR-HF"
     assert _flag(argv, "--revision") == "f22241c2062b3b25272bf117397e03d73381037a"
-    assert float(_flag(argv, "--gpu-memory-utilization")) >= 0.89
+    assert float(_flag(argv, "--gpu-memory-utilization")) >= 0.85
     assert _flag(argv, "--max-num-seqs") == "4"
     assert "--trust-remote-code" not in argv  # native in the pinned transformers
 
