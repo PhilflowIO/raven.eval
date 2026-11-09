@@ -1,0 +1,87 @@
+# Streaming recipes: how each streaming-capable self-hosted model is served LIVE.
+#
+# A stream recipe sits on top of the model's offline recipe (recipes.toml,
+# `base`): the weights revision, checkpoint file, precision and engine pins are
+# the offline recipe's, so a streaming number and an offline number name the
+# same weights in the same number format. What a stream recipe adds is the
+# model's own documented streaming mode and its latency setting, quoted from the
+# model card at the pinned revision — never a setting of our own.
+#
+# serving/streaming.py validates these tables and hashes each one together with
+# its base recipe's hash and every file the live path runs through; the
+# capacity harness (python -m raven_asr.stream) records that hash per run.
+#
+# One latency class for every model: ~0.5 s of algorithmic latency, the point
+# each card offers that is closest to Voxtral's own default delay (480 ms). The
+# curves are only comparable across models at one latency class.
+#
+# Keys
+#   base         offline recipe id in recipes.toml
+#   protocol     vllm-realtime: vLLM's own /v1/realtime websocket (OpenAI-style
+#                realtime events), served by `vllm serve` itself;
+#                nemo-pipeline: serving/nemo/stream_server.py, which speaks the
+#                same protocol and steps every live session through NeMo's
+#                streaming inference pipeline (nemo.collections.asr.inference)
+#   chunk_ms     how much audio the client sends per message, in real time:
+#                the model's own frame (Voxtral, 80 ms per decoded token) or
+#                streaming chunk (NeMo; the server refuses a mismatch)
+#   gpu_mem      VRAM budget as a fraction of the card (vLLM pre-allocates it;
+#                the NeMo server caps torch to it)
+#   latency      the documented setting this recipe serves, in words
+#   notes        why, with the card quote
+# vllm-realtime keys: max_num_seqs (sessions the engine runs at once; at least
+#   the largest N stepped, or the scheduler queues sessions and the curve
+#   measures the cap, not the GPU)
+# nemo-pipeline keys: pipeline ("cache_aware" | "buffered", the vendored config
+#   in serving/nemo/conf), lang (the language prompt), batch_size (frames per
+#   pipeline step), num_slots (cache-aware: live streams the context manager
+#   holds), matmul_precision, and the context: att_context_size (cache-aware,
+#   in 80 ms encoder frames) or left_context_s / chunk_s / right_context_s
+#   (buffered)
+#
+# Precision: every NeMo stream recipe runs fp32 like its offline recipe (the
+# checkpoint's own format; compute_dtype float32, matmul_precision highest =
+# PyTorch's default), not the vendored config's bfloat16, so the streaming WER
+# differs from the offline WER by the streaming mode alone.
+
+[streams."voxtral-mini-4b-realtime-2602"]
+base = "voxtral-mini-4b-realtime-2602"
+protocol = "vllm-realtime"
+chunk_ms = 80
+gpu_mem = 0.85
+max_num_seqs = 128
+latency = "transcription_delay_ms = 480, the checkpoint's own tekken.json value at the pinned revision"
+notes = "vLLM 0.33.0 serves VoxtralRealtimeGeneration's realtime task on /v1/realtime (vllm/entrypoints/speech_to_text/realtime): session.update names the model, input_audio_buffer.commit starts an utterance, input_audio_buffer.append carries base64 PCM16 16 kHz, commit with final = true ends the audio, transcription.delta streams text and transcription.done closes the utterance. The engine is the base recipe's `vllm serve` command; only the session cap and the memory budget differ: max_num_seqs 128 so 128 live sessions run at once, gpu_mem 0.85 (20.9 GB of a 24 GB card) for their KV cache. The card: 'transcription delay of 480ms ... sweet spot' — https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602"
+
+[streams."nvidia-nemotron-3.5-asr-streaming-0.6b"]
+base = "nvidia-nemotron-3.5-asr-streaming-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "cache_aware"
+att_context_size = [56, 6]
+chunk_ms = 560
+lang = "de-DE"
+batch_size = 128
+num_slots = 256
+matmul_precision = "highest"
+gpu_mem = 0.85
+latency = "att_context_size [56, 6]: chunk of 7 x 80 ms = 0.56 s, cache-aware"
+notes = "The card's streaming setting table: '[56, 6]: Chunk size = 7 (7 x 80ms = 0.56s)', of the documented [56,0] / [56,1] / [56,3] / [56,6] / [56,13]; chunk = current frame + right context, non-overlapping. Served through NeMo's CacheAwareRNNTPipeline (cache_aware_rnnt.yaml at the NeMo pin), which keeps one cache slot per live stream and steps every ready stream in one batch; the language prompt de-DE as in the offline recipe. https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b"
+
+[streams."nvidia-nemotron-labs-unified-asr-0.6b"]
+base = "nvidia-nemotron-labs-unified-asr-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "buffered"
+left_context_s = 5.6
+chunk_s = 0.16
+right_context_s = 0.40
+chunk_ms = 160
+lang = "de"
+batch_size = 128
+matmul_precision = "highest"
+gpu_mem = 0.85
+latency = "left 5.6 s / chunk 0.16 s / right 0.40 s: 0.56 s latency, buffered"
+notes = "The card's recommended context table, row 'Left 5.6 / Chunk 0.16 / Right 0.40 / Latency (C+R) 0.56'. The card's own limitation: 'The current streaming inference pipeline is buffered, not cache-aware: the left context is recomputed at every chunk step' — so this model costs more per stream than the cache-aware one by design. Served through NeMo's BufferedRNNTPipeline (buffered_rnnt.yaml at the NeMo pin, stateful) with the chunked self-attention masks the card's streaming script sets (att_context_size_as_chunk = true: encoder.set_default_att_context_size([left, chunk, right]) in 80 ms encoder frames, for an att_context_style of chunked_limited_with_rc). Language prompt 'de' as the card shows. https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
+
+# Models with a streaming name that have no clean live path at our pinned engines.
+[skipped."moonshine-streaming-small-de"]
+reason = "No live serving path at the pinned engines. transformers 5.20.2 (vllm/requirements.txt) loads MoonshineStreamingForConditionalGeneration with one whole-utterance generate() and no incremental encoder or decoder state; re-running it on a growing buffer would be our own approximation of streaming, not the model's. The vendor's streaming runtime (moonshine-ai/moonshine, 'Moonshine Voice') serves an int8 .ort build for on-device CPUs, a different artifact from the fp32 checkpoint this benchmark pins, and is not a GPU server. Measure it once transformers or vLLM ships a streaming path for the class."
