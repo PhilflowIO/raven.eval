@@ -23,6 +23,22 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 
 ## [Unreleased]
 
+### Added
+- **Live-streaming capacity** (#107): `python -m raven_asr.stream` opens N live
+  sessions at once (N = 1, 2, 4, …, 128) against one server, each playing
+  utterances of a seeded FLEURS + avemio pool in real time in the model's own
+  chunk size, and records per step the time to first partial, the final latency
+  (end of audio to final transcript) at p50/p95/p99, errors and drops, GPU
+  utilization and memory, and the streaming WER of the played utterances under
+  the offline strict-de lens next to the offline WER of the same utterances. It
+  stops one step after the first step whose p95 final latency exceeds the
+  threshold (1.0 s by default) or that saw an error. Streaming recipes
+  (`serving/streaming.toml`) sit on the offline recipes' weights and precision
+  and add each model's documented streaming mode at one latency class (~0.5 s);
+  `serving/nemo/stream_server.py` serves the NeMo models live over vLLM's
+  realtime websocket protocol through NeMo's own streaming pipeline.
+  moonshine-streaming-small-de is skipped with its reason on record.
+
 ### Changed
 - **The Nemotron prompt models' locale tag is not scored inside a transcript
   either** (#98). nemotron-3.5-asr-streaming and nemotron-labs-unified write

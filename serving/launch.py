@@ -5,6 +5,9 @@
     python serving/launch.py <recipe-id | model-id> --engine   vllm | nemo | transformers
     python serving/launch.py <recipe-id | model-id> --identity {"id", "sha256"}
     python serving/launch.py --list                            every recipe id and model
+    python serving/launch.py <stream-id | model-id> --streaming [--print | --identity]
+                                                               the model's LIVE server
+                                                               (streaming.toml)
 
 Run it with the Python of the engine's environment: the NeMo venv for ``nemo``
 recipes, the vLLM venv for ``vllm`` and ``transformers`` recipes (the ``vllm``
@@ -47,8 +50,14 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from recipe import (  # noqa: E402
-    FLOAT_FORMATS, SERVING_DIR, VLLM_SCHEMES, identity, load_recipes, resolve,
+import streaming
+from recipe import (
+    FLOAT_FORMATS,
+    SERVING_DIR,
+    VLLM_SCHEMES,
+    identity,
+    load_recipes,
+    resolve,
 )
 
 DEFAULT_HOST = "127.0.0.1"
@@ -268,6 +277,85 @@ def _fetch(recipe: dict[str, Any]) -> tuple[str | None, str | None]:
     return snapshot, checkpoint
 
 
+def build_stream(
+    sid: str,
+    streams: dict[str, dict[str, Any]],
+    recipes: dict[str, dict[str, Any]],
+    env: dict[str, str],
+    *,
+    python: str,
+    snapshot: str | None = None,
+    checkpoint: str | None = None,
+) -> tuple[list[str], dict[str, str]]:
+    """``(argv, extra_env)`` for one stream recipe; pure, like :func:`build`."""
+    s = streams[sid]
+    served = streaming.served_recipe(sid, streams, recipes)
+    if s["protocol"] == "vllm-realtime":
+        # The base recipe's own `vllm serve`: vLLM registers /v1/realtime for a
+        # model class that supports the realtime task.
+        argv, extra = build(served, s["base"], env, python=python, snapshot=snapshot)
+        extra["RAVEN_STREAM_RECIPE"] = sid
+        return argv, extra
+    host = _knob(env, "RAVEN_SERVE_HOST", DEFAULT_HOST)
+    port = _knob(env, "RAVEN_SERVE_PORT", DEFAULT_PORT)
+    extra = {
+        "RAVEN_SERVING_RECIPE": s["base"],
+        "RAVEN_STREAM_RECIPE": sid,
+        "BENCH_MODEL": served["model"],
+        "BENCH_MODEL_PATH": checkpoint or "",
+        "BENCH_MODEL_REVISION": served["revision"],
+        "BENCH_GPU_MEM_FRACTION": _knob(env, "RAVEN_SERVE_GPU_MEM", served["gpu_mem"]),
+    }
+    argv = [python, "-m", "uvicorn", "stream_server:app",
+            "--app-dir", str(SERVING_DIR / "nemo"), "--host", host, "--port", port]
+    return argv, extra
+
+
+def _main_streaming(args: argparse.Namespace, recipes: dict[str, dict[str, Any]]) -> int:
+    streams, skipped = streaming.load_streams(recipes=recipes)
+    if args.list:
+        for sid, s in streams.items():
+            print(f"{sid}\t{s['protocol']}\t{recipes[s['base']]['model']}")
+        for sid, s in skipped.items():
+            print(f"{sid}\tskipped\t{s['reason']}")
+        return 0
+    if not args.name:
+        print("[launch] name a stream id or a model id", file=sys.stderr)
+        return 2
+    if args.name in skipped:
+        print(f"[launch] {args.name} is skipped: {skipped[args.name]['reason']}", file=sys.stderr)
+        return 1
+    sid = streaming.resolve_stream(args.name, streams, recipes)
+    s = streams[sid]
+    env = dict(os.environ)
+    if args.identity:
+        print(json.dumps(streaming.stream_identity(sid)))
+        return 0
+    if args.engine:
+        print(recipes[s["base"]]["engine"])
+        return 0
+    if args.print:
+        cmd, extra = build_stream(sid, streams, recipes, env, python=sys.executable)
+        print(json.dumps({"stream": streaming.stream_identity(sid), "argv": cmd, "env": extra},
+                         indent=2))
+        return 0
+    served = streaming.served_recipe(sid, streams, recipes)
+    try:
+        _gpus(env, served["precision"]["tensor_parallel"])
+        _disk_floor(served, env)
+        snapshot, checkpoint = _fetch(served)
+    except LaunchError as exc:
+        print(f"[launch] refusing {sid}: {exc}", file=sys.stderr)
+        return 1
+    cmd, extra = build_stream(sid, streams, recipes, env, python=sys.executable,
+                              snapshot=snapshot, checkpoint=checkpoint)
+    env.update(extra)
+    print(f"[launch] stream {sid} ({json.dumps(streaming.stream_identity(sid))}): "
+          f"{' '.join(cmd)}", flush=True)
+    os.execvpe(cmd[0], cmd, env)
+    return 0  # pragma: no cover - exec does not return
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("name", nargs="?", help="recipe id or served model id")
@@ -276,9 +364,13 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--engine", action="store_true", help="print the recipe's engine")
     mode.add_argument("--identity", action="store_true", help="print {id, sha256}")
     mode.add_argument("--list", action="store_true", help="list every recipe")
+    ap.add_argument("--streaming", action="store_true",
+                    help="the stream recipe (streaming.toml) instead of the offline one")
     args = ap.parse_args(argv)
 
     recipes = load_recipes()
+    if args.streaming:
+        return _main_streaming(args, recipes)
     if args.list:
         for rid, r in recipes.items():
             print(f"{rid}\t{r['engine']}\t{r['model']}")
