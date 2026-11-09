@@ -1,0 +1,11 @@
+# Environment of the Moonshine live server (moonshine/stream_server.py): the
+# vendor's own streaming runtime, exactly the version the stream recipe pins
+# (streaming.toml, runtime). It bundles libmoonshine and ONNX Runtime (CPU
+# execution provider only). Part of the stream recipe's hash.
+#
+#   uv venv --python 3.12 <venv>
+#   uv pip install --python <venv>/bin/python -r serving/moonshine/requirements.txt
+moonshine-voice==0.1.6
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+numpy==2.5.4

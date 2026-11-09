@@ -27,7 +27,7 @@ from raven_asr.stream.pool import (
     session_playlist,
     to_pcm16,
 )
-from raven_asr.stream.probes import parse_gauges
+from raven_asr.stream.probes import parse_gauges, parse_proc_stat
 from raven_asr.stream.session import UtteranceRecord, run_session
 
 
@@ -233,3 +233,19 @@ def test_rescore_recomputes_wer_and_keeps_latencies(tmp_path):
     assert out["steps"][0]["offline_wer_strict_pct"] == 0.0
     assert out["steps"][0]["final_s"] == step["final_s"]
     assert out["output_format"] == "nemotron-locale-tags"
+
+
+def test_proc_stat_busy_and_total():
+    busy, total = parse_proc_stat("cpu  100 0 50 800 50 0 0 0 0 0\ncpu0 1 2 3 4\n")
+    assert (busy, total) == (150.0, 1000.0)
+
+
+def test_cpu_curve_table_shows_cpu_columns_and_precision():
+    step = step_summary(1, [_rec(0, 0.2)], [None], {"cpu_util_mean_pct": 37.0,
+                                                     "server_rss_max_mib": 812.0}, {}, 1.0)
+    curve = {"model": "m", "latency": "l", "chunk_ms": 100, "hardware_label": "CPU, 24 cores",
+             "device": "cpu", "precision": {"weights": "int8"}, "params": {"threshold_s": 1.0},
+             "steps": [step], "max_n_within_threshold": 1, "stopped_because": "x"}
+    table = render_table(curve)
+    assert "CPU util mean %" in table and "| 37 | 812 |" in table
+    assert "CPU, weights int8" in table

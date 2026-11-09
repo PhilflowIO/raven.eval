@@ -72,12 +72,13 @@ def _stream_recipe(sid: str) -> tuple[dict, dict, dict, dict]:
 def server_engine(http: str, protocol: str, model: str, identity: dict) -> dict:
     """What the server reports about itself; aborts when it serves something else."""
     with httpx.Client(timeout=10.0) as c:
-        if protocol == "nemo-pipeline":
+        if protocol in ("nemo-pipeline", "moonshine-voice"):
             info = c.get(f"{http}/v1/stream/info").json()
             if info.get("stream") != identity:
                 raise SystemExit(f"the server serves {info.get('stream')}, this checkout "
                                  f"hashes the recipe as {identity}")
-            return {"name": "nemo", **{k: v for k, v in info.items() if k != "stream"}}
+            return {**{k: v for k, v in info.items() if k != "stream"},
+                    "name": info.get("engine", {}).get("name", "nemo")}
         models = [m["id"] for m in c.get(f"{http}/v1/models").json().get("data", [])]
         if model not in models:
             raise SystemExit(f"the server serves {models}, not {model}")
@@ -176,7 +177,10 @@ def main(argv: list[str] | None = None) -> int:
         "protocol": stream["protocol"],
         "chunk_ms": stream["chunk_ms"],
         "latency": stream["latency"],
-        "precision": base["precision"],
+        # The stream recipe's own precision where it has one (a vendor build),
+        # else the base recipe's; and the device it runs on.
+        "precision": stream.get("precision", base["precision"]),
+        "device": stream.get("device", "cuda"),
         "engine": engine,
         "hardware_label": args.hardware_label,
         "gpu": gpu_identity(),
@@ -191,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         "stopped_because": "running",
     }
     metrics = f"{args.http}/metrics" if stream["protocol"] == "vllm-realtime" else None
+    stats = f"{args.http}/v1/stream/stats" if stream["protocol"] == "moonshine-voice" else None
 
     def write() -> None:
         (args.out / "curve.json").write_text(json.dumps(curve, indent=2, ensure_ascii=False) + "\n")
@@ -207,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     for n in steps_n:
         print(f"[stream] {identity['id']}: N = {n}, {args.duration_s:.0f} s", flush=True)
         t = time.monotonic()
-        with Sampler(metrics) as sampler:
+        with Sampler(metrics, stats_url=stats) as sampler:
             records, session_errors = asyncio.run(run_step(
                 args.url, model, pool, n, chunk_ms=stream["chunk_ms"],
                 duration_s=args.duration_s, done_timeout_s=args.done_timeout_s, seed=args.seed))
