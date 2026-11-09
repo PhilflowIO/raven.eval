@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 from raven_eval_core.wer import corpus_wer_strict_de_pct
@@ -64,7 +64,12 @@ def step_summary(
     probes: dict,
     offline: dict[str, str],
     threshold_s: float,
+    spoken: Callable[[str], str] = lambda raw: raw,
 ) -> dict:
+    """One step of the curve. ``spoken`` turns a model's raw output into the
+    spoken text exactly as the offline scorer does (raven_asr.output_formats:
+    the Nemotron prompt models' locale tags, for one), applied to the streaming
+    transcripts and to the offline predictions alike."""
     recs = list(records)
     done = [r for r in recs if r.error is None and r.t_done is not None]
     errored = [r for r in recs if r.error is not None]
@@ -72,15 +77,15 @@ def step_summary(
     ttfps = [r.ttfp_s for r in done if r.ttfp_s is not None]
     wer = off = None
     if done:
+        refs = [r.reference for r in done]
         try:
-            wer = round(corpus_wer_strict_de_pct([r.reference for r in done],
-                                                 [r.text or "" for r in done]), 3)
+            wer = round(corpus_wer_strict_de_pct(refs, [spoken(r.text or "") for r in done]), 3)
         except ValueError:
             wer = None
         same = [r for r in done if r.sample_id in offline]
         if same and len(same) == len(done):
-            off = round(corpus_wer_strict_de_pct([r.reference for r in same],
-                                                 [offline[r.sample_id] for r in same]), 3)
+            off = round(corpus_wer_strict_de_pct(
+                [r.reference for r in same], [spoken(offline[r.sample_id]) for r in same]), 3)
     drops = sum(1 for e in session_errors if e is not None)
     p95 = percentile(finals, 95)
     passed = bool(done) and not errored and drops == 0 and p95 is not None and p95 <= threshold_s

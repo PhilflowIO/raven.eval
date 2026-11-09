@@ -195,3 +195,41 @@ def test_offline_predictions_and_table(tmp_path):
              "stopped_because": "every step stepped"}
     table = render_table(curve)
     assert "| 1 | 0.20 | 0.20 |" in table and "**1**" in table
+
+
+def test_wer_reads_raw_output_through_the_offline_parser():
+    """Both sides go through the model's output parser, as offline scoring does."""
+    from raven_asr.stream.__main__ import spoken_text
+
+    spoken = spoken_text("nvidia/nemotron-3.5-asr-streaming-0.6b")
+    rec = _rec(0, 0.1, text="Hallo. <de-DE> Welt. <de-DE>")
+    rec.reference = "Hallo. Welt."
+    offline = {"s0": "Hallo. <de-DE> Welt."}
+    raw = step_summary(1, [rec], [None], {}, offline, 1.0)
+    parsed = step_summary(1, [rec], [None], {}, offline, 1.0, spoken)
+    assert raw["wer_strict_pct"] > 0 and raw["offline_wer_strict_pct"] > 0
+    assert parsed["wer_strict_pct"] == 0.0 and parsed["offline_wer_strict_pct"] == 0.0
+    assert spoken_text("mistralai/Voxtral-Mini-4B-Realtime-2602")("a <de-DE>") == "a <de-DE>"
+
+
+def test_rescore_recomputes_wer_and_keeps_latencies(tmp_path):
+    from raven_asr.stream.__main__ import main
+
+    rec = _rec(0, 0.3, text="Hallo <de-DE> Welt")
+    step = step_summary(1, [rec], [None], {}, {}, 1.0)
+    curve = {"model": "nvidia/nemotron-3.5-asr-streaming-0.6b", "latency": "l", "chunk_ms": 560,
+             "hardware_label": "h", "params": {"threshold_s": 1.0}, "steps": [step],
+             "max_n_within_threshold": 1, "stopped_because": "x"}
+    (tmp_path / "curve.json").write_text(json.dumps(curve))
+    (tmp_path / "utterances_n1.jsonl").write_text(json.dumps(rec.as_json()) + "\n")
+    (tmp_path / "off").mkdir()
+    (tmp_path / "off" / "predictions_fleurs.jsonl").write_text(
+        json.dumps({"sample_id": "s0", "prediction": "Hallo <de-DE> Welt"}) + "\n")
+    assert step["wer_strict_pct"] > 0
+    assert main(["--rescore", "--out", str(tmp_path), "--offline-predictions",
+                 str(tmp_path / "off")]) == 0
+    out = json.loads((tmp_path / "curve.json").read_text())
+    assert out["steps"][0]["wer_strict_pct"] == 0.0
+    assert out["steps"][0]["offline_wer_strict_pct"] == 0.0
+    assert out["steps"][0]["final_s"] == step["final_s"]
+    assert out["output_format"] == "nemotron-locale-tags"

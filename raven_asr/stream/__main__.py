@@ -14,6 +14,9 @@ Written to ``--out`` after every step (an interrupted run keeps its steps):
   curve.json             the curve: identity, pool, parameters, every step
   utterances_n<N>.jsonl  every utterance of step N with its raw timestamps and text
   table.md               the short table (at the end)
+
+``--rescore --out <dir> [--offline-predictions <dir>]`` recomputes only the WER
+of a finished curve from its utterance files, latencies untouched.
 """
 
 from __future__ import annotations
@@ -31,6 +34,8 @@ import httpx
 
 from raven_eval_core.run_manifest import build_run_manifest
 
+from ..config import OUTPUT_FORMATS
+from ..output_formats import parser_for
 from .curve import (
     DEFAULT_STEPS,
     DEFAULT_THRESHOLD_S,
@@ -42,7 +47,7 @@ from .curve import (
 )
 from .pool import DEFAULT_SEED, build_pool, session_playlist
 from .probes import Sampler, gpu_identity
-from .session import DONE_TIMEOUT_S, run_session
+from .session import DONE_TIMEOUT_S, UtteranceRecord, run_session
 
 SCHEMA = "raven.stream-capacity/1"
 _SERVING = Path(__file__).resolve().parents[2] / "serving"
@@ -79,6 +84,39 @@ def server_engine(http: str, protocol: str, model: str, identity: dict) -> dict:
         return {"name": "vllm", "version": c.get(f"{http}/version").json().get("version")}
 
 
+def spoken_text(model: str):
+    """``raw -> spoken text`` for ``model``, the offline scorer's output parser."""
+    parser = parser_for(OUTPUT_FORMATS.get(model))
+    return (lambda raw: raw) if parser is None else (lambda raw: parser(raw).text)
+
+
+def rescore(out: Path, offline_dir: Path | None) -> int:
+    """Recompute every step's WER of a finished curve from its utterance files.
+
+    Latencies, errors and probes stay as measured; only the scoring is redone,
+    with the model's output parser and, if given, the offline predictions.
+    """
+    curve = json.loads((out / "curve.json").read_text())
+    spoken = spoken_text(curve["model"])
+    offline = load_offline(offline_dir)
+    fields = set(UtteranceRecord.__dataclass_fields__)
+    for i, old in enumerate(curve["steps"]):
+        rows = [json.loads(line) for line in
+                (out / f"utterances_n{old['n']}.jsonl").read_text().splitlines() if line]
+        recs = [UtteranceRecord(**{k: v for k, v in r.items() if k in fields}) for r in rows]
+        new = step_summary(old["n"], recs, [], old["probes"],
+                           offline, curve["params"]["threshold_s"], spoken)
+        old["wer_strict_pct"] = new["wer_strict_pct"]
+        old["offline_wer_strict_pct"] = new["offline_wer_strict_pct"]
+        curve["steps"][i] = old
+    curve["output_format"] = OUTPUT_FORMATS.get(curve["model"])
+    curve["offline_predictions"] = bool(offline)
+    (out / "curve.json").write_text(json.dumps(curve, indent=2, ensure_ascii=False) + "\n")
+    (out / "table.md").write_text(render_table(curve), encoding="utf-8")
+    print(render_table(curve))
+    return 0
+
+
 async def run_step(url: str, model: str, pool: list, n: int, *, chunk_ms: int,
                    duration_s: float, done_timeout_s: float, seed: int):
     rng = random.Random(seed * 1000 + n)
@@ -95,10 +133,10 @@ async def run_step(url: str, model: str, pool: list, n: int, *, chunk_ms: int,
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--stream", required=True, help="stream recipe id (serving/streaming.toml)")
+    ap.add_argument("--stream", help="stream recipe id (serving/streaming.toml)")
     ap.add_argument("--url", default="ws://127.0.0.1:8000/v1/realtime")
     ap.add_argument("--http", default="http://127.0.0.1:8000")
-    ap.add_argument("--hardware-label", required=True,
+    ap.add_argument("--hardware-label",
                     help="the card and what else runs on it, e.g. '1x RTX 3090 24 GB, "
                          "shared with a 1.4 GB embedding server'")
     ap.add_argument("--out", type=Path, required=True)
@@ -110,7 +148,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pause-s", type=float, default=10.0, help="idle time between steps")
     ap.add_argument("--offline-predictions", type=Path,
                     help="the model's offline run dir (predictions_*.jsonl) for the WER pair")
+    ap.add_argument("--rescore", action="store_true",
+                    help="only recompute the WER of the finished curve in --out")
     args = ap.parse_args(argv)
+    if args.rescore:
+        return rescore(args.out, args.offline_predictions)
+    if not args.stream or not args.hardware_label:
+        ap.error("--stream and --hardware-label are required for a run")
 
     stream, base, identity, base_identity = _stream_recipe(args.stream)
     model = base["model"]
@@ -137,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         "hardware_label": args.hardware_label,
         "gpu": gpu_identity(),
         "pool": pool_spec,
+        "output_format": OUTPUT_FORMATS.get(model),
         "offline_predictions": bool(offline),
         "params": params,
         "run_manifest": build_run_manifest(resolved_config=params, libraries=("websockets",),
@@ -167,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.url, model, pool, n, chunk_ms=stream["chunk_ms"],
                 duration_s=args.duration_s, done_timeout_s=args.done_timeout_s, seed=args.seed))
         step = step_summary(n, records, session_errors, sampler.summary(), offline,
-                            args.threshold_s)
+                            args.threshold_s, spoken_text(model))
         step["wall_s"] = round(time.monotonic() - t, 1)
         curve["steps"].append(step)
         with (args.out / f"utterances_n{n}.jsonl").open("w", encoding="utf-8") as fh:
