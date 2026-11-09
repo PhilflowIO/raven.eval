@@ -28,14 +28,32 @@ def _load_verify():
 verify = _load_verify()
 
 
-def test_demo_fixture_passes():
+def _sealed_demo_tree(root: Path, *fixtures: str) -> Path:
+    """A sealed artifacts tree holding only the named committed fixtures.
+
+    The demo tests re-score the fixtures they are named for, not the whole
+    published tree: that is the verify job's work (scripts/verify.py over
+    artifacts/ in CI), and re-doing it here once per test multiplied the test
+    job by the size of every promoted campaign (#116).
+    """
+    import shutil
+
+    tree = root / "artifacts"
+    for name in fixtures:
+        shutil.copytree(DEMO_ARTIFACTS / name, tree / name)
+    verify.manifest.write_manifest(tree)
+    return tree
+
+
+def test_demo_fixture_passes(tmp_path: Path):
     """The committed _demo fixture must re-score to its own expected.json."""
-    all_ok, rows = verify.verify(DEMO_ARTIFACTS)
+    all_ok, rows = verify.verify(DEMO_ARTIFACTS / "_demo")
     assert rows, "demo fixture must produce at least one row"
     assert all_ok, f"demo fixture did not reproduce: {rows}"
     assert all(r["status"] == "PASS" for r in rows)
-    # exit-success through the CLI entrypoint too
-    assert verify.main(["--artifacts-dir", str(DEMO_ARTIFACTS)]) == 0
+    # exit-success through the CLI entrypoint too (manifest check included)
+    tree = _sealed_demo_tree(tmp_path, "_demo")
+    assert verify.main(["--artifacts-dir", str(tree)]) == 0
 
 
 def test_demo_expected_is_truthful():
@@ -124,7 +142,7 @@ def test_expected_without_n_samples_fails(tmp_path: Path):
 
 def test_a_hand_edited_interval_fails_verify(tmp_path: Path):
     """The committed interval is re-derived like the point, not trusted."""
-    good = verify.verify(DEMO_ARTIFACTS)[1]
+    good = verify.verify(DEMO_ARTIFACTS / "_demo")[1]
     assert all("wer_ci" in r for r in good), "every demo row carries its interval"
     other = {"reference": "guten tag", "prediction": "guten abend", "latency_s": 0.1}
     _artifact(tmp_path, [_OK, other, _OK, other],
@@ -183,7 +201,7 @@ def test_flozi_normalization_semantics(ref, hyp, expect_zero):
 
 def test_demo_bleu_fixture_passes():
     """The committed BLEU fixture must re-score to its own expected.json."""
-    all_ok, rows = verify.verify(DEMO_ARTIFACTS)
+    all_ok, rows = verify.verify(DEMO_ARTIFACTS / "_demo_bleu")
     bleu_rows = [r for r in rows if "bleu" in r]
     assert bleu_rows, "artifacts/_demo_bleu must produce at least one BLEU row"
     assert all(r["status"] == "PASS" for r in bleu_rows)
