@@ -11,7 +11,13 @@ from __future__ import annotations
 import pytest
 
 from raven_asr.config import KNOWN_MODELS, OUTPUT_FORMATS
-from raven_asr.output_formats import Segment, parse_moss, parse_vibevoice, parser_for
+from raven_asr.output_formats import (
+    Segment,
+    parse_moss,
+    parse_nemotron,
+    parse_vibevoice,
+    parser_for,
+)
 from raven_eval_core.flozi_wer import corpus_wer_pct
 
 REAL = (
@@ -199,3 +205,37 @@ def test_vibevoice_parsed_output_scores_like_the_plain_transcript():
     ref = "Guten Tag und willkommen. Danke, schön hier zu sein."
     assert corpus_wer_pct([ref], [parse_vibevoice(VV).text]) == 0
     assert corpus_wer_pct([ref], [VV]) > 0
+
+
+# ------------------------------------------------------------ Nemotron locale tags
+
+NEMOTRON_REAL = ("Man steigt in der Ziffer und sinkt im Werte. <de-DE> Es ist wie bei den "
+                 "Schulden weniger ist da immer mehr. <de-DE>")
+
+
+def test_every_nemotron_locale_tag_is_removed_not_only_the_last():
+    assert parse_nemotron(NEMOTRON_REAL).text == (
+        "Man steigt in der Ziffer und sinkt im Werte. Es ist wie bei den "
+        "Schulden weniger ist da immer mehr.")
+    assert parse_nemotron(NEMOTRON_REAL).segments == []
+
+
+def test_a_tag_between_two_words_leaves_a_gap():
+    assert parse_nemotron("gut<de-DE>Morgen").text == "gut Morgen"
+
+
+def test_text_that_only_looks_like_a_tag_stays():
+    assert parse_nemotron("ich <3 dich <b> <de> <DE-de>").text == "ich <3 dich <b> <de> <DE-de>"
+
+
+def test_parsing_twice_changes_nothing():
+    once = parse_nemotron(NEMOTRON_REAL).text
+    assert parse_nemotron(once).text == once
+
+
+def test_both_prompt_conditioned_nemotron_models_are_bound_to_the_parser():
+    for model in ("nvidia/nemotron-3.5-asr-streaming-0.6b",
+                  "nvidia/nemotron-labs-unified-asr-0.6b"):
+        assert OUTPUT_FORMATS[model] == "nemotron-locale-tags"
+        assert KNOWN_MODELS[model].output_format == "nemotron-locale-tags"
+        assert parser_for(OUTPUT_FORMATS[model]) is parse_nemotron
