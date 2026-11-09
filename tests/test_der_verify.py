@@ -50,7 +50,7 @@ def _write_pair(model_dir: Path, dataset: str, fid: str, gold, hyp) -> None:
 
 def test_demo_der_fixture_passes():
     """The committed _demo_der fixture must re-score to its own expected.json."""
-    all_ok, rows = verify.verify_der(DEMO_ARTIFACTS)
+    all_ok, rows = verify.verify_der(DEMO_ARTIFACTS / "_demo_der")
     assert rows, "demo DER fixture must produce at least one row"
     assert all_ok, f"demo DER fixture did not reproduce: {rows}"
     assert all(r["status"] == "PASS" for r in rows)
@@ -74,9 +74,18 @@ def test_demo_der_components_sum_to_full():
     )
 
 
-def test_main_runs_both_wer_and_der_green():
-    """`verify.py` over the real artifacts dir re-scores WER + DER, exits 0."""
-    assert verify.main(["--artifacts-dir", str(DEMO_ARTIFACTS)]) == 0
+def test_main_runs_both_wer_and_der_green(tmp_path: Path):
+    """`verify.py` over a sealed tree of the WER and DER fixtures re-scores both, exits 0.
+
+    The whole published tree is the verify job's (#116), not this test's.
+    """
+    import shutil
+
+    tree = tmp_path / "artifacts"
+    for name in ("_demo", "_demo_der"):
+        shutil.copytree(DEMO_ARTIFACTS / name, tree / name)
+    verify.manifest.write_manifest(tree)
+    assert verify.main(["--artifacts-dir", str(tree)]) == 0
 
 
 # ── failure / emptiness guards ───────────────────────────────────────────────
