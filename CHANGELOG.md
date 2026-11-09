@@ -24,6 +24,12 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
 ## [Unreleased]
 
 ### Changed
+- **The Nemotron prompt models' locale tag is not scored inside a transcript
+  either** (#98). nemotron-3.5-asr-streaming and nemotron-labs-unified write
+  `<de-DE>` after every sentence; the NeMo server removed only the last one, so
+  the inner tags reached `prediction` (2,321 of 3,394 mls-de lines on the 2026-11
+  campaign). A new output format, `nemotron-locale-tags`, removes every one;
+  `raw_prediction` keeps them, and `raven_asr.reparse` repairs recorded runs.
 - **VibeVoice-ASR is told its clip's duration, and its non-speech tags are not
   scored** (#96). vLLM left the chat template's duration placeholder unfilled, so
   the model never knew how long a clip was and ran on to the output cap in invented

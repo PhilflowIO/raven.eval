@@ -433,6 +433,10 @@ VLLM_SERVED_MODELS: Final[dict[str, str]] = {
 #: VibeVoice-ASR answers with a JSON list of timed speaker turns.
 OUTPUT_FORMATS: Final[dict[str, str]] = {
     "OpenMOSS-Team/MOSS-Transcribe-Diarize": "moss-timed-speakers",
+    # The two prompt-conditioned Nemotron transducers (serving/nemo/server.py
+    # forces both to "de-DE"); both write a locale tag after each sentence.
+    "nvidia/nemotron-3.5-asr-streaming-0.6b": "nemotron-locale-tags",
+    "nvidia/nemotron-labs-unified-asr-0.6b": "nemotron-locale-tags",
     "microsoft/VibeVoice-ASR-HF": "vibevoice-json",
 }
 

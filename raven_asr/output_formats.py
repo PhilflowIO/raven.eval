@@ -6,6 +6,11 @@ timestamps and speaker tags with the words:
 
     [4.18][S01] Für die besten Aussichten … gegenüberliegenden[10.96][10.96][S01] Ufer von …[13.81]
 
+The prompt-conditioned Nemotron transducers close every sentence with their
+locale tag, not only the last one:
+
+    Man steigt in der Ziffer und sinkt im Werte. <de-DE> Es ist wie bei den Schulden …
+
 VibeVoice-ASR answers with a JSON list of speaker turns:
 
     [{"Start":0,"End":4.2,"Speaker":0,"Content":"Guten Tag."}, …]
@@ -38,8 +43,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 __all__ = [
-    "OUTPUT_PARSERS", "ParsedOutput", "Segment", "parse_moss", "parse_vibevoice",
-    "parser_for",
+    "OUTPUT_PARSERS", "ParsedOutput", "Segment", "parse_moss", "parse_nemotron",
+    "parse_vibevoice", "parser_for",
 ]
 
 
@@ -254,10 +259,29 @@ def parse_vibevoice(raw: str) -> ParsedOutput:
     return ParsedOutput(text=_clean(" ".join(pieces)), segments=segments)
 
 
+#: A BCP 47 locale tag as the Nemotron prompt checkpoints write it: ``<de-DE>``.
+#: Exactly language-REGION in angle brackets, so ordinary text such as ``<3`` or
+#: an HTML-looking word is left for the scoring contract.
+_NEMOTRON_LOCALE_TAG = re.compile(r"<[a-z]{2,3}-[A-Z]{2}>")
+
+
+def parse_nemotron(raw: str) -> ParsedOutput:
+    """Nemotron prompt-model output → the spoken text, every locale tag removed.
+
+    The NeMo server (``serving/nemo/server.py``) strips the tag at the END of a
+    transcript; the model also writes it after each inner sentence, and those
+    reached ``prediction`` (2,321 of 3,394 mls-de lines of
+    nemotron-3.5-asr-streaming on the 2026-11 campaign). A tag between two
+    words is a gap, so it becomes a space.
+    """
+    return ParsedOutput(text=_clean(_NEMOTRON_LOCALE_TAG.sub(" ", raw)))
+
+
 #: Output format name → parser. The names are what ``raven_asr.config`` binds a
 #: model to; a model with no entry there returns its transcript as-is.
 OUTPUT_PARSERS: dict[str, Callable[[str], ParsedOutput]] = {
     "moss-timed-speakers": parse_moss,
+    "nemotron-locale-tags": parse_nemotron,
     "vibevoice-json": parse_vibevoice,
 }
 
