@@ -1,0 +1,860 @@
+{
+  "schema_version": 2,
+  "model_id": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+  "label": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+  "adapter": "vllm_openai",
+  "model_revision": null,
+  "limit_per_subset": null,
+  "output_format": null,
+  "results": [
+    {
+      "subset": "xsid-de-control",
+      "n_samples": 800,
+      "n_attempted": 800,
+      "n_ok": 800,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "0.2",
+      "dataset_sha256": null,
+      "wer_pct": 10.8821,
+      "wer_filler_tolerant_pct": 10.8821,
+      "cer_pct": 10.8887,
+      "entity_hit_rate_pct": 72.8,
+      "n_entities": 250,
+      "n_utterances_with_entities": 214,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-08T14:21:05.323Z",
+            "finished_at": "2026-11-08T14:22:01.995Z",
+            "wall_s": 56.672,
+            "n_requests": 800,
+            "n_ok": 800,
+            "audio_s": 2734.76,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+                "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              },
+              "precision": {
+                "weights": "int8",
+                "activations": "bf16",
+                "scheme": "int8-w8a16-marlin",
+                "tensor_parallel": 2,
+                "checkpoint": {
+                  "source": "self",
+                  "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+                  "dtype": "int8",
+                  "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+                  "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 56.672,
+        "total_audio_s": 2734.76,
+        "n_ok": 800,
+        "rtfx": 48.2559,
+        "utterances_per_s": 14.1163,
+        "concurrency": 8,
+        "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+          "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        },
+        "precision": {
+          "weights": "int8",
+          "activations": "bf16",
+          "scheme": "int8-w8a16-marlin",
+          "tensor_parallel": 2,
+          "checkpoint": {
+            "source": "self",
+            "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+            "dtype": "int8",
+            "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+            "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+          }
+        }
+      }
+    },
+    {
+      "subset": "avemio-german-mixed-test",
+      "n_samples": 9799,
+      "n_attempted": 9799,
+      "n_ok": 9799,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "17bcbc196567bca7eae3e94942588b5678fd748e",
+      "dataset_sha256": null,
+      "wer_pct": 2.8368,
+      "wer_filler_tolerant_pct": 2.8366,
+      "cer_pct": 2.2705,
+      "entity_hit_rate_pct": 97.3793,
+      "n_entities": 725,
+      "n_utterances_with_entities": 605,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-08T13:37:01.608Z",
+            "finished_at": "2026-11-08T13:55:39.189Z",
+            "wall_s": 1117.581,
+            "n_requests": 9799,
+            "n_ok": 9799,
+            "audio_s": 95357.552,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+                "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              },
+              "precision": {
+                "weights": "int8",
+                "activations": "bf16",
+                "scheme": "int8-w8a16-marlin",
+                "tensor_parallel": 2,
+                "checkpoint": {
+                  "source": "self",
+                  "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+                  "dtype": "int8",
+                  "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+                  "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 1117.581,
+        "total_audio_s": 95357.552,
+        "n_ok": 9799,
+        "rtfx": 85.325,
+        "utterances_per_s": 8.768,
+        "concurrency": 8,
+        "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+          "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        },
+        "precision": {
+          "weights": "int8",
+          "activations": "bf16",
+          "scheme": "int8-w8a16-marlin",
+          "tensor_parallel": 2,
+          "checkpoint": {
+            "source": "self",
+            "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+            "dtype": "int8",
+            "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+            "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+          }
+        }
+      }
+    },
+    {
+      "subset": "fhnw-all-dialects",
+      "n_samples": 2875,
+      "n_attempted": 2875,
+      "n_ok": 2875,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": null,
+      "dataset_sha256": "7ca2492143b6d418ca42d6407f939ce8d2c53f66999e05906931ccefe6ff3148",
+      "wer_pct": 48.1331,
+      "wer_filler_tolerant_pct": 48.1235,
+      "cer_pct": 22.6223,
+      "entity_hit_rate_pct": 74.7899,
+      "n_entities": 119,
+      "n_utterances_with_entities": 107,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-08T14:15:54.399Z",
+            "finished_at": "2026-11-08T14:20:02.794Z",
+            "wall_s": 248.395,
+            "n_requests": 2875,
+            "n_ok": 2875,
+            "audio_s": 22961.622,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+                "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              },
+              "precision": {
+                "weights": "int8",
+                "activations": "bf16",
+                "scheme": "int8-w8a16-marlin",
+                "tensor_parallel": 2,
+                "checkpoint": {
+                  "source": "self",
+                  "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+                  "dtype": "int8",
+                  "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+                  "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 248.395,
+        "total_audio_s": 22961.622,
+        "n_ok": 2875,
+        "rtfx": 92.44,
+        "utterances_per_s": 11.5743,
+        "concurrency": 8,
+        "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+          "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        },
+        "precision": {
+          "weights": "int8",
+          "activations": "bf16",
+          "scheme": "int8-w8a16-marlin",
+          "tensor_parallel": 2,
+          "checkpoint": {
+            "source": "self",
+            "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+            "dtype": "int8",
+            "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+            "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+          }
+        }
+      }
+    },
+    {
+      "subset": "fleurs",
+      "n_samples": 862,
+      "n_attempted": 862,
+      "n_ok": 862,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+      "dataset_sha256": null,
+      "wer_pct": 3.7986,
+      "wer_filler_tolerant_pct": 3.7998,
+      "cer_pct": 4.1782,
+      "entity_hit_rate_pct": 79.1946,
+      "n_entities": 298,
+      "n_utterances_with_entities": 207,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-08T13:55:49.183Z",
+            "finished_at": "2026-11-08T13:57:36.961Z",
+            "wall_s": 107.778,
+            "n_requests": 862,
+            "n_ok": 862,
+            "audio_s": 11349.3,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+                "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              },
+              "precision": {
+                "weights": "int8",
+                "activations": "bf16",
+                "scheme": "int8-w8a16-marlin",
+                "tensor_parallel": 2,
+                "checkpoint": {
+                  "source": "self",
+                  "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+                  "dtype": "int8",
+                  "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+                  "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 107.778,
+        "total_audio_s": 11349.3,
+        "n_ok": 862,
+        "rtfx": 105.3026,
+        "utterances_per_s": 7.9979,
+        "concurrency": 8,
+        "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+          "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        },
+        "precision": {
+          "weights": "int8",
+          "activations": "bf16",
+          "scheme": "int8-w8a16-marlin",
+          "tensor_parallel": 2,
+          "checkpoint": {
+            "source": "self",
+            "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+            "dtype": "int8",
+            "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+            "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+          }
+        }
+      }
+    },
+    {
+      "subset": "mls-de",
+      "n_samples": 3394,
+      "n_attempted": 3394,
+      "n_ok": 3394,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "2e83e61823b4c47dcbcb1980bb88601274127609",
+      "dataset_sha256": null,
+      "wer_pct": 3.7169,
+      "wer_filler_tolerant_pct": 3.7143,
+      "cer_pct": 8.4101,
+      "entity_hit_rate_pct": 97.4522,
+      "n_entities": 471,
+      "n_utterances_with_entities": 350,
+      "n_runaway": 3,
+      "runaway_pct": 0.0884,
+      "runaway_edit_share_pct": 0.5969,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-08T13:57:39.509Z",
+            "finished_at": "2026-11-08T14:05:58.319Z",
+            "wall_s": 498.81,
+            "n_requests": 3394,
+            "n_ok": 3394,
+            "audio_s": 51454.882,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+                "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              },
+              "precision": {
+                "weights": "int8",
+                "activations": "bf16",
+                "scheme": "int8-w8a16-marlin",
+                "tensor_parallel": 2,
+                "checkpoint": {
+                  "source": "self",
+                  "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+                  "dtype": "int8",
+                  "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+                  "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 498.81,
+        "total_audio_s": 51454.882,
+        "n_ok": 3394,
+        "rtfx": 103.1553,
+        "utterances_per_s": 6.8042,
+        "concurrency": 8,
+        "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+          "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        },
+        "precision": {
+          "weights": "int8",
+          "activations": "bf16",
+          "scheme": "int8-w8a16-marlin",
+          "tensor_parallel": 2,
+          "checkpoint": {
+            "source": "self",
+            "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+            "dtype": "int8",
+            "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+            "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+          }
+        }
+      }
+    },
+    {
+      "subset": "spc-test",
+      "n_samples": 3332,
+      "n_attempted": 3332,
+      "n_ok": 3332,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "48c389fb6b88c8e80f03273a677a422729183e06",
+      "dataset_sha256": null,
+      "wer_pct": 48.7152,
+      "wer_filler_tolerant_pct": 48.5748,
+      "cer_pct": 27.1695,
+      "entity_hit_rate_pct": 57.8595,
+      "n_entities": 598,
+      "n_utterances_with_entities": 428,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-08T14:10:06.604Z",
+            "finished_at": "2026-11-08T14:15:50.958Z",
+            "wall_s": 344.354,
+            "n_requests": 3332,
+            "n_ok": 3332,
+            "audio_s": 21676.184,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+                "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              },
+              "precision": {
+                "weights": "int8",
+                "activations": "bf16",
+                "scheme": "int8-w8a16-marlin",
+                "tensor_parallel": 2,
+                "checkpoint": {
+                  "source": "self",
+                  "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+                  "dtype": "int8",
+                  "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+                  "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 344.354,
+        "total_audio_s": 21676.184,
+        "n_ok": 3332,
+        "rtfx": 62.9474,
+        "utterances_per_s": 9.6761,
+        "concurrency": 8,
+        "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+          "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        },
+        "precision": {
+          "weights": "int8",
+          "activations": "bf16",
+          "scheme": "int8-w8a16-marlin",
+          "tensor_parallel": 2,
+          "checkpoint": {
+            "source": "self",
+            "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+            "dtype": "int8",
+            "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+            "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+          }
+        }
+      }
+    },
+    {
+      "subset": "voxpopuli-de",
+      "n_samples": 1968,
+      "n_attempted": 1968,
+      "n_ok": 1968,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "42f01879c780b4a2e90ec0b4f616c2ece526e4f1",
+      "dataset_sha256": null,
+      "wer_pct": 10.639,
+      "wer_filler_tolerant_pct": 10.5539,
+      "cer_pct": 8.1257,
+      "entity_hit_rate_pct": 73.8889,
+      "n_entities": 360,
+      "n_utterances_with_entities": 246,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-08T14:06:07.110Z",
+            "finished_at": "2026-11-08T14:10:04.285Z",
+            "wall_s": 237.174,
+            "n_requests": 1968,
+            "n_ok": 1968,
+            "audio_s": 17724.227,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+                "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              },
+              "precision": {
+                "weights": "int8",
+                "activations": "bf16",
+                "scheme": "int8-w8a16-marlin",
+                "tensor_parallel": 2,
+                "checkpoint": {
+                  "source": "self",
+                  "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+                  "dtype": "int8",
+                  "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+                  "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 237.174,
+        "total_audio_s": 17724.227,
+        "n_ok": 1968,
+        "rtfx": 74.7309,
+        "utterances_per_s": 8.2977,
+        "concurrency": 8,
+        "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+          "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        },
+        "precision": {
+          "weights": "int8",
+          "activations": "bf16",
+          "scheme": "int8-w8a16-marlin",
+          "tensor_parallel": 2,
+          "checkpoint": {
+            "source": "self",
+            "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+            "dtype": "int8",
+            "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+            "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+          }
+        }
+      }
+    },
+    {
+      "subset": "xsid-bar",
+      "n_samples": 800,
+      "n_attempted": 800,
+      "n_ok": 800,
+      "n_failed": 0,
+      "n_dropped": 0,
+      "dropped_by_reason": {},
+      "dataset_revision": "0.2",
+      "dataset_sha256": null,
+      "wer_pct": 62.2533,
+      "wer_filler_tolerant_pct": 62.1659,
+      "cer_pct": 44.7564,
+      "entity_hit_rate_pct": 57.2,
+      "n_entities": 250,
+      "n_utterances_with_entities": 214,
+      "n_runaway": 0,
+      "runaway_pct": 0.0,
+      "runaway_edit_share_pct": 0.0,
+      "flozi_reference_wer": null,
+      "drift_pct_vs_flozi": null,
+      "throughput": {
+        "passes": [
+          {
+            "started_at": "2026-11-08T14:20:05.391Z",
+            "finished_at": "2026-11-08T14:21:03.615Z",
+            "wall_s": 58.224,
+            "n_requests": 800,
+            "n_ok": 800,
+            "audio_s": 2691.08,
+            "concurrency": 8,
+            "adapter": "vllm_openai",
+            "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+            "interrupted": false,
+            "serving": {
+              "engine": "vllm 0.33.0",
+              "recipe": {
+                "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+                "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+              },
+              "batching": {
+                "max_num_seqs": 16
+              },
+              "decoding": {
+                "mode": "greedy",
+                "max_tokens": 1024
+              },
+              "precision": {
+                "weights": "int8",
+                "activations": "bf16",
+                "scheme": "int8-w8a16-marlin",
+                "tensor_parallel": 2,
+                "checkpoint": {
+                  "source": "self",
+                  "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+                  "dtype": "int8",
+                  "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+                  "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+                }
+              }
+            }
+          }
+        ],
+        "total_wall_s": 58.224,
+        "total_audio_s": 2691.08,
+        "n_ok": 800,
+        "rtfx": 46.2194,
+        "utterances_per_s": 13.74,
+        "concurrency": 8,
+        "hardware": "2x NVIDIA GeForce RTX 3090 24GB (NVLink, tensor-parallel 2), driver 580.178.04",
+        "comparable": true,
+        "comparable_reason": null
+      },
+      "serving": {
+        "engine": "vllm 0.33.0",
+        "recipe": {
+          "id": "nemotron-3.5-transcribe-30b-a4b-w8a16",
+          "sha256": "33991fd0a8e8446aa69a5be2bfa4787b37bc6549dfd88814ec60324b9ed0dc3c"
+        },
+        "batching": {
+          "max_num_seqs": 16
+        },
+        "decoding": {
+          "mode": "greedy",
+          "max_tokens": 1024
+        },
+        "precision": {
+          "weights": "int8",
+          "activations": "bf16",
+          "scheme": "int8-w8a16-marlin",
+          "tensor_parallel": 2,
+          "checkpoint": {
+            "source": "self",
+            "recipe": "serving/quantize/nemotron_transcribe_w8a16.py",
+            "dtype": "int8",
+            "repo": "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+            "revision": "1992cdbec71a512d336a4a21f192d78faf30bbfe"
+          }
+        }
+      }
+    }
+  ],
+  "run_manifest": {
+    "git": {
+      "sha": "dfb0247ecfea9d09ab642244f5ccd40feca63033",
+      "dirty": false
+    },
+    "uv_lock_sha256": "f92a954b7d17dcfeff41d442ce940c0e3d4c68ca940c6235d3c88d19b826ce11",
+    "python": "3.11.15",
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.39",
+    "libraries": {
+      "datasets": "5.0.1",
+      "httpx": "0.28.1",
+      "jiwer": "4.0.0",
+      "modal": null,
+      "num2words": "0.5.14",
+      "numpy": "2.4.6",
+      "pyannote.core": "6.0.1",
+      "pyannote.metrics": "4.1",
+      "raven-eval-core": "0.1.0",
+      "sacrebleu": "2.6.0",
+      "soundfile": "0.14.0",
+      "text2num": "3.0.2",
+      "unidecode": "1.4.0"
+    },
+    "gpu": null,
+    "config_sha256": "c447d801767cc5bd53d6a4819eed750f4ee0b68afec007a24bf2336d5692072a",
+    "argv": [
+      "python",
+      "-m",
+      "raven_asr.reproduce",
+      "--metric",
+      "wer",
+      "--dataset",
+      "xsid-de-control",
+      "--model",
+      "PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16",
+      "--concurrency",
+      "8",
+      "--out",
+      "/mnt/modelle/stt-bench/results/PhilflowIO__NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16"
+    ]
+  }
+}
