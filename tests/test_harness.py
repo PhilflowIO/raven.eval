@@ -651,3 +651,101 @@ def test_reproduce_exits_4_on_a_leaked_subset(
     assert rc == reproduce.EXIT_LEAKED == 4
     assert "9 of 20 transcripts" in capsys.readouterr().err
     assert (out_root / label / ".leaked_fleurs.json").exists()
+
+
+# ── every finished subset stays in the summary (#100) ──────────────────────────
+
+
+def _one_subset_per_invocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, between=None
+) -> Path:
+    """Two invocations into one dir, one subset each — how a campaign drives it.
+
+    ``between(results_dir)`` runs after the first invocation.
+    """
+    refs = ["hallo welt", "guten tag"]
+    tuda, registry = _make_samples("Tuda-De", refs)
+    cv, _ = _make_samples("common_voice_19_0", refs)  # same refs: one registry
+    by_subset = {"Tuda-De": tuda, "common_voice_19_0": cv}
+    monkeypatch.setattr(
+        runner, "_iter_loader_for_subset",
+        lambda s, **_kw: (_FakeLoader(by_subset[s]), s),
+    )
+    monkeypatch.setattr(runner, "_make_adapter", lambda _spec: _PerfectAdapter(registry))
+    results_dir = tmp_path / "results" / "primeline-whisper-large-v3-german"
+    for i, subset in enumerate(("Tuda-De", "common_voice_19_0")):
+        if i == 1 and between is not None:
+            between(results_dir)
+        runner.run(model_key="primeline/whisper-large-v3-german", subsets=[subset],
+                   limit=None, out_dir=results_dir)
+    return results_dir
+
+
+def test_a_second_invocation_keeps_the_first_subset_in_the_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    results_dir = _one_subset_per_invocation(tmp_path, monkeypatch)
+    summary = json.loads((results_dir / "summary.json").read_text())
+    assert sorted(r["subset"] for r in summary["results"]) == ["Tuda-De", "common_voice_19_0"]
+
+    artifacts = tmp_path / "artifacts"
+    dest = promote_mod.promote(results_dir, artifacts, run_name="two-invocations")
+    assert sorted(json.loads((dest / "expected.json").read_text())) == [
+        "Tuda-De", "common_voice_19_0"]
+    all_ok, rows = _load_verify().verify(artifacts)
+    assert all_ok, rows
+
+
+def test_a_subset_finished_under_other_conditions_is_not_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def other_commit(results_dir: Path) -> None:
+        sidecar = results_dir / ".conditions_Tuda-De.json"
+        data = json.loads(sidecar.read_text())
+        data["run_manifest"]["git"] = {"sha": "0" * 40, "dirty": False}
+        sidecar.write_text(json.dumps(data))
+
+    results_dir = _one_subset_per_invocation(tmp_path, monkeypatch, between=other_commit)
+    summary = json.loads((results_dir / "summary.json").read_text())
+    assert [r["subset"] for r in summary["results"]] == ["common_voice_19_0"]
+
+
+def test_an_old_one_row_summary_is_rebuilt_and_promote_refuses_it_until_then(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    results_dir = _one_subset_per_invocation(tmp_path, monkeypatch)
+    # What a runner before #100 left behind: the last invocation's row only.
+    path = results_dir / "summary.json"
+    summary = json.loads(path.read_text())
+    summary["results"] = [r for r in summary["results"] if r["subset"] == "common_voice_19_0"]
+    path.write_text(json.dumps(summary))
+
+    with pytest.raises(ValueError, match="resummarize"):
+        promote_mod.promote(results_dir, tmp_path / "artifacts", run_name="old")
+
+    assert sorted(runner.resummarize(results_dir)) == ["Tuda-De", "common_voice_19_0"]
+    assert runner.resummarize(results_dir) == runner.resummarize(results_dir)  # idempotent
+    dest = promote_mod.promote(results_dir, tmp_path / "artifacts", run_name="old")
+    assert sorted(json.loads((dest / "expected.json").read_text())) == [
+        "Tuda-De", "common_voice_19_0"]
+
+
+def test_subsets_without_a_recorded_manifest_are_adopted_only_on_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    results_dir = _one_subset_per_invocation(tmp_path, monkeypatch)
+    # A dir from before per-subset sidecars: no .conditions_, one summary row.
+    (results_dir / ".conditions_Tuda-De.json").unlink()
+    path = results_dir / "summary.json"
+    summary = json.loads(path.read_text())
+    summary["results"] = [r for r in summary["results"] if r["subset"] == "common_voice_19_0"]
+    path.write_text(json.dumps(summary))
+
+    assert runner.resummarize(results_dir) == ["common_voice_19_0"]
+    assert sorted(runner.resummarize(results_dir, adopt_unrecorded=True)) == [
+        "Tuda-De", "common_voice_19_0"]
+    steps = json.loads(path.read_text())["post_hoc"]
+    assert [s["adopted_without_manifest"] for s in steps if s["step"] == "resummarize"] == [
+        ["Tuda-De"]]
+    dest = promote_mod.promote(results_dir, tmp_path / "artifacts", run_name="adopted")
+    assert "post_hoc" in json.loads((dest / "summary.json").read_text())

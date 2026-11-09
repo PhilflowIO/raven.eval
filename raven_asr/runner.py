@@ -1030,6 +1030,45 @@ async def _gate_existing_rows(
     return entry
 
 
+def _finished_on_disk(
+    out_dir: Path, manifest: Any, have: set[str], *, adopt_unrecorded: bool = False
+) -> list[ResultEntry]:
+    """Subsets an earlier invocation finished into ``out_dir`` under this run's conditions.
+
+    A campaign that runs one subset per invocation writes ``summary.json`` once per
+    invocation, and each invocation only holds its own subset in memory. The others
+    are on disk — a ``.done_`` marker with their scores and the ``.conditions_``
+    sidecar naming the manifest they were measured under — and they belong in the
+    summary by the same rule that lets an invocation resume them: the same run
+    conditions, everything but the command line (``same_run_conditions``). A subset
+    measured under other conditions is left out; the next invocation that reaches
+    it moves it aside and measures it again.
+
+    ``adopt_unrecorded`` (re-summarize only, never a run) also takes subsets whose
+    rows record no manifest at all — written before per-subset sidecars — on the
+    caller's word that they were measured under the summary's; the caller
+    records that as a ``post_hoc`` step.
+    """
+    if not isinstance(manifest, dict):
+        return []
+    found: list[ResultEntry] = []
+    for marker in sorted(out_dir.glob(".done_*.json")):
+        try:
+            entry = ResultEntry(**json.loads(marker.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError, TypeError):
+            continue
+        if entry.subset_arg in have or marker.name != f".done_{_safe(entry.subset_arg)}.json":
+            continue
+        recorded = _recorded_manifest(out_dir, entry.subset_arg)
+        if recorded is None and adopt_unrecorded:
+            found.append(entry)
+            continue
+        if _manifest_mismatch(recorded, manifest):
+            continue
+        found.append(entry)
+    return found
+
+
 def _write_outputs(
     out_dir: Path,
     spec: ModelSpec,
@@ -1038,6 +1077,9 @@ def _write_outputs(
     manifest: dict[str, Any],
     post_hoc: list[dict[str, Any]] | None = None,
 ) -> Path:
+    entries = [*entries, *_finished_on_disk(
+        out_dir, manifest, {e.subset_arg for e in entries}
+    )]
     yaml_path = out_dir / "model-index.yaml"
     write_yaml(yaml_path, build_model_index(model_id=spec.model_id, results=entries))
     results = _compare_against_flozi(spec.model_id, entries)
@@ -1185,6 +1227,58 @@ def rescore_recorded(
         out_dir, spec, entries, summary.get("limit_per_subset"),
         summary.get("run_manifest"), post_hoc=steps,
     )
+
+
+def resummarize(out_dir: Path, *, adopt_unrecorded: bool = False) -> list[str]:
+    """Rewrite ``summary.json`` and ``model-index.yaml`` of a finished results dir.
+
+    For a directory written before every finished subset was kept in the summary
+    (one subset per invocation left one row): the rows are rebuilt by the run's
+    own writer from what the directory recorded — markers, passes, the summary's
+    run manifest and post-hoc steps — with no inference and no re-scoring.
+    Returns the subsets the summary now holds.
+
+    A subset whose rows record no manifest (finished before per-subset sidecars)
+    is only taken with ``adopt_unrecorded``, and then named in a ``post_hoc``
+    step (``"step": "resummarize"``, ``"adopted_without_manifest"``) so a reader
+    sees that its conditions are the operator's statement, not a record.
+    """
+    summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+    spec = KNOWN_MODELS.get(str(summary.get("model_id")))
+    if spec is None:
+        raise ValueError(f"{out_dir}: model {summary.get('model_id')!r} is not in KNOWN_MODELS")
+    spec = replace(spec, label=str(summary.get("label") or spec.label))
+    entries: list[ResultEntry] = []
+    for row in summary.get("results", []):
+        marker = out_dir / f".done_{_safe(str(row['subset']))}.json"
+        entries.append(
+            ResultEntry(**json.loads(marker.read_text(encoding="utf-8")))
+            if marker.exists() else _entry_from_row(row)
+        )
+    manifest = summary.get("run_manifest")
+    have = {e.subset_arg for e in entries}
+    recorded = {e.subset_arg for e in _finished_on_disk(out_dir, manifest, have)}
+    adopted = [
+        e for e in _finished_on_disk(out_dir, manifest, have, adopt_unrecorded=True)
+        if e.subset_arg not in recorded
+    ] if adopt_unrecorded else []
+    steps = list(summary.get("post_hoc") or [])
+    if adopted:
+        steps.append({
+            "step": "resummarize",
+            "adopted_without_manifest": sorted(e.subset_arg for e in adopted),
+            "why": ("these subsets finished before per-subset manifests were "
+                    "recorded; the operator states they ran under this summary's "
+                    "run_manifest"),
+            "tool": "raven_asr.resummarize",
+            "at": _iso(datetime.now(timezone.utc)),
+        })
+    _write_outputs(
+        out_dir, spec, [*entries, *adopted], summary.get("limit_per_subset"),
+        manifest, post_hoc=steps or None,
+    )
+    rewritten = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+    return [str(r["subset"]) for r in rewritten.get("results", [])]
 
 
 def _write_predictions(path: Path, outcomes: list[_Outcome]) -> None:
