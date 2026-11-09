@@ -355,10 +355,13 @@ def load_recipes(path: Path = RECIPES_FILE) -> dict[str, dict[str, Any]]:
 #:                  (raven.eval#93).
 #:   raven_audio_duration  same package: fills the chat template's duration
 #:                  placeholder that vLLM leaves unfilled (raven.eval#96).
+#:   raven_mamba_live_conv  same package: Mamba2 reads its conv weights from the
+#:                  parameter, which weight offloading moves (raven.eval#101).
 VLLM_PLUGINS: dict[str, str] = {
     "nemo_speechlm": "nemo_toolkit",
     "raven_ragged_audio": "raven-vllm-plugin",
     "raven_audio_duration": "raven-vllm-plugin",
+    "raven_mamba_live_conv": "raven-vllm-plugin",
 }
 
 

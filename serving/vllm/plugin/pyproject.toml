@@ -4,13 +4,14 @@
 [project]
 name = "raven-vllm-plugin"
 version = "0.1.0"
-description = "vLLM 0.33 fixes for audio models on the Transformers backend"
+description = "vLLM 0.33 fixes for audio models on the Transformers backend and for Mamba2 under weight offload"
 requires-python = ">=3.10"
 license = "MIT"
 
 [project.entry-points."vllm.general_plugins"]
 raven_ragged_audio = "raven_vllm_plugin:register"
 raven_audio_duration = "raven_vllm_plugin:register_audio_duration"
+raven_mamba_live_conv = "raven_vllm_plugin:register_mamba_live_conv"
 
 [build-system]
 requires = ["setuptools>=77"]

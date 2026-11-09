@@ -116,6 +116,7 @@ def test_the_entry_point_is_the_plugin_recipes_name() -> None:
     assert entries == {
         "raven_ragged_audio": "raven_vllm_plugin:register",
         "raven_audio_duration": "raven_vllm_plugin:register_audio_duration",
+        "raven_mamba_live_conv": "raven_vllm_plugin:register_mamba_live_conv",
     }
     assert recipe.VLLM_PLUGINS["raven_ragged_audio"] == project["name"]
     assert recipe.VLLM_PLUGINS["raven_audio_duration"] == project["name"]

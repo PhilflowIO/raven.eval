@@ -418,7 +418,7 @@ notes = "NVIDIA's bf16 release (nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B@c1
 model = "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
 revision = "c17667641642c4265ff2b7037dd101b7d4567634"
 engine = "vllm"
-vllm_plugins = ["nemo_speechlm"]
+vllm_plugins = ["nemo_speechlm", "raven_mamba_live_conv"]
 decoding = { mode = "greedy", max_tokens = 1024 }
 precision = { weights = "bf16", activations = "bf16", scheme = "none", tensor_parallel = 2, control = "nemotron-3.5-transcribe-30b-a4b-w8a16", checkpoint = { source = "published", dtype = "bf16" } }
 weights_gb = 68
@@ -428,7 +428,7 @@ max_model_len = 16384
 trust_remote_code = true
 args = ["--no-enable-prefix-caching", "--mm-processor-cache-gb", "0", "--limit-mm-per-prompt", "{\"audio\":1}", "--cpu-offload-gb", "16"]
 chunking = "none: the whole clip goes into one chat request, bounded by max_model_len 16384"
-notes = "The bf16 control of nemotron-3.5-transcribe-30b-a4b-w8a16, run on FLEURS-de only. NVIDIA's release as published (one model.safetensors, 67.5 GB, NeMo layout that the plugin renames on load), ~34 GB per card at TP 2; --cpu-offload-gb 16 (per GPU, vllm/config/offload.py:23-32) keeps 16 GB of each card's share in pinned host RAM (~32 GB of the host's 125 GB) and streams it over PCIe in every forward pass. Slow by design; the numbers it produces are the bf16 model's. The weights are the ones the quantized build was made from (same repo and revision). Same plugin, request and prompt as the quantized row: not forced to German ('Language: as spoken'). License OpenMDW-1.1. German: 'German ✓ Leading', FLEURS German WER 2.73, CoVoST2 German 2.98 — https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
+notes = "The bf16 control of nemotron-3.5-transcribe-30b-a4b-w8a16, run on FLEURS-de only. NVIDIA's release as published (one model.safetensors, 67.5 GB, NeMo layout that the plugin renames on load), ~34 GB per card at TP 2; --cpu-offload-gb 16 (per GPU, vllm/config/offload.py:23-32) keeps 16 GB of each card's share in pinned host RAM (~32 GB of the host's 125 GB) and streams it over PCIe in every forward pass. Slow by design; the numbers it produces are the bf16 model's. The weights are the ones the quantized build was made from (same repo and revision). Same request and prompt as the quantized row: not forced to German ('Language: as spoken'). Same NeMo plugin, plus raven_mamba_live_conv (serving/vllm/plugin): vLLM 0.33.0's MambaMixer2 keeps a view of conv1d.weight in a buffer (mamba_mixer2.py:473-477) that offloading leaves on memory no weight is loaded into, so the offloaded Mamba layers convolved with uninitialised memory; the first run of this row (2026-11-08) answered every clip with punctuation for that reason (raven.eval#101). License OpenMDW-1.1. German: 'German ✓ Leading', FLEURS German WER 2.73, CoVoST2 German 2.98 — https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B"
 
 # ── transformers stand-in (behind the same shim) ────────────────────────────
 
