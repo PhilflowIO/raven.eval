@@ -181,6 +181,26 @@ def _vv_string(body: str) -> str:
         return body
 
 
+#: The non-speech tags VibeVoice-ASR writes into ``Content``, as observed on 3,204
+#: German clips (2026-11-09): its way of labelling a stretch with no words, not
+#: anything spoken, and scoring them would count each one as an inserted word.
+#: A closed list, not "anything in brackets": ``[Heidi]`` would be a word the
+#: model wrote, left for the scoring contract like for any other model.
+_VV_NON_SPEECH = re.compile(
+    r"\[\s*(?:noise|silence|music|lyric|click|speech|environmental sounds"
+    r"|unintelligible speech)\s*\]",
+    re.IGNORECASE,
+)
+
+
+_VV_BROKEN_TAG = re.compile(r"\[[^\[\]]*$")
+
+
+def _vv_spoken(content: str) -> str:
+    """A turn's ``Content`` without non-speech tags (a tag between words is a gap)."""
+    return _clean(_VV_NON_SPEECH.sub(" ", content))
+
+
 def parse_vibevoice(raw: str) -> ParsedOutput:
     """VibeVoice-ASR output → spoken text + speaker segments.
 
@@ -194,6 +214,11 @@ def parse_vibevoice(raw: str) -> ParsedOutput:
     turn that is not valid JSON is skipped as a whole — it carries no Content the
     parser could trust. An answer with no turn object at all (the model answered
     in plain text) comes back unchanged, whitespace collapsed, with no segments.
+
+    The model labels non-speech with ``[Noise]``-style tags, as whole turns and
+    inside turns. Those are dropped, and a turn left with no words yields no
+    segment; ``raw_prediction`` keeps every one. A model that loops on words
+    keeps them all and stays visible to the runaway count (``wer.runaway``).
     """
     pieces: list[str] = []
     segments: list[Segment] = []
@@ -208,7 +233,7 @@ def parse_vibevoice(raw: str) -> ParsedOutput:
             continue
         if not isinstance(turn, dict):
             continue
-        text = _clean(str(turn.get("Content") or ""))
+        text = _vv_spoken(str(turn.get("Content") or ""))
         if not text:
             continue
         pieces.append(text)
@@ -218,7 +243,9 @@ def parse_vibevoice(raw: str) -> ParsedOutput:
         ))
     if tail := _VV_OPEN_CONTENT.search(raw[end:]):
         found = True
-        text = _clean(_vv_string(tail.group(1)))
+        # The cap can stop the model mid-tag: a "[" still open at the end of the
+        # answer starts a tag that lost its name, not a word.
+        text = _vv_spoken(_VV_BROKEN_TAG.sub("", _vv_string(tail.group(1))))
         if text:
             pieces.append(text)
             segments.append(Segment(None, None, None, text))
