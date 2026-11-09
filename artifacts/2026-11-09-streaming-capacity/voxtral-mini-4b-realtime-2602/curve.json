@@ -1,0 +1,429 @@
+{
+  "schema": "raven.stream-capacity/1",
+  "started_utc": "2026-11-09T19:00:56+00:00",
+  "stream": {
+    "id": "voxtral-mini-4b-realtime-2602",
+    "sha256": "0d0dce90161b5ddcc4aa401e94fdd2b2f5e5ad521293cf720e0df8c4077389fb"
+  },
+  "base_recipe": {
+    "id": "voxtral-mini-4b-realtime-2602",
+    "sha256": "4a3a37a7d6b6902ae5dd8f82374e694563f2c39c91c8b5c1698a4fcb1165239e"
+  },
+  "model": "mistralai/Voxtral-Mini-4B-Realtime-2602",
+  "revision": "2769294da9567371363522aac9bbcfdd19447add",
+  "protocol": "vllm-realtime",
+  "chunk_ms": 80,
+  "latency": "transcription_delay_ms = 480, the checkpoint's own tekken.json value at the pinned revision",
+  "precision": {
+    "weights": "bf16",
+    "activations": "bf16",
+    "scheme": "none",
+    "tensor_parallel": 1,
+    "checkpoint": {
+      "source": "published",
+      "dtype": "bf16"
+    }
+  },
+  "engine": {
+    "name": "vllm",
+    "version": "0.33.0"
+  },
+  "hardware_label": "1x RTX 3090 24 GB, shared with a running 1.4 GB text-embedding server (TEI); harness on the same host",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 3090",
+    "memory_total_mib": 24576.0,
+    "driver": "615.71.09"
+  },
+  "pool": {
+    "seed": 20261109,
+    "sources": [
+      {
+        "dataset": "fleurs",
+        "take": null,
+        "selected": 862,
+        "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd"
+      },
+      {
+        "dataset": "avemio-german-mixed-test",
+        "take": 2000,
+        "selected": 2000,
+        "revision": "17bcbc196567bca7eae3e94942588b5678fd748e"
+      }
+    ],
+    "n_utterances": 2862,
+    "audio_s": 30920.4,
+    "ids_sha256": "1bfdb49670d9183b37d01d585bdc4199a44661b82d30448889e61f95647d4c48"
+  },
+  "offline_predictions": true,
+  "params": {
+    "steps": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "duration_s": 180.0,
+    "threshold_s": 1.0,
+    "done_timeout_s": 30.0,
+    "pause_s": 10.0,
+    "start_stagger": "uniform within one chunk, seeded",
+    "seed": 20261109
+  },
+  "run_manifest": {
+    "git": {
+      "sha": "b69bad50f6c74090d985501c446af9f341909489",
+      "dirty": false
+    },
+    "uv_lock_sha256": "f92a954b7d17dcfeff41d442ce940c0e3d4c68ca940c6235d3c88d19b826ce11",
+    "python": "3.11.15",
+    "platform": "Linux-7.2.9-arch1-1-x86_64-with-glibc2.44",
+    "libraries": {
+      "jiwer": "4.0.0",
+      "num2words": "0.5.14",
+      "numpy": "2.4.6",
+      "pyannote.core": "6.0.1",
+      "pyannote.metrics": "4.1",
+      "raven-eval-core": "0.1.0",
+      "sacrebleu": "2.6.0",
+      "text2num": "3.0.2",
+      "unidecode": "1.4.0",
+      "websockets": "17.1"
+    },
+    "gpu": null,
+    "config_sha256": "08cc8e90f529ba89d25110c4275340621b2f3dfdb1bcc14a4d7b4d1fa2169beb",
+    "argv": [
+      "python",
+      "-m",
+      "raven_asr.stream",
+      "--stream",
+      "voxtral-mini-4b-realtime-2602",
+      "--url",
+      "ws://127.0.0.1:8095/v1/realtime",
+      "--http",
+      "http://127.0.0.1:8095",
+      "--hardware-label",
+      "1x RTX 3090 24 GB, shared with a running 1.4 GB text-embedding server (TEI); harness on the same host",
+      "--out",
+      "/mnt/daten/stt-bench/results-stream/2026-11-09/voxtral-mini-4b-realtime-2602",
+      "--offline-predictions",
+      "/mnt/daten/stt-bench/results/mistralai__Voxtral-Mini-4B-Realtime-2602/voxtral-mini-4b-realtime-2602"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "utterances": 17,
+      "completed": 17,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 189.7,
+      "ttfp_s": {
+        "p50": 1.9403,
+        "p95": 2.6779,
+        "p99": 3.2407
+      },
+      "final_s": {
+        "p50": 0.3416,
+        "p95": 0.394,
+        "p99": 0.5218
+      },
+      "send_lag_max_s": 0.0157,
+      "wer_strict_pct": 3.226,
+      "offline_wer_strict_pct": 2.346,
+      "probes": {
+        "samples": 392,
+        "util_mean_pct": 20.6,
+        "util_max_pct": 88.0,
+        "memory_used_max_mib": 22041.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "VLLM::EngineCore",
+            "memory_mib": 20586.0
+          }
+        ],
+        "engine_running_max": 0.0,
+        "engine_waiting_max": 1.0,
+        "engine_kv_cache_usage_max": 0.023494860499265746
+      },
+      "within_threshold": true,
+      "wall_s": 195.9
+    },
+    {
+      "n": 2,
+      "utterances": 31,
+      "completed": 31,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 352.4,
+      "ttfp_s": {
+        "p50": 2.1078,
+        "p95": 4.1008,
+        "p99": 5.9408
+      },
+      "final_s": {
+        "p50": 0.4071,
+        "p95": 0.4245,
+        "p99": 0.4571
+      },
+      "send_lag_max_s": 0.0041,
+      "wer_strict_pct": 4.46,
+      "offline_wer_strict_pct": 3.087,
+      "probes": {
+        "samples": 369,
+        "util_mean_pct": 38.7,
+        "util_max_pct": 92.0,
+        "memory_used_max_mib": 22079.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "VLLM::EngineCore",
+            "memory_mib": 20624.0
+          }
+        ],
+        "engine_running_max": 1.0,
+        "engine_waiting_max": 2.0,
+        "engine_kv_cache_usage_max": 0.0469897209985316
+      },
+      "within_threshold": true,
+      "wall_s": 184.3
+    },
+    {
+      "n": 4,
+      "utterances": 61,
+      "completed": 61,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 706.5,
+      "ttfp_s": {
+        "p50": 2.0347,
+        "p95": 4.5791,
+        "p99": 5.6621
+      },
+      "final_s": {
+        "p50": 0.5472,
+        "p95": 0.7143,
+        "p99": 0.7451
+      },
+      "send_lag_max_s": 0.0025,
+      "wer_strict_pct": 5.171,
+      "offline_wer_strict_pct": 4.837,
+      "probes": {
+        "samples": 374,
+        "util_mean_pct": 69.8,
+        "util_max_pct": 100.0,
+        "memory_used_max_mib": 22131.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "VLLM::EngineCore",
+            "memory_mib": 20676.0
+          }
+        ],
+        "engine_running_max": 3.0,
+        "engine_waiting_max": 4.0,
+        "engine_kv_cache_usage_max": 0.08516886930983847
+      },
+      "within_threshold": true,
+      "wall_s": 187.1
+    },
+    {
+      "n": 8,
+      "utterances": 125,
+      "completed": 125,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 1387.5,
+      "ttfp_s": {
+        "p50": 1.956,
+        "p95": 4.7118,
+        "p99": 5.3829
+      },
+      "final_s": {
+        "p50": 0.7378,
+        "p95": 0.8795,
+        "p99": 0.9533
+      },
+      "send_lag_max_s": 0.0098,
+      "wer_strict_pct": 5.168,
+      "offline_wer_strict_pct": 5.042,
+      "probes": {
+        "samples": 380,
+        "util_mean_pct": 91.4,
+        "util_max_pct": 100.0,
+        "memory_used_max_mib": 22131.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "VLLM::EngineCore",
+            "memory_mib": 20676.0
+          }
+        ],
+        "engine_running_max": 6.0,
+        "engine_waiting_max": 8.0,
+        "engine_kv_cache_usage_max": 0.14243759177679882
+      },
+      "within_threshold": true,
+      "wall_s": 189.7
+    },
+    {
+      "n": 16,
+      "utterances": 257,
+      "completed": 257,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 2732.9,
+      "ttfp_s": {
+        "p50": 1.8077,
+        "p95": 5.0065,
+        "p99": 6.0517
+      },
+      "final_s": {
+        "p50": 0.9054,
+        "p95": 0.9709,
+        "p99": 1.1105
+      },
+      "send_lag_max_s": 0.0137,
+      "wer_strict_pct": 4.496,
+      "offline_wer_strict_pct": 4.475,
+      "probes": {
+        "samples": 390,
+        "util_mean_pct": 96.0,
+        "util_max_pct": 100.0,
+        "memory_used_max_mib": 22133.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "VLLM::EngineCore",
+            "memory_mib": 20678.0
+          }
+        ],
+        "engine_running_max": 9.0,
+        "engine_waiting_max": 16.0,
+        "engine_kv_cache_usage_max": 0.28928046989721
+      },
+      "within_threshold": true,
+      "wall_s": 194.7
+    },
+    {
+      "n": 32,
+      "utterances": 490,
+      "completed": 490,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 5280.3,
+      "ttfp_s": {
+        "p50": 1.816,
+        "p95": 4.6755,
+        "p99": 5.6007
+      },
+      "final_s": {
+        "p50": 1.2068,
+        "p95": 1.9483,
+        "p99": 2.3813
+      },
+      "send_lag_max_s": 0.017,
+      "wer_strict_pct": 4.913,
+      "offline_wer_strict_pct": 4.784,
+      "probes": {
+        "samples": 388,
+        "util_mean_pct": 89.7,
+        "util_max_pct": 100.0,
+        "memory_used_max_mib": 22329.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "VLLM::EngineCore",
+            "memory_mib": 20874.0
+          }
+        ],
+        "engine_running_max": 21.0,
+        "engine_waiting_max": 31.0,
+        "engine_kv_cache_usage_max": 0.5124816446402349
+      },
+      "within_threshold": false,
+      "wall_s": 193.9
+    },
+    {
+      "n": 64,
+      "utterances": 352,
+      "completed": 311,
+      "errors": 41,
+      "drops": 41,
+      "error_kinds": [
+        "no transcription.done within 30 s"
+      ],
+      "audio_s": 3353.4,
+      "ttfp_s": {
+        "p50": 1.8806,
+        "p95": 4.6502,
+        "p99": 26.933
+      },
+      "final_s": {
+        "p50": 0.9825,
+        "p95": 28.1254,
+        "p99": 29.7645
+      },
+      "send_lag_max_s": 0.006,
+      "wer_strict_pct": 5.448,
+      "offline_wer_strict_pct": 5.448,
+      "probes": {
+        "samples": 400,
+        "util_mean_pct": 81.8,
+        "util_max_pct": 100.0,
+        "memory_used_max_mib": 22671.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "VLLM::EngineCore",
+            "memory_mib": 21216.0
+          }
+        ],
+        "engine_running_max": 43.0,
+        "engine_waiting_max": 64.0,
+        "engine_kv_cache_usage_max": 1.0
+      },
+      "within_threshold": false,
+      "wall_s": 200.1
+    }
+  ],
+  "max_n_within_threshold": 16,
+  "stopped_because": "one step recorded beyond the first step over the rule",
+  "warmup": {
+    "sample_id": "fleurs-208",
+    "final_s": 0.34247704801964574
+  },
+  "finished_utc": "2026-11-09T19:24:34+00:00",
+  "output_format": null
+}
