@@ -742,13 +742,14 @@ def test_only_the_rows_that_need_a_plugin_load_one() -> None:
     assert with_plugins == {
         "vibevoice-asr": ["raven_ragged_audio", "raven_audio_duration"],
         "nemotron-3.5-transcribe-30b-a4b-w8a16": ["nemo_speechlm"],
-        "nemotron-3.5-transcribe-30b-a4b-bf16-control": ["nemo_speechlm"],
+        "nemotron-3.5-transcribe-30b-a4b-bf16-control": ["nemo_speechlm", "raven_mamba_live_conv"],
     }
 
 
 def test_the_nemotron_transcribe_pair_serves_one_model_two_ways() -> None:
     """The quantized row and its control: the control serves the very release the
-    build was made from, and only precision, offload and batch size differ."""
+    build was made from, and only precision, offload and batch size differ. The
+    offload brings the one plugin only an offloaded Mamba layer needs (#101)."""
     q = RECIPES["nemotron-3.5-transcribe-30b-a4b-w8a16"]
     c = RECIPES["nemotron-3.5-transcribe-30b-a4b-bf16-control"]
     script = (SERVING / "quantize" / "nemotron_transcribe_w8a16.py").read_text()
@@ -758,8 +759,9 @@ def test_the_nemotron_transcribe_pair_serves_one_model_two_ways() -> None:
     assert (SERVING.parent / q["precision"]["checkpoint"]["recipe"]).is_file()
     assert c["precision"]["control"] == "nemotron-3.5-transcribe-30b-a4b-w8a16"
     assert c["args"] == [*q["args"], "--cpu-offload-gb", "16"]
-    for key in ("max_model_len", "trust_remote_code", "decoding", "vllm_plugins"):
+    for key in ("max_model_len", "trust_remote_code", "decoding"):
         assert q[key] == c[key], key
+    assert c["vllm_plugins"] == [*q["vllm_plugins"], "raven_mamba_live_conv"]
     argv, env = launch.build(q, "q", {}, python=PY)
     assert _flag(argv, "--moe-backend") == "marlin"
     assert env["VLLM_DISABLED_KERNELS"] == "HummingLinearKernel"

@@ -61,10 +61,14 @@
 # different lengths: _select_item_kwargs (multimodal.py:1154-1165) hands the model
 # a per-clip tensor as a one-element list (raven.eval#93). Unfixed upstream as of
 # 2026-11-08. The same package fills VibeVoice-ASR's duration placeholder, which
-# vLLM 0.33.0 tokenizes without the processor ever seeing it (raven.eval#96).
-# Pinned to the commit that added the newest of them: a change to the plugin moves
-# this line, and with it the venv stamp that rebuilds the environment. VibeVoice-ASR
-# loads both through `vllm_plugins`; remove them once a pinned vLLM carries fixes.
+# vLLM 0.33.0 tokenizes without the processor ever seeing it (raven.eval#96), and
+# lets MambaMixer2 read its conv weights through weight offload, which otherwise
+# leaves them on memory no weight is loaded into (raven.eval#101; unfixed on vLLM
+# main as of 2026-11-09). Pinned to the commit that added the newest of them: a
+# change to the plugin moves this line, and with it the venv stamp that rebuilds
+# the environment. VibeVoice-ASR loads the two audio fixes and the Nemotron bf16
+# control the Mamba fix, each through `vllm_plugins`; remove them once a pinned
+# vLLM carries fixes.
 --extra-index-url https://flashinfer.ai/whl/cu130
 --extra-index-url https://flashinfer.ai/whl
 vllm[audio]==0.33.0
@@ -79,4 +83,4 @@ httpx>=0.27
 python-multipart>=0.0.9
 nemo_toolkit[asr] @ git+https://github.com/PhilflowIO/Speech.git@2bd9dcb68570d254684c6ecdf21dc3bbfdb1ead2
 peft==0.21.2
-raven-vllm-plugin @ git+https://github.com/PhilflowIO/raven.eval.git@e783574a58aa15d3a9f9acb7b135cf9b9d34d9a7#subdirectory=serving/vllm/plugin
+raven-vllm-plugin @ git+https://github.com/PhilflowIO/raven.eval.git@5b96937809756735befc37268ca1e0884b2f6bb0#subdirectory=serving/vllm/plugin

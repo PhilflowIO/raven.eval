@@ -1,4 +1,4 @@
-"""vLLM plugins for audio models that the Transformers backend serves wrongly.
+"""vLLM 0.33 fixes: audio models on the Transformers backend, and Mamba2 under weight offload.
 
 ``raven_ragged_audio``: hand each audio clip's own keyword tensors over as a batch
 of one.
@@ -29,6 +29,21 @@ long the clip is, the model carried on past its end, inventing ``[Noise]`` and
 ``[Silence]`` turns up to the output cap (raven.eval#96). This plugin does what
 the processor does, on vLLM's prompt: the placeholder becomes the duration, with
 the processor's own formatting, before the audio is expanded.
+
+``raven_mamba_live_conv``: read Mamba2's conv weights from the parameter.
+
+vLLM 0.33.0's ``MambaMixer2.__init__`` registers ``conv_weights``, a view of
+``conv1d.weight``, as a buffer (mamba_mixer2.py:473-477), and its forward reads
+that buffer, never the parameter (:834, :952). Weight offloading replaces the
+parameter's ``.data`` after the layer is built: UVA with a view of pinned host
+memory (offloader/uva.py:114-122), prefetch with its own storage. Buffers are
+not moved, so ``conv_weights`` keeps the old device memory, which no weight is
+ever loaded into, and every offloaded Mamba layer convolves with uninitialised
+memory. NVIDIA's bf16 Nemotron-3.5-Transcribe, served with ``--cpu-offload-gb``,
+then answered every clip with punctuation (raven.eval#101). The other Mamba
+layers of the same vLLM take the view at the moment they use it
+(mamba_mixer.py:288, short_conv.py:126). This plugin makes ``conv_weights`` do
+the same: a property that views ``conv1d.weight`` whenever it is read.
 
 ``register`` runs in every vLLM process and possibly more than once. It fails
 loudly if vLLM no longer has the method: an engine bump must not silently drop
@@ -146,3 +161,60 @@ def register_audio_duration() -> None:
         return
     MultiModalProcessor.apply = with_audio_duration(original)
     logger.info("raven_audio_duration: the prompt states each clip's duration")
+
+
+_LIVE_CONV_MARKER = "_raven_live_conv_weights"
+
+_Init = Callable[..., None]
+
+
+def live_conv_weights(mixer: Any) -> Any:
+    """``conv1d.weight`` as the 2-D (channels, kernel) view the conv kernels take.
+
+    Until the wrapped ``__init__`` has finished this raises AttributeError, so
+    that vLLM's own ``register_buffer("conv_weights", ...)`` succeeds and attribute
+    lookup falls back to that buffer while the layer is being built.
+    """
+    if not mixer.__dict__.get(_LIVE_CONV_MARKER, False):
+        raise AttributeError("conv_weights")
+    weight = mixer.conv1d.weight
+    return weight.view(weight.size(0), weight.size(2))
+
+
+def with_live_conv_weights(original: _Init) -> _Init:
+    """Wrap ``MambaMixer2.__init__`` so ``conv_weights`` is no stored alias."""
+
+    @functools.wraps(original)
+    def init(self: Any, *args: Any, **kwargs: Any) -> None:
+        original(self, *args, **kwargs)
+        if self._buffers.pop("conv_weights", None) is None:
+            raise RuntimeError(
+                "MambaMixer2 no longer registers a conv_weights buffer; "
+                "raven_mamba_live_conv does not match this vLLM"
+            )
+        self.__dict__[_LIVE_CONV_MARKER] = True
+
+    setattr(init, _LIVE_CONV_MARKER, True)
+    return init
+
+
+def install_live_conv_weights(mixer_class: Any) -> bool:
+    """Patch ``mixer_class``; False if it already is. Raises if vLLM changed shape."""
+    if getattr(mixer_class.__init__, _LIVE_CONV_MARKER, False):
+        return False
+    if "conv_weights" in vars(mixer_class):
+        raise RuntimeError(
+            f"{mixer_class.__name__} defines conv_weights itself; "
+            "raven_mamba_live_conv does not match this vLLM"
+        )
+    mixer_class.__init__ = with_live_conv_weights(mixer_class.__init__)
+    mixer_class.conv_weights = property(live_conv_weights)
+    return True
+
+
+def register_mamba_live_conv() -> None:
+    """vLLM's ``vllm.general_plugins`` entry point for ``raven_mamba_live_conv``."""
+    from vllm.model_executor.layers.mamba.mamba_mixer2 import MambaMixer2
+
+    if install_live_conv_weights(MambaMixer2):
+        logger.info("raven_mamba_live_conv: MambaMixer2 reads conv1d.weight, not a copy")
