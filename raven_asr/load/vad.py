@@ -15,8 +15,9 @@ LiveKit egress track per speaker. Before upload a track goes one of two ways:
 * **Whole file** when the track is dense (speech ratio > 0.6) or shorter than
   60 s (``plan_segmentation`` returns None). The GPU box's server then cuts it
   near every 600 s at the silence whose midpoint is closest to the boundary,
-  within ±20 % (flow.raven-deployment ``server/philsai-stt/parakeet_service/
-  chunker.py``, ``_pick_split_points``; ``MAX_CHUNK_DURATION_SEC=600``).
+  within ±20 % (Raven's deployment repository, the Parakeet STT service's
+  ``parakeet_service/chunker.py``, ``_pick_split_points``;
+  ``MAX_CHUNK_DURATION_SEC=600``).
 
 Both are reproduced here as pure functions over the silence list, so a load test
 can send exactly the request shapes production sends. The functions mirror the
@@ -54,7 +55,7 @@ MERGE_GAP_S = 0.5
 MAX_BLOCK_S = 30.0
 MAX_SPEECH_RATIO = 0.6
 MIN_SOURCE_S = 60.0
-#: flow.raven-deployment server/philsai-stt docker-compose: MAX_CHUNK_DURATION_SEC.
+#: The production STT service's MAX_CHUNK_DURATION_SEC (its compose file).
 WINDOW_S = 600.0
 WINDOW_LEEWAY = 0.2
 

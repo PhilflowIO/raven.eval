@@ -28,6 +28,10 @@ score       stitched per-recording WER, windows, loops, runaway, insertion rate,
 probe-long  one request per growing prefix of a recording (600 s … whole), under
             a generous timeout, to see what the server does with long input.
 compare     paired bootstrap of WER between runs, per recording and corpus.
+variant-env the host knobs of a named load variant (serving/load_variants.toml).
+
+``--variant <base>@<name>`` records which named server setting the run measured;
+the server must have been started with that variant's knobs.
 """
 
 from __future__ import annotations
@@ -52,6 +56,8 @@ from . import sweep as sw
 from .client import Outcome, form_fields, probe_timestamps
 from .timing import parse_vtt, summarize, vtt_check
 from .vad import Block, remap_word
+from .variants import load_variants
+from .variants import record as variant_record
 from .workload import KINDS, Item, Prepared, all_items, find_recordings, prepare, sweep_slice
 
 SCHEMA = "raven.offline-load/1"
@@ -77,7 +83,7 @@ def _header(args, prepared: list[Prepared], kind: str, timestamps: dict) -> dict
         "started_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "model": args.model,
         "recipe": args.recipe,
-        "variant": args.variant,
+        "variant": variant_record(args.variant, args.recipe),
         "kind": kind,
         "hardware_label": args.hardware_label,
         "gpu": gpu_identity(),
@@ -415,6 +421,12 @@ async def post_once_long(client, url, model, wav, ask, timeout_s):
     return "ok", 200, None, r.json()
 
 
+def cmd_variant_env(args) -> int:
+    for k, v in load_variants()[args.variant]["env"].items():
+        print(f"{k}={v}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -474,6 +486,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--kind", choices=KINDS, required=True)
     p.add_argument("--out")
     p.set_defaults(fn=cmd_compare)
+
+    p = sub.add_parser("variant-env", help="print a load variant's host knobs as KEY=VALUE")
+    p.add_argument("variant")
+    p.set_defaults(fn=cmd_variant_env)
 
     args = ap.parse_args(argv)
     return args.fn(args)

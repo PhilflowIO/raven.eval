@@ -285,6 +285,42 @@ def test_run_items_keeps_exactly_n_in_flight_and_maps_timeouts():
     assert outs[0].words == [{"word": "ok", "start": 0.0, "end": 0.1}]
 
 
+# ── named load variants ──────────────────────────────────────────────────────
+
+
+def test_load_variants_set_only_host_knobs_and_say_why():
+    from raven_asr.load.variants import load_variants
+
+    variants = load_variants()
+    assert "primeline-parakeet@prod-batch4" in variants
+    for v in variants.values():
+        assert v["reason"] and v["env"]
+
+
+def test_a_variant_naming_a_model_setting_is_refused(tmp_path):
+    from raven_asr.load.variants import RECIPES_FILE, VariantError, load_variants
+
+    bad = tmp_path / "v.toml"
+    bad.write_text('[variants."primeline-parakeet@x"]\nbase = "primeline-parakeet"\n'
+                   'env = { RAVEN_SERVE_MAX_NUM_SEQS = "8" }\nreason = "r"\n')
+    with pytest.raises(VariantError, match="not nemo host knobs"):
+        load_variants(bad, RECIPES_FILE)
+
+
+def test_launch_takes_the_nemo_batching_knobs():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "serving"))
+    import launch
+    from recipe import load_recipes
+
+    rid = "primeline-parakeet"
+    _argv, env = launch.build(load_recipes()[rid], rid, {"RAVEN_SERVE_NEMO_MAX_BATCH": "4",
+                                                       "RAVEN_SERVE_NEMO_BATCH_WAIT_MS": "15"},
+                              python="python", checkpoint="/x.nemo")
+    assert env["NEMO_MAX_BATCH"] == "4" and env["NEMO_BATCH_WAIT_MS"] == "15"
+    _argv, env = launch.build(load_recipes()[rid], rid, {}, python="python", checkpoint="/x.nemo")
+    assert env["NEMO_MAX_BATCH"] == "16" and env["NEMO_BATCH_WAIT_MS"] == "20"
+
+
 # ── the transformers stand-in's CTC word times ───────────────────────────────
 
 
