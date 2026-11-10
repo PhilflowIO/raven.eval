@@ -40,10 +40,35 @@ class Utterance:
     subset: str
     reference: str
     pcm16: bytes  # 16 kHz mono little-endian int16
+    #: where speech starts in the audio (speech_onset_s); corpus utterances
+    #: begin with up to several seconds of silence
+    onset_s: float = 0.0
 
     @property
     def duration_s(self) -> float:
         return len(self.pcm16) / 2 / SAMPLE_RATE
+
+
+#: Speech onset: the first 20 ms frame within ONSET_REL_DB of the utterance's
+#: loudest frame (and above ONSET_FLOOR_DBFS). Relative, so a quiet recording
+#: and a loud one get the same rule; 30 dB under the peak is well below any
+#: spoken syllable and well above room noise in these corpora.
+ONSET_FRAME_S = 0.02
+ONSET_REL_DB = 30.0
+ONSET_FLOOR_DBFS = -50.0
+
+
+def speech_onset_s(pcm16: bytes) -> float:
+    """Seconds of leading silence in 16 kHz PCM16 audio (0.0 for silence throughout)."""
+    frame = round(ONSET_FRAME_S * SAMPLE_RATE)
+    x = np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
+    n = len(x) // frame
+    if n == 0:
+        return 0.0
+    rms = np.sqrt((x[: n * frame].reshape(n, frame) ** 2).mean(axis=1) + 1e-12)
+    db = 20.0 * np.log10(rms)
+    loud = db > max(float(db.max()) - ONSET_REL_DB, ONSET_FLOOR_DBFS)
+    return float(np.argmax(loud)) * frame / SAMPLE_RATE if loud.any() else 0.0
 
 
 def to_pcm16(audio: np.ndarray, sample_rate: int) -> bytes:
@@ -87,8 +112,8 @@ def build_pool(
             revisions[dataset_id] = None
         rows = select(samples, take, rng)
         for s in rows:
-            pool.append(Utterance(s.sample_id, s.subset, s.reference,
-                                  to_pcm16(s.audio, s.sample_rate)))
+            pcm = to_pcm16(s.audio, s.sample_rate)
+            pool.append(Utterance(s.sample_id, s.subset, s.reference, pcm, speech_onset_s(pcm)))
         counts[dataset_id] = len(rows)
     rng.shuffle(pool)
     ids = "\n".join(u.sample_id for u in pool).encode()
