@@ -13,11 +13,11 @@ Engine: vLLM's Prometheus gauges (``/metrics``) when the server is vLLM —
 running and waiting requests and KV-cache use. ``waiting > 0`` means sessions
 queued in the scheduler: the engine, not the GPU, was the cap.
 
-Processes: the CPU of named process groups (the harness's own client
-processes, the server) from /proc/<pid>/stat, in percent of ONE core. A Python
-event loop cannot use more than one core, so a group whose busiest process sits
-near 100 % was the bottleneck of the step, whatever the GPU did: for the client
-that means the step measured the harness, for the server its own event loop.
+Processes: the CPU of named groups of threads (the harness's own client
+processes, the server) from /proc/<tid>/stat, in percent of ONE core. A Python
+event loop runs on one thread, so a group whose busiest thread sits near 100 %
+was the bottleneck of the step, whatever the GPU did: for the client that means
+the step measured the harness, for the server its event loop or stepper.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ class Sampler:
         self.stats_url = stats_url
         self.cpu: list[float] = []  # whole-host CPU busy %, per interval
         self.processes = processes or {}
-        # per group, per interval: (sum over its processes, busiest process), % of one core
+        # per group, per interval: (sum over its threads, busiest thread), % of one core
         self.proc_cpu: dict[str, list[tuple[float, float]]] = {k: [] for k in self.processes}
         self.server_rss: list[float] = []
         self.interval_s = interval_s
@@ -135,7 +135,7 @@ class Sampler:
         for name, vals in self.proc_cpu.items():
             sums = [v for v, _ in vals]
             out[f"cpu_{name}_mean_pct"] = round(sum(sums) / len(sums), 1) if sums else None
-            out[f"cpu_{name}_proc_max_pct"] = round(max(m for _, m in vals), 1) if vals else None
+            out[f"cpu_{name}_thread_max_pct"] = round(max(m for _, m in vals), 1) if vals else None
         if self.stats_url is not None:
             out["server_rss_max_mib"] = max(self.server_rss) if self.server_rss else None
         if self.metrics_url is not None:
@@ -164,7 +164,7 @@ def cpu_times() -> tuple[float, float] | None:
 
 
 def parse_pid_stat(text: str, clk_tck: float) -> float | None:
-    """CPU seconds (user + system) of one process from its /proc/<pid>/stat line."""
+    """CPU seconds (user + system) from a /proc/<pid>/stat or /proc/<tid>/stat line."""
     _, _, rest = text.rpartition(")")  # the command name may contain spaces
     fields = rest.split()
     try:
@@ -191,7 +191,7 @@ def _group_cpu_s(pids: list[int]) -> dict[int, float]:
 
 def group_cpu_pct(prev: dict[int, float], cur: dict[int, float],
                   wall_s: float) -> tuple[float, float] | None:
-    """``(sum, busiest)`` in % of one core over ``wall_s``, from processes seen at both ends."""
+    """``(sum, busiest)`` in % of one core over ``wall_s``, from ids seen at both ends."""
     deltas = [max(0.0, cur[p] - prev[p]) / wall_s * 100.0 for p in cur.keys() & prev.keys()]
     if not deltas:
         return None

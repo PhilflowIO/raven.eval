@@ -314,12 +314,47 @@ def test_client_pool_splits_sessions_over_processes_and_keeps_the_order():
 def test_table_shows_the_busiest_client_and_server_process_when_recorded():
     step = step_summary(1, [_rec(0, 0.2)], [None], {
         "util_mean_pct": 40.0, "memory_used_max_mib": 9000,
-        "cpu_client_proc_max_pct": 97.4, "cpu_server_proc_max_pct": 61.0}, {}, 1.0)
+        "cpu_client_thread_max_pct": 97.4, "cpu_server_thread_max_pct": 61.0}, {}, 1.0)
     curve = {"model": "org/m", "latency": "l", "chunk_ms": 80, "hardware_label": "1x GPU",
              "params": {"threshold_s": 1.0}, "steps": [step], "max_n_within_threshold": 1,
              "stopped_because": "x"}
     table = render_table(curve)
-    assert "client CPU busiest proc % | server CPU busiest proc % |" in table
+    assert "client CPU busiest thread % | server CPU busiest thread % |" in table
     assert "| 40 | 9000 | 97 | 61 |" in table
     header, sep = table.splitlines()[4:6]
     assert header.count("|") == sep.count("|")
+
+
+def test_a_step_the_server_reported_failing_breaks_the_rule_and_is_on_the_table():
+    from raven_asr.stream.__main__ import apply_health
+
+    step = step_summary(512, [_rec(0, -7.0, text="")], [None], {}, {}, 1.0)
+    assert step["within_threshold"]  # an empty "done" before the audio ended looks perfect
+    apply_health(step, {"ok": False, "error": "pipeline step failed: CUDA out of memory"})
+    assert not step["within_threshold"] and "out of memory" in step["server_error"]
+    assert apply_health({"within_threshold": True}, {"ok": True, "error": None}) == \
+        {"within_threshold": True}
+    assert apply_health({"within_threshold": True}, None) == {"within_threshold": True}
+    curve = {"model": "m", "latency": "l", "chunk_ms": 560, "hardware_label": "1x GPU",
+             "params": {"threshold_s": 1.0}, "steps": [step], "max_n_within_threshold": None,
+             "stopped_because": "x"}
+    assert "N = 512: the server reported `pipeline step failed" in render_table(curve)
+    assert max_n_within([step]) is None
+
+
+def test_threads_lists_this_process_and_its_threads():
+    import os
+    import threading
+
+    from raven_asr.stream.__main__ import threads
+
+    stop = threading.Event()
+    t = threading.Thread(target=stop.wait)
+    t.start()
+    try:
+        tids = threads(os.getpid())
+        assert os.getpid() in tids and len(tids) >= 2
+    finally:
+        stop.set()
+        t.join()
+    assert threads(2**31 - 1) == []

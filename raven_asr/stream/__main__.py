@@ -25,8 +25,14 @@ shows up as server latency. ``--client-procs K`` splits a step's sessions
 round-robin over K worker processes, forked once at startup, each with its own
 loop; the schedule (start offsets, playlists) is the same for any K. Every step
 records the CPU of the client processes (and of the server with
-``--server-pid``) in % of one core: a busiest client process near 100 % means
-the step measured the harness, not the server.
+``--server-pid``) in % of one core, per thread: a busiest client thread near
+100 % means the step measured the harness, not the server.
+
+After every step the harness asks the server's ``/health``. A NeMo stream
+server whose pipeline step failed (out of memory, say) ends the affected
+utterances with an ordinary ``transcription.done`` — the transcript is empty,
+the latency looks excellent — and reports the failure only there; such a step
+breaks the rule, with the server's error on record, however good it looks.
 """
 
 from __future__ import annotations
@@ -94,6 +100,33 @@ def server_engine(http: str, protocol: str, model: str, identity: dict) -> dict:
         if model not in models:
             raise SystemExit(f"the server serves {models}, not {model}")
         return {"name": "vllm", "version": c.get(f"{http}/version").json().get("version")}
+
+
+def server_health(http: str, protocol: str) -> dict | None:
+    """The server's ``/health`` after a step (our own servers; vLLM has no error field)."""
+    if protocol not in ("nemo-pipeline", "moonshine-voice"):
+        return None
+    try:
+        with httpx.Client(timeout=10.0) as c:
+            return c.get(f"{http}/health").json()
+    except (httpx.HTTPError, ValueError) as exc:
+        return {"ok": False, "error": f"health check failed: {type(exc).__name__}: {exc}"}
+
+
+def apply_health(step: dict, health: dict | None) -> dict:
+    """A step during which the server reported a failure breaks the rule."""
+    if health is not None and not health.get("ok", True):
+        step["server_error"] = str(health.get("error") or "server unhealthy")[:300]
+        step["within_threshold"] = False
+    return step
+
+
+def threads(pid: int) -> list[int]:
+    """Every thread of ``pid`` (its tids read like pids in /proc)."""
+    try:
+        return [int(t) for t in os.listdir(f"/proc/{pid}/task")]
+    except OSError:
+        return []
 
 
 def spoken_text(model: str):
@@ -181,6 +214,9 @@ class ClientPool:
 
     def pids(self) -> list[int]:
         return [os.getpid(), *(p.pid for p in self._mp._pool)]
+
+    def tids(self) -> list[int]:
+        return [t for pid in self.pids() for t in threads(pid)]
 
     def run_step(self, url: str, model: str, n: int, *, chunk_ms: int, duration_s: float,
                  done_timeout_s: float, seed: int):
@@ -283,9 +319,10 @@ def main(argv: list[str] | None = None) -> int:
     curve["warmup"] = {"sample_id": warm[0].sample_id, "final_s": warm[0].final_s}
 
     clients = ClientPool(pool, args.client_procs) if args.client_procs > 1 else None
-    processes = {"client": clients.pids if clients else (lambda: [os.getpid()])}
+    # per thread: the busiest one is the event loop (or the stepper) that capped the step
+    processes = {"client": clients.tids if clients else (lambda: threads(os.getpid()))}
     if args.server_pid:
-        processes["server"] = lambda: [args.server_pid]
+        processes["server"] = lambda: threads(args.server_pid)
     for n in steps_n:
         print(f"[stream] {identity['id']}: N = {n}, {args.duration_s:.0f} s", flush=True)
         t = time.monotonic()
@@ -303,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         step = step_summary(n, records, session_errors, sampler.summary(), offline,
                             args.threshold_s, spoken_text(model))
         step["wall_s"] = round(time.monotonic() - t, 1)
+        apply_health(step, server_health(args.http, stream["protocol"]))
         curve["steps"].append(step)
         with (args.out / f"utterances_n{n}.jsonl").open("w", encoding="utf-8") as fh:
             for r in records:
@@ -310,7 +348,8 @@ def main(argv: list[str] | None = None) -> int:
         curve["max_n_within_threshold"] = max_n_within(curve["steps"])
         write()
         print(f"[stream]   p50/p95 final {step['final_s']['p50']}/{step['final_s']['p95']} s, "
-              f"errors {step['errors']}, drops {step['drops']}, WER {step['wer_strict_pct']}",
+              f"errors {step['errors']}, drops {step['drops']}, WER {step['wer_strict_pct']}"
+              + (f", SERVER ERROR {step['server_error']}" if "server_error" in step else ""),
               flush=True)
         action = next_action(curve["steps"])
         if action == "stop":
