@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import sys
 import tomllib
 from pathlib import Path
@@ -28,14 +29,17 @@ from stream_frames import FrameCutter
 # ── recipes ─────────────────────────────────────────────────────────────────
 
 
+PUBLISHED = {
+    "voxtral-mini-4b-realtime-2602",
+    "nvidia-nemotron-3.5-asr-streaming-0.6b",
+    "nvidia-nemotron-labs-unified-asr-0.6b",
+    "moonshine-streaming-small-de",
+}
+
+
 def test_streaming_toml_loads_and_names_its_skips():
     streams, skipped = streaming.load_streams()
-    assert set(streams) == {
-        "voxtral-mini-4b-realtime-2602",
-        "nvidia-nemotron-3.5-asr-streaming-0.6b",
-        "nvidia-nemotron-labs-unified-asr-0.6b",
-        "moonshine-streaming-small-de",
-    }
+    assert PUBLISHED <= set(streams)
     assert skipped == {}
     for sid in streams:
         assert len(streaming.stream_sha256(sid)) == 64
@@ -368,3 +372,50 @@ def test_moonshine_server_speaks_the_same_protocol():
             assert any(e["type"] == "transcription.partial" for e in events)
         assert client.get("/v1/stream/stats").json()["active_streams"] == 0
     assert all(s.closed for s in eng.streams) and len(eng.streams) == 2
+
+
+# ── tuning variants (#119) ──────────────────────────────────────────────────
+
+
+def test_every_variant_is_named_after_and_based_on_a_published_recipe():
+    streams, _ = streaming.load_streams()
+    for sid in set(streams) - PUBLISHED:
+        base = streams[sid]["base"]
+        assert base in PUBLISHED and sid.startswith(base + "-"), sid
+        # a variant keeps the published recipe's model, protocol and pipeline
+        assert streams[sid]["protocol"] == streams[base]["protocol"], sid
+        assert streams[sid].get("pipeline") == streams[base].get("pipeline"), sid
+
+
+def test_variant_resolution_never_shadows_the_published_recipe():
+    recipes = recipe.load_recipes()
+    streams, _ = streaming.load_streams(recipes=recipes)
+    for sid in PUBLISHED:
+        assert streaming.resolve_stream(sid, streams, recipes) == sid
+        assert streaming.resolve_stream(streams[sid]["base"], streams, recipes) == sid
+
+
+def test_buffered_contexts_are_whole_encoder_frames_and_chunk_ms_is_the_chunk():
+    # The server sets the chunked attention masks in round(seconds / 80 ms)
+    # encoder frames; NeMo's BufferedRNNTPipeline sizes its buffer with
+    # math.ceil(seconds / model_stride) and, stateful, snaps every context to
+    # that. The two must agree in floating point: 0.56 / 0.08 is
+    # 7.000000000000001, which NeMo serves as 8 frames (0.64 s) — the server
+    # refused such a recipe at startup in the 2026-11-10 preflight.
+    streams, _ = streaming.load_streams()
+    for sid, s in streams.items():
+        if s.get("pipeline") != "buffered":
+            continue
+        for key in ("left_context_s", "chunk_s", "right_context_s"):
+            assert math.ceil(s[key] / 0.08) == round(s[key] / 0.08), (sid, key)
+        assert round(s["chunk_s"] * 1000) == s["chunk_ms"], sid
+        assert s["left_context_s"] >= 2.0, sid  # the card: not below 2 s
+
+
+def test_the_slots_variant_holds_more_streams_than_the_published_curve_stepped():
+    streams, _ = streaming.load_streams()
+    s = streams["nvidia-nemotron-3.5-asr-streaming-0.6b-slots1024"]
+    assert s["num_slots"] >= 1024 and s["batch_size"] <= s["num_slots"]
+    pub = streams["nvidia-nemotron-3.5-asr-streaming-0.6b"]
+    assert {k: v for k, v in s.items() if k not in ("num_slots", "batch_size", "latency", "notes")} \
+        == {k: v for k, v in pub.items() if k not in ("num_slots", "batch_size", "latency", "notes")}

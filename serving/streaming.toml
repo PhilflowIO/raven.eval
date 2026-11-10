@@ -96,3 +96,84 @@ files = { "adapter.ort" = "be438a3eb12ba3697a9e474d20f899e52d8e27b43a6fc4c4c809d
 latency = "vendor default: transcript update every 0.5 s of input, ~80 ms encoder lookahead"
 notes = "The vendor's own streaming runtime, the way the model is meant to stream: transformers 5.20.2 has only a whole-utterance generate() for MoonshineStreamingForConditionalGeneration. moonshine-voice 0.1.6 (PyPI) resolves language 'de' to Small Streaming (ModelArch 4) at download.moonshine.ai/model/small-streaming-de/quantized_26_08_24 and pins its eight files by size and CRC32C (core/moonshine-model-file-metadata.generated.cpp at v0.1.6); the server checks the sha256 of each. The model card: 'The .ort package served to the Moonshine deployment library is quantized to int8 from these same weights' (tokenizer vocab 12,288 in both). Precision is the vendor's, NOT the offline recipe's fp32: int8 per-channel weights and int8 MatMul (docs/models/quantization.md; the frontend convolutions dequantize to float at load). ONNX Runtime on the CPU execution provider only ('cpu is the only value any shipped build accepts', docs/execution-providers.md), so this curve is a CPU curve and never comparable to a GPU row without that label. One Transcriber, one stream per utterance (Transcriber.create_stream, the documented path for several live sources; the library's entry points are thread-safe, core/transcriber-concurrency-test.cpp), audio fed in the docs' 100 ms chunks, the default update interval of 0.5 s, ONNX Runtime's default thread pool. https://huggingface.co/moonshine-ai/moonshine-streaming-small-de"
 
+
+# ── Tuning variants (#119) ──────────────────────────────────────────────────
+# Named variants of the two Nemotron recipes above, measured to find where each
+# model's live capacity really ends and what a setting the card allows buys.
+# They are NOT the published comparison recipes: those stay the model's own
+# documented setting at the shared ~0.5 s latency class. Each variant changes
+# one lever (or a stated combination) against its base recipe and says which.
+
+[streams."nvidia-nemotron-3.5-asr-streaming-0.6b-slots1024"]
+base = "nvidia-nemotron-3.5-asr-streaming-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "cache_aware"
+att_context_size = [56, 6]
+chunk_ms = 560
+lang = "de-DE"
+batch_size = 256
+num_slots = 1024
+matmul_precision = "highest"
+gpu_mem = 0.85
+latency = "att_context_size [56, 6]: chunk of 7 x 80 ms = 0.56 s, cache-aware (1024 slots, 256 per step)"
+notes = "The published recipe with room for more live streams: num_slots 1024 (the context manager holds one cache slot per live stream, so 256 slots cap the curve at 256 sessions) and batch_size 256 (frames per pipeline step). 512 per step does not fit next to 1024 slots in the 0.85 budget: the slot cache is ~5 MiB per slot, and NeMo's CacheAwareContextManager copies a step's slots out and back (get_context, update_cache's index_select), ~2.5 GiB transient per 512-frame step, which ran out of memory in the preflight (2026-11-10). Same card setting, precision and language prompt as the published recipe. https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b"
+
+[streams."nvidia-nemotron-labs-unified-asr-0.6b-tf32"]
+base = "nvidia-nemotron-labs-unified-asr-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "buffered"
+left_context_s = 5.6
+chunk_s = 0.16
+right_context_s = 0.40
+chunk_ms = 160
+lang = "de"
+batch_size = 128
+matmul_precision = "high"
+gpu_mem = 0.85
+latency = "left 5.6 s / chunk 0.16 s / right 0.40 s: 0.56 s latency, buffered; TF32 matmuls"
+notes = "Precision lever alone: the card's 0.56 s row (Left 5.6 / Chunk 0.16 / Right 0.40) with fp32 weights and activations as published, but matmuls in TF32 (torch.set_float32_matmul_precision('high'), which NeMo's PipelineBuilder sets from matmul_precision; 10-bit mantissa on the tensor cores). https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
+
+[streams."nvidia-nemotron-labs-unified-asr-0.6b-left3"]
+base = "nvidia-nemotron-labs-unified-asr-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "buffered"
+left_context_s = 3.04
+chunk_s = 0.16
+right_context_s = 0.40
+chunk_ms = 160
+lang = "de"
+batch_size = 128
+matmul_precision = "highest"
+gpu_mem = 0.85
+latency = "left 3.04 s / chunk 0.16 s / right 0.40 s: 0.56 s latency, buffered"
+notes = "Context lever: the left context cut from 5.6 s to ~3 s at the same 0.56 s latency. The card: 'To accelerate the streaming inference, one can reduce the left context to about 3-2s with possible accuracy degradation' and 'We recommend not decreasing the left context below 2s'. 3.04 s = 38 encoder frames of 80 ms (3.0 s is no whole frame; NeMo's buffered pipeline would round it up to 3.04 s anyway). Each chunk step recomputes left + chunk + right = 3.6 s instead of 6.16 s. https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
+
+[streams."nvidia-nemotron-labs-unified-asr-0.6b-left2"]
+base = "nvidia-nemotron-labs-unified-asr-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "buffered"
+left_context_s = 2.0
+chunk_s = 0.16
+right_context_s = 0.40
+chunk_ms = 160
+lang = "de"
+batch_size = 128
+matmul_precision = "highest"
+gpu_mem = 0.85
+latency = "left 2.0 s / chunk 0.16 s / right 0.40 s: 0.56 s latency, buffered"
+notes = "Context lever at the card's floor: left context 2.0 s (25 encoder frames), the card's floor ('We recommend not decreasing the left context below 2s, as accuracy starts to degrade noticeably beyond that point'), same 0.56 s latency. Each chunk step recomputes 2.56 s instead of 6.16 s. https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
+
+[streams."nvidia-nemotron-labs-unified-asr-0.6b-chunk032"]
+base = "nvidia-nemotron-labs-unified-asr-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "buffered"
+left_context_s = 5.6
+chunk_s = 0.32
+right_context_s = 0.24
+chunk_ms = 320
+lang = "de"
+batch_size = 128
+matmul_precision = "highest"
+gpu_mem = 0.85
+latency = "left 5.6 s / chunk 0.32 s / right 0.24 s: 0.56 s latency, buffered"
+notes = "Step lever: the same 0.56 s latency (chunk + right) split as chunk 0.32 s + right 0.24 s, so a stream needs half the chunk steps per second of audio. Not a row of the card's table, which allows it: 'other combinations of left context, chunk and right context can be chosen depending on the application'; both are whole encoder frames (4 and 3 x 80 ms) for the chunked_limited_with_rc masks. https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
