@@ -12,11 +12,9 @@ import pytest
 pytest.importorskip("websockets")
 
 from raven_asr.datasets.base import Sample
+from raven_asr.capacity import max_n_within, next_action, percentile
 from raven_asr.stream.curve import (
     load_offline,
-    max_n_within,
-    next_action,
-    percentile,
     render_table,
     step_summary,
 )
@@ -27,7 +25,7 @@ from raven_asr.stream.pool import (
     session_playlist,
     to_pcm16,
 )
-from raven_asr.stream.probes import parse_gauges, parse_proc_stat
+from raven_asr.probes import parse_gauges, parse_proc_stat
 from raven_asr.stream.session import UtteranceRecord, run_session
 
 

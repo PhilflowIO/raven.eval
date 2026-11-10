@@ -1,8 +1,11 @@
-"""What the GPU and the engine did during a step.
+"""What the GPU and the engine did during a step of a capacity curve.
 
-GPU: ``nvidia-smi`` sampled every 500 ms on the host the harness runs on (it
-runs next to the server: the realtime protocol is paced in real time, and a
-network hop would only add its own latency). Utilization and memory are of the
+Shared by the live-streaming curve (raven_asr.stream) and the offline load
+sweep (raven_asr.load).
+
+GPU: ``nvidia-smi`` sampled every 500 ms on the host the harness runs on (both
+harnesses run next to the server: the realtime protocol is paced in real time,
+and a network hop would only add its own latency). Utilization and memory are of the
 whole card, other tenants included; ``apps`` lists every process on the card at
 the end of the step with its own memory, so the server's share is on record.
 

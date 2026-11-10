@@ -16,31 +16,18 @@ step, so any other threshold can be read off it later.
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 from raven_eval_core.wer import corpus_wer_strict_de_pct
 
+from ..capacity import pcts as _pcts
+from ..capacity import percentile
+
 from .session import UtteranceRecord
 
 DEFAULT_STEPS: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64, 128)
 DEFAULT_THRESHOLD_S = 1.0
-
-
-def percentile(values: Sequence[float], q: float) -> float | None:
-    """Linear-interpolated percentile (numpy's default), None for no values."""
-    if not values:
-        return None
-    xs = sorted(values)
-    pos = (len(xs) - 1) * q / 100.0
-    lo, hi = math.floor(pos), math.ceil(pos)
-    return xs[lo] + (xs[hi] - xs[lo]) * (pos - lo)
-
-
-def _pcts(values: Sequence[float]) -> dict[str, float | None]:
-    return {f"p{q}": (None if (v := percentile(values, q)) is None else round(v, 4))
-            for q in (50, 95, 99)}
 
 
 def load_offline(pred_dir: Path | None) -> dict[str, str]:
@@ -105,24 +92,6 @@ def step_summary(
         "probes": probes,
         "within_threshold": passed,
     }
-
-
-def next_action(steps: Sequence[dict]) -> str:
-    """'continue' | 'one_more' | 'stop' after the steps so far."""
-    failed = [i for i, s in enumerate(steps) if not s["within_threshold"]]
-    if not failed:
-        return "continue"
-    return "one_more" if failed[0] == len(steps) - 1 else "stop"
-
-
-def max_n_within(steps: Sequence[dict]) -> int | None:
-    """The largest N before the first step that broke the rule."""
-    best = None
-    for s in steps:
-        if not s["within_threshold"]:
-            break
-        best = s["n"]
-    return best
 
 
 def _f(v, fmt: str = "{:.2f}") -> str:
