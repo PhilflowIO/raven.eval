@@ -256,7 +256,8 @@ def cmd_score(args) -> int:
                     s, e = remap_word(b.pieces, float(w["start"]), float(w["end"]))
                     words_src.append({"word": w["word"], "start": s, "end": e})
         missing[rid] = sum(1 for b in p.blocks(kind) if b.index not in got)
-        s = sc.score_recording(p.recording.reference.read_text(encoding="utf-8"), answers)
+        s = sc.score_recording(p.recording.reference.read_text(encoding="utf-8"), answers,
+                               duration_s=p.duration_s)
         s["dialect"] = p.recording.dialect
         s["production_path"] = p.plan["production_path"]
         s["duration_s"] = round(p.duration_s, 1)
@@ -281,6 +282,8 @@ def cmd_score(args) -> int:
         "corpus": sc.corpus_interval(scores),
         "corpus_standard_german": sc.corpus_interval(std) if std else None,
         "corpus_dialect": sc.corpus_interval(dia) if dia else None,
+        "corpus_audible": sc.corpus_interval(scores, audible=True),
+        "corpus_standard_german_audible": sc.corpus_interval(std, audible=True) if std else None,
         "timing_vs_vtt": timing,
     }
     _write(out / f"score_{kind}.json", result)
@@ -293,19 +296,23 @@ def render_score(res: dict) -> str:
     run = res.get("run") or {}
     lines = [f"### {run.get('model', '?')} — long-form accuracy, {res['kind']} blocks", "",
              f"Lens: {res['lens']}. Windows of {sc.WINDOW_REF_WORDS} reference words.", "",
-             ("| recording | min | WER % [95 %] | ins % | del % | hyp/ref | worst window % "
-              "| runaway win | dropout win | loops (ref) | runaway answers | unanswered |"),
-             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+             ("| recording | min | WER % [95 %] | WER audible % | ins % | del % | hyp/ref "
+              "| worst window % | runaway win | dropout win | beyond audio | loops (ref) "
+              "| runaway answers | unanswered |"),
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for rid, s in res["recordings"].items():
         ra = s["runaway_answers"] or {}
         lines.append(
             f"| {rid}{' (dialect)' if s['dialect'] else ''} | {s['duration_s'] / 60:.0f} "
             f"| {s['wer_pct']:.2f} [{s['wer_ci95'][0]:.2f}, {s['wer_ci95'][1]:.2f}] "
+            f"| {s['wer_pct_audible']:.2f} "
             f"| {s['insertion_rate_pct']:.2f} | {s['deletion_rate_pct']:.2f} "
             f"| {s['hyp_over_ref']:.3f} | {s['worst_window_wer_pct']} | {s['runaway_windows']} "
-            f"| {s['dropout_windows']} | {s['loop_count']} ({s['ref_loop_count']}) "
+            f"| {s['dropout_windows']} | {s['windows_beyond_audio']} "
+            f"| {s['loop_count']} ({s['ref_loop_count']}) "
             f"| {ra.get('n', '–')}/{ra.get('of', '–')} | {s['failed_answers']} |")
-    for name in ("corpus", "corpus_standard_german", "corpus_dialect"):
+    for name in ("corpus", "corpus_standard_german", "corpus_dialect", "corpus_audible",
+                 "corpus_standard_german_audible"):
         c = res.get(name)
         if c:
             lines.append(f"\n{name}: WER {c['wer_pct']:.2f} % [{c['ci95'][0]:.2f}, "
@@ -318,7 +325,8 @@ def render_score(res: dict) -> str:
 def cmd_compare(args) -> int:
     base_dir = Path(args.baseline)
     base = json.loads((base_dir / f"score_{args.kind}.json").read_text())
-    lines = [f"### Paired WER deltas vs {base['run']['model']} ({args.kind} blocks)", "",
+    lines = [f"### Paired WER deltas vs {base['run']['model']} ({args.kind} blocks, "
+             "audible reference windows)", "",
              "| model | recording | WER % | Δ pp vs baseline [95 %] |", "|---|---|---:|---:|"]
     out = {"baseline": base["run"]["model"], "kind": args.kind, "models": {}}
     for d in [x for x in args.runs.split(",") if x]:
@@ -332,11 +340,13 @@ def cmd_compare(args) -> int:
             b = {k: v for k, v in base["recordings"].items()
                  if flag is None or v["dialect"] == flag}
             if a:
-                res[gname] = {"wer_pct": sc.corpus_interval(a)["wer_pct"], **sc.paired_delta(a, b)}
+                res[gname] = {"wer_pct": sc.corpus_interval(a, audible=True)["wer_pct"],
+                              **sc.paired_delta(a, b, audible=True)}
         for rid in other["recordings"]:
             a = {rid: other["recordings"][rid]}
             b = {rid: base["recordings"][rid]}
-            res[rid] = {"wer_pct": other["recordings"][rid]["wer_pct"], **sc.paired_delta(a, b)}
+            res[rid] = {"wer_pct": sc.corpus_interval(a, audible=True)["wer_pct"],
+                        **sc.paired_delta(a, b, audible=True)}
         out["models"][m] = res
         for k, v in res.items():
             lines.append(f"| {m} | {k} | {v['wer_pct']:.2f} | {v['delta_pp']:+.2f} "
