@@ -648,6 +648,11 @@ async def transcriptions(
     prompt: str = Form(""),
     response_format: str = Form("json"),
     temperature: float = Form(0.0),
+    # OpenAI's word/segment timestamp request; only meaningful with
+    # response_format=verbose_json. Forwarded as is: whether the engine can
+    # answer it is the engine's call (vLLM 0.33 refuses verbose_json for a
+    # model class without supports_segment_timestamp, and says so).
+    timestamp_granularities: list[str] = Form([], alias="timestamp_granularities[]"),
     authorization: str = Header(default=""),
 ):
     require_key(authorization)
@@ -692,6 +697,8 @@ async def transcriptions(
             form["language"] = language
         if prompt:
             form["prompt"] = prompt
+        if timestamp_granularities:
+            form["timestamp_granularities[]"] = list(timestamp_granularities)
         bound = await _bounded_max_tokens(max_tokens, serving, served, audio, language)
         form.update({k: str(v) for k, v in _greedy(bound, "max_completion_tokens").items()})
         upstream = await client.post(
