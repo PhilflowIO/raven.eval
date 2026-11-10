@@ -4425,6 +4425,13 @@ df4f2ec8d243d912431ef2dd9b0ecf3cab442197d0075088675e8b111877f723  2026-11-09-str
 2ae88649b74eb7a6159976ee79f433ddbd2141445946fae238b15cc542eaf3fc  2026-11-09-streaming-capacity/voxtral-mini-4b-realtime-2602/utterances_n4.jsonl
 930f98138f6c1ebda77fb3f2a46450b81d07172ec4bc0392b826551687e3a7f7  2026-11-09-streaming-capacity/voxtral-mini-4b-realtime-2602/utterances_n64.jsonl
 b67d845019c91184b3e28e300cf233cef1b2ab3dd3de365418d0136dcfdbf052  2026-11-09-streaming-capacity/voxtral-mini-4b-realtime-2602/utterances_n8.jsonl
+db9f4babfeb2fffbb54bbb9e4fd9cdabf7b2e49ff894955e7e2d863da9a25697  2026-11-10-streaming-capacity-moonshine/README.md
+9162a559c70f650b4738bf978e148420fa81888f07aac200bce2b3fd86a29829  2026-11-10-streaming-capacity-moonshine/moonshine-streaming-small-de/curve.json
+9f0901014ec630caf17f33e3de79aa8d7fc341b806a2509c140d760a58b645b2  2026-11-10-streaming-capacity-moonshine/moonshine-streaming-small-de/table.md
+26d9dab37e7bf6cefe328dcb02311a8b47bb8daa5ec78732b79c2be48399ebb8  2026-11-10-streaming-capacity-moonshine/moonshine-streaming-small-de/utterances_n1.jsonl
+ac158750dc8885820b47e8815b84f37c70c5101fbad2a5995d2498f068f9782c  2026-11-10-streaming-capacity-moonshine/moonshine-streaming-small-de/utterances_n2.jsonl
+220748f78f8254d72b7ea92986968819dbbf2bed014a2b5d350b5f5361693727  2026-11-10-streaming-capacity-moonshine/moonshine-streaming-small-de/utterances_n4.jsonl
+51b6ddbb1e48cf6b688e7afa18dec8f597c55d80aec7c58e907ec9b5d81d2e88  2026-11-10-streaming-capacity-moonshine/moonshine-streaming-small-de/utterances_n8.jsonl
 00743f90e9b87c2a4cda0ed8f0fd8911288e5bfeb07bb07c17f064e695c76f46  2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/expected.json
 90cf4e83cb883afe307a0d037a67356231d4fb7f373c45dfcaec002e23fa2046  2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/predictions_avemio-german-mixed-test.jsonl
 4a4037317c0905efebf34875d59fd8f12c518c6c6ad316423c08961553903753  2026-11-campaign-cohere-transcribe-03-2026/cohere-transcribe-03-2026/predictions_fhnw-all-dialects.jsonl

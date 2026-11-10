@@ -1,0 +1,305 @@
+{
+  "schema": "raven.stream-capacity/1",
+  "started_utc": "2026-11-10T00:26:54+00:00",
+  "stream": {
+    "id": "moonshine-streaming-small-de",
+    "sha256": "4f68946e9c28642f9473eb86deffea8a4cbe9cc2c049523878a443027924019a"
+  },
+  "base_recipe": {
+    "id": "moonshine-streaming-small-de",
+    "sha256": "46b87e7c830ebc02aeb6d03ab42f2317533556a9239c6d1a11d4a17337db221c"
+  },
+  "model": "moonshine-ai/moonshine-streaming-small-de",
+  "revision": "56473ba32b22b484fdfc7eb03d34c393ff494197",
+  "protocol": "moonshine-voice",
+  "chunk_ms": 100,
+  "latency": "vendor default: transcript update every 0.5 s of input, ~80 ms encoder lookahead",
+  "precision": {
+    "weights": "int8",
+    "activations": "int8",
+    "scheme": "ort-int8-per-channel",
+    "tensor_parallel": 1,
+    "checkpoint": {
+      "source": "vendor",
+      "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24",
+      "dtype": "int8"
+    }
+  },
+  "device": "cpu",
+  "engine": {
+    "model": "moonshine-ai/moonshine-streaming-small-de",
+    "engine": {
+      "name": "moonshine-voice",
+      "moonshine-voice": "0.1.6",
+      "library_version": 30000
+    },
+    "device": "cpu",
+    "cpu_count": 24,
+    "model_url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24",
+    "model_arch": 4,
+    "update_interval_s": 0.5,
+    "precision": {
+      "weights": "int8",
+      "activations": "int8",
+      "scheme": "ort-int8-per-channel",
+      "tensor_parallel": 1,
+      "checkpoint": {
+        "source": "vendor",
+        "url": "https://download.moonshine.ai/model/small-streaming-de/quantized_26_08_24",
+        "dtype": "int8"
+      }
+    },
+    "name": "moonshine-voice"
+  },
+  "hardware_label": "CPU only: AMD Ryzen 9 7900 (12 cores, 24 threads), 30 GB RAM, idle at start (load1 0.10); the GPU is not used. Vendor int8 build. Harness on the same host",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 3090",
+    "memory_total_mib": 24576.0,
+    "driver": "615.71.09"
+  },
+  "pool": {
+    "seed": 20261109,
+    "sources": [
+      {
+        "dataset": "fleurs",
+        "take": null,
+        "selected": 862,
+        "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd"
+      },
+      {
+        "dataset": "avemio-german-mixed-test",
+        "take": 2000,
+        "selected": 2000,
+        "revision": "17bcbc196567bca7eae3e94942588b5678fd748e"
+      }
+    ],
+    "n_utterances": 2862,
+    "audio_s": 30920.4,
+    "ids_sha256": "1bfdb49670d9183b37d01d585bdc4199a44661b82d30448889e61f95647d4c48"
+  },
+  "output_format": null,
+  "offline_predictions": true,
+  "params": {
+    "steps": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "duration_s": 180.0,
+    "threshold_s": 1.0,
+    "done_timeout_s": 30.0,
+    "pause_s": 10.0,
+    "start_stagger": "uniform within one chunk, seeded",
+    "seed": 20261109
+  },
+  "run_manifest": {
+    "git": {
+      "sha": "4da7a6e52822d22a4296f3827a01314195b3104f",
+      "dirty": false
+    },
+    "uv_lock_sha256": "f92a954b7d17dcfeff41d442ce940c0e3d4c68ca940c6235d3c88d19b826ce11",
+    "python": "3.11.15",
+    "platform": "Linux-7.2.9-arch1-1-x86_64-with-glibc2.44",
+    "libraries": {
+      "jiwer": "4.0.0",
+      "num2words": "0.5.14",
+      "numpy": "2.4.6",
+      "pyannote.core": "6.0.1",
+      "pyannote.metrics": "4.1",
+      "raven-eval-core": "0.1.0",
+      "sacrebleu": "2.6.0",
+      "text2num": "3.0.2",
+      "unidecode": "1.4.0",
+      "websockets": "17.1"
+    },
+    "gpu": null,
+    "config_sha256": "08cc8e90f529ba89d25110c4275340621b2f3dfdb1bcc14a4d7b4d1fa2169beb",
+    "argv": [
+      "python",
+      "-m",
+      "raven_asr.stream",
+      "--stream",
+      "moonshine-streaming-small-de",
+      "--url",
+      "ws://127.0.0.1:8095/v1/realtime",
+      "--http",
+      "http://127.0.0.1:8095",
+      "--hardware-label",
+      "CPU only: AMD Ryzen 9 7900 (12 cores, 24 threads), 30 GB RAM, idle at start (load1 0.10); the GPU is not used. Vendor int8 build. Harness on the same host",
+      "--out",
+      "/mnt/daten/stt-bench/results-stream/2026-11-10/moonshine-streaming-small-de",
+      "--offline-predictions",
+      "/mnt/daten/stt-bench/tmp/publish/results/moonshine-ai__moonshine-streaming-small-de/moonshine-streaming-small-de"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "utterances": 17,
+      "completed": 17,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 189.7,
+      "ttfp_s": {
+        "p50": 1.6895,
+        "p95": 2.7858,
+        "p99": 3.0816
+      },
+      "final_s": {
+        "p50": 0.1099,
+        "p95": 0.2169,
+        "p99": 0.2276
+      },
+      "send_lag_max_s": 0.0111,
+      "wer_strict_pct": 4.106,
+      "offline_wer_strict_pct": 3.519,
+      "probes": {
+        "samples": 383,
+        "util_mean_pct": 0.0,
+        "util_max_pct": 1.0,
+        "memory_used_max_mib": 1449.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          }
+        ],
+        "cpu_util_mean_pct": 21.1,
+        "cpu_util_max_pct": 70.5,
+        "server_rss_max_mib": 507.8
+      },
+      "within_threshold": true,
+      "wall_s": 191.5
+    },
+    {
+      "n": 2,
+      "utterances": 33,
+      "completed": 33,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 383.2,
+      "ttfp_s": {
+        "p50": 1.7022,
+        "p95": 3.4685,
+        "p99": 5.3254
+      },
+      "final_s": {
+        "p50": 0.0612,
+        "p95": 0.3484,
+        "p99": 0.5532
+      },
+      "send_lag_max_s": 0.01,
+      "wer_strict_pct": 5.991,
+      "offline_wer_strict_pct": 4.147,
+      "probes": {
+        "samples": 390,
+        "util_mean_pct": 0.0,
+        "util_max_pct": 0.0,
+        "memory_used_max_mib": 1449.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          }
+        ],
+        "cpu_util_mean_pct": 48.2,
+        "cpu_util_max_pct": 99.7,
+        "server_rss_max_mib": 838.4
+      },
+      "within_threshold": true,
+      "wall_s": 195.0
+    },
+    {
+      "n": 4,
+      "utterances": 62,
+      "completed": 62,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 713.7,
+      "ttfp_s": {
+        "p50": 1.9801,
+        "p95": 4.3854,
+        "p99": 5.8175
+      },
+      "final_s": {
+        "p50": 0.2063,
+        "p95": 1.1133,
+        "p99": 1.3448
+      },
+      "send_lag_max_s": 0.0103,
+      "wer_strict_pct": 6.766,
+      "offline_wer_strict_pct": 5.363,
+      "probes": {
+        "samples": 374,
+        "util_mean_pct": 0.0,
+        "util_max_pct": 1.0,
+        "memory_used_max_mib": 1449.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          }
+        ],
+        "cpu_util_mean_pct": 88.0,
+        "cpu_util_max_pct": 100.0,
+        "server_rss_max_mib": 1468.1
+      },
+      "within_threshold": false,
+      "wall_s": 186.8
+    },
+    {
+      "n": 8,
+      "utterances": 117,
+      "completed": 117,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 1334.5,
+      "ttfp_s": {
+        "p50": 3.145,
+        "p95": 6.0144,
+        "p99": 6.5479
+      },
+      "final_s": {
+        "p50": 1.385,
+        "p95": 2.9601,
+        "p99": 3.2598
+      },
+      "send_lag_max_s": 0.0135,
+      "wer_strict_pct": 6.684,
+      "offline_wer_strict_pct": 5.024,
+      "probes": {
+        "samples": 387,
+        "util_mean_pct": 0.0,
+        "util_max_pct": 1.0,
+        "memory_used_max_mib": 1449.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          }
+        ],
+        "cpu_util_mean_pct": 96.4,
+        "cpu_util_max_pct": 99.9,
+        "server_rss_max_mib": 1585.9
+      },
+      "within_threshold": false,
+      "wall_s": 193.4
+    }
+  ],
+  "max_n_within_threshold": 2,
+  "stopped_because": "one step recorded beyond the first step over the rule",
+  "warmup": {
+    "sample_id": "fleurs-208",
+    "final_s": 0.007758855004794896
+  },
+  "finished_utc": "2026-11-10T00:40:23+00:00"
+}
