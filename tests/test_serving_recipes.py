@@ -109,6 +109,7 @@ def test_vllm_command_is_the_recipe() -> None:
     assert env["RAVEN_SERVING_RECIPE"] == "voxtral-mini-3b-2507"
     assert env["VLLM_MAX_AUDIO_CLIP_FILESIZE_MB"] == "512"
     assert env["VLLM_MAX_AUDIO_DECODE_DURATION_S"] == "7200"
+    assert env["VLLM_MAX_AUDIO_DECODE_BYTES"] == str(7200 * 16_000 * 4)
 
 
 def test_every_recipe_pins_a_full_commit() -> None:
