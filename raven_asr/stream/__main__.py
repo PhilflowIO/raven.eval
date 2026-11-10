@@ -17,6 +17,16 @@ Written to ``--out`` after every step (an interrupted run keeps its steps):
 
 ``--rescore --out <dir> [--offline-predictions <dir>]`` recomputes only the WER
 of a finished curve from its utterance files, latencies untouched.
+
+The client is asyncio: one process runs every session on one event loop, one
+core. At hundreds of sessions that loop can fall behind (it base64-encodes and
+JSON-frames every chunk of every session), and a late chunk or a late read
+shows up as server latency. ``--client-procs K`` splits a step's sessions
+round-robin over K worker processes, forked once at startup, each with its own
+loop; the schedule (start offsets, playlists) is the same for any K. Every step
+records the CPU of the client processes (and of the server with
+``--server-pid``) in % of one core: a busiest client process near 100 % means
+the step measured the harness, not the server.
 """
 
 from __future__ import annotations
@@ -24,6 +34,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import multiprocessing
+import os
 import random
 import sys
 import time
@@ -34,9 +46,9 @@ import httpx
 
 from raven_eval_core.run_manifest import build_run_manifest
 
+from ..capacity import max_n_within, next_action
 from ..config import OUTPUT_FORMATS
 from ..output_formats import parser_for
-from ..capacity import max_n_within, next_action
 from ..probes import Sampler, gpu_identity
 from .curve import (
     DEFAULT_STEPS,
@@ -117,18 +129,73 @@ def rescore(out: Path, offline_dir: Path | None) -> int:
     return 0
 
 
+def start_delays(n: int, chunk_ms: int, seed: int) -> list[float]:
+    """Each session's start offset, uniform within one chunk, seeded per step."""
+    rng = random.Random(seed * 1000 + n)
+    return [rng.uniform(0, chunk_ms / 1000) for _ in range(n)]
+
+
+async def _sessions(url: str, model: str, pool: list, n: int, sessions: list[int],
+                    delays: list[float], *, chunk_ms: int, duration_s: float,
+                    done_timeout_s: float) -> list:
+    return await asyncio.gather(*(
+        run_session(url, model, session_playlist(pool, i, n), session=i, chunk_ms=chunk_ms,
+                    duration_s=duration_s, start_delay_s=delays[i],
+                    done_timeout_s=done_timeout_s)
+        for i in sessions
+    ))
+
+
+def _flatten(results: list) -> tuple[list, list]:
+    return [r for recs, _ in results for r in recs], [err for _, err in results]
+
+
 async def run_step(url: str, model: str, pool: list, n: int, *, chunk_ms: int,
                    duration_s: float, done_timeout_s: float, seed: int):
-    rng = random.Random(seed * 1000 + n)
-    tasks = [
-        run_session(url, model, session_playlist(pool, i, n), session=i, chunk_ms=chunk_ms,
-                    duration_s=duration_s, start_delay_s=rng.uniform(0, chunk_ms / 1000),
-                    done_timeout_s=done_timeout_s)
-        for i in range(n)
-    ]
-    results = await asyncio.gather(*tasks)
-    records = [r for recs, _ in results for r in recs]
-    return records, [err for _, err in results]
+    """One step on this process's event loop."""
+    return _flatten(await _sessions(
+        url, model, pool, n, list(range(n)), start_delays(n, chunk_ms, seed),
+        chunk_ms=chunk_ms, duration_s=duration_s, done_timeout_s=done_timeout_s))
+
+
+#: The pool, set before the client workers are forked: they inherit it instead
+#: of receiving ~1 GB of PCM through a pipe.
+_POOL: list = []
+
+
+def _worker(job: tuple) -> list:
+    url, model, n, sessions, delays, kw = job
+    return asyncio.run(_sessions(url, model, _POOL, n, sessions, delays, **kw))
+
+
+class ClientPool:
+    """``procs`` forked client processes, each running its share of a step's sessions."""
+
+    def __init__(self, pool: list, procs: int) -> None:
+        global _POOL
+        _POOL = pool
+        self.procs = procs
+        # fork: the workers inherit the decoded pool. Created before the
+        # sampler thread exists, and the pool never replaces a worker.
+        self._mp = multiprocessing.get_context("fork").Pool(procs)
+
+    def pids(self) -> list[int]:
+        return [os.getpid(), *(p.pid for p in self._mp._pool)]
+
+    def run_step(self, url: str, model: str, n: int, *, chunk_ms: int, duration_s: float,
+                 done_timeout_s: float, seed: int):
+        delays = start_delays(n, chunk_ms, seed)
+        kw = {"chunk_ms": chunk_ms, "duration_s": duration_s, "done_timeout_s": done_timeout_s}
+        jobs = [(url, model, n, list(range(k, n, self.procs)), delays, kw)
+                for k in range(min(self.procs, n))]
+        by_session: dict[int, tuple] = {}
+        for job, part in zip(jobs, self._mp.map(_worker, jobs, chunksize=1), strict=True):
+            by_session.update(zip(job[3], part, strict=True))
+        return _flatten([by_session[i] for i in range(n)])
+
+    def close(self) -> None:
+        self._mp.close()
+        self._mp.join()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -148,6 +215,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pause-s", type=float, default=10.0, help="idle time between steps")
     ap.add_argument("--offline-predictions", type=Path,
                     help="the model's offline run dir (predictions_*.jsonl) for the WER pair")
+    ap.add_argument("--client-procs", type=int, default=1,
+                    help="client processes the sessions of a step are split over (default 1)")
+    ap.add_argument("--server-pid", type=int,
+                    help="the server's pid, to record its CPU per step (same host)")
     ap.add_argument("--rescore", action="store_true",
                     help="only recompute the WER of the finished curve in --out")
     args = ap.parse_args(argv)
@@ -155,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
         return rescore(args.out, args.offline_predictions)
     if not args.stream or not args.hardware_label:
         ap.error("--stream and --hardware-label are required for a run")
+    if args.client_procs < 1:
+        ap.error("--client-procs must be >= 1")
 
     stream, base, identity, base_identity = _stream_recipe(args.stream)
     model = base["model"]
@@ -165,7 +238,8 @@ def main(argv: list[str] | None = None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     params = {"steps": steps_n, "duration_s": args.duration_s, "threshold_s": args.threshold_s,
               "done_timeout_s": args.done_timeout_s, "pause_s": args.pause_s,
-              "start_stagger": "uniform within one chunk, seeded", "seed": args.seed}
+              "start_stagger": "uniform within one chunk, seeded", "seed": args.seed,
+              "client_procs": args.client_procs}
     curve = {
         "schema": SCHEMA,
         "started_utc": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -208,13 +282,24 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"warm-up failed: {warm_err[0] or warm[0].error}")
     curve["warmup"] = {"sample_id": warm[0].sample_id, "final_s": warm[0].final_s}
 
+    clients = ClientPool(pool, args.client_procs) if args.client_procs > 1 else None
+    processes = {"client": clients.pids if clients else (lambda: [os.getpid()])}
+    if args.server_pid:
+        processes["server"] = lambda: [args.server_pid]
     for n in steps_n:
         print(f"[stream] {identity['id']}: N = {n}, {args.duration_s:.0f} s", flush=True)
         t = time.monotonic()
-        with Sampler(metrics, stats_url=stats) as sampler:
-            records, session_errors = asyncio.run(run_step(
-                args.url, model, pool, n, chunk_ms=stream["chunk_ms"],
-                duration_s=args.duration_s, done_timeout_s=args.done_timeout_s, seed=args.seed))
+        with Sampler(metrics, stats_url=stats, processes=processes) as sampler:
+            if clients is None:
+                records, session_errors = asyncio.run(run_step(
+                    args.url, model, pool, n, chunk_ms=stream["chunk_ms"],
+                    duration_s=args.duration_s, done_timeout_s=args.done_timeout_s,
+                    seed=args.seed))
+            else:
+                records, session_errors = clients.run_step(
+                    args.url, model, n, chunk_ms=stream["chunk_ms"],
+                    duration_s=args.duration_s, done_timeout_s=args.done_timeout_s,
+                    seed=args.seed)
         step = step_summary(n, records, session_errors, sampler.summary(), offline,
                             args.threshold_s, spoken_text(model))
         step["wall_s"] = round(time.monotonic() - t, 1)
@@ -236,6 +321,8 @@ def main(argv: list[str] | None = None) -> int:
         curve["stopped_because"] = (
             "every step stepped" if next_action(curve["steps"]) == "continue"
             else "the last step broke the rule; no larger step configured")
+    if clients is not None:
+        clients.close()
     curve["finished_utc"] = datetime.now(UTC).isoformat(timespec="seconds")
     write()
     (args.out / "table.md").write_text(render_table(curve), encoding="utf-8")

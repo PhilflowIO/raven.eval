@@ -12,13 +12,21 @@ the end of the step with its own memory, so the server's share is on record.
 Engine: vLLM's Prometheus gauges (``/metrics``) when the server is vLLM —
 running and waiting requests and KV-cache use. ``waiting > 0`` means sessions
 queued in the scheduler: the engine, not the GPU, was the cap.
+
+Processes: the CPU of named process groups (the harness's own client
+processes, the server) from /proc/<pid>/stat, in percent of ONE core. A Python
+event loop cannot use more than one core, so a group whose busiest process sits
+near 100 % was the bottleneck of the step, whatever the GPU did: for the client
+that means the step measured the harness, for the server its own event loop.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from typing import Self
 
 import httpx
@@ -48,10 +56,14 @@ class Sampler:
     """Samples GPU (and optionally vLLM gauges) in a background thread."""
 
     def __init__(self, metrics_url: str | None = None, interval_s: float = 0.5,
-                 stats_url: str | None = None) -> None:
+                 stats_url: str | None = None,
+                 processes: dict[str, Callable[[], list[int]]] | None = None) -> None:
         self.metrics_url = metrics_url
         self.stats_url = stats_url
         self.cpu: list[float] = []  # whole-host CPU busy %, per interval
+        self.processes = processes or {}
+        # per group, per interval: (sum over its processes, busiest process), % of one core
+        self.proc_cpu: dict[str, list[tuple[float, float]]] = {k: [] for k in self.processes}
         self.server_rss: list[float] = []
         self.interval_s = interval_s
         self.gpu: list[tuple[float, float]] = []  # (util %, memory used MiB)
@@ -62,8 +74,18 @@ class Sampler:
     def _run(self) -> None:
         client = httpx.Client(timeout=2.0) if (self.metrics_url or self.stats_url) else None
         prev = cpu_times()
+        prev_proc = {name: _group_cpu_s(pids()) for name, pids in self.processes.items()}
+        prev_t = time.monotonic()
         while not self._stop.is_set():
             t = time.monotonic()
+            if self.processes and t > prev_t:
+                for name, pids in self.processes.items():
+                    cur_proc = _group_cpu_s(pids())
+                    pct = group_cpu_pct(prev_proc[name], cur_proc, t - prev_t)
+                    if pct is not None:
+                        self.proc_cpu[name].append(pct)
+                    prev_proc[name] = cur_proc
+                prev_t = t
             try:
                 out = subprocess.run(
                     ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used",
@@ -110,6 +132,10 @@ class Sampler:
             "cpu_util_mean_pct": round(sum(self.cpu) / len(self.cpu), 1) if self.cpu else None,
             "cpu_util_max_pct": round(max(self.cpu), 1) if self.cpu else None,
         }
+        for name, vals in self.proc_cpu.items():
+            sums = [v for v, _ in vals]
+            out[f"cpu_{name}_mean_pct"] = round(sum(sums) / len(sums), 1) if sums else None
+            out[f"cpu_{name}_proc_max_pct"] = round(max(m for _, m in vals), 1) if vals else None
         if self.stats_url is not None:
             out["server_rss_max_mib"] = max(self.server_rss) if self.server_rss else None
         if self.metrics_url is not None:
@@ -135,6 +161,41 @@ def cpu_times() -> tuple[float, float] | None:
             return parse_proc_stat(fh.read())
     except OSError:
         return None
+
+
+def parse_pid_stat(text: str, clk_tck: float) -> float | None:
+    """CPU seconds (user + system) of one process from its /proc/<pid>/stat line."""
+    _, _, rest = text.rpartition(")")  # the command name may contain spaces
+    fields = rest.split()
+    try:
+        return (float(fields[11]) + float(fields[12])) / clk_tck  # utime, stime
+    except (IndexError, ValueError):
+        return None
+
+
+def proc_cpu_s(pid: int) -> float | None:
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            return parse_pid_stat(fh.read(), float(os.sysconf("SC_CLK_TCK")))
+    except (OSError, ValueError):
+        return None
+
+
+def _group_cpu_s(pids: list[int]) -> dict[int, float]:
+    out = {}
+    for pid in pids:
+        if (v := proc_cpu_s(pid)) is not None:
+            out[pid] = v
+    return out
+
+
+def group_cpu_pct(prev: dict[int, float], cur: dict[int, float],
+                  wall_s: float) -> tuple[float, float] | None:
+    """``(sum, busiest)`` in % of one core over ``wall_s``, from processes seen at both ends."""
+    deltas = [max(0.0, cur[p] - prev[p]) / wall_s * 100.0 for p in cur.keys() & prev.keys()]
+    if not deltas:
+        return None
+    return round(sum(deltas), 1), round(max(deltas), 1)
 
 
 def gpu_apps() -> list[dict]:

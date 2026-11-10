@@ -11,8 +11,15 @@ import pytest
 
 pytest.importorskip("websockets")
 
-from raven_asr.datasets.base import Sample
 from raven_asr.capacity import max_n_within, next_action, percentile
+from raven_asr.datasets.base import Sample
+from raven_asr.probes import (
+    group_cpu_pct,
+    parse_gauges,
+    parse_pid_stat,
+    parse_proc_stat,
+)
+from raven_asr.stream.__main__ import start_delays
 from raven_asr.stream.curve import (
     load_offline,
     render_table,
@@ -25,7 +32,6 @@ from raven_asr.stream.pool import (
     session_playlist,
     to_pcm16,
 )
-from raven_asr.probes import parse_gauges, parse_proc_stat
 from raven_asr.stream.session import UtteranceRecord, run_session
 
 
@@ -247,3 +253,73 @@ def test_cpu_curve_table_shows_cpu_columns_and_precision():
     table = render_table(curve)
     assert "CPU util mean %" in table and "| 37 | 812 |" in table
     assert "CPU, weights int8" in table
+
+
+# ── per-process CPU and the multi-process client (#119) ─────────────────────
+
+
+def test_pid_stat_reads_utime_and_stime_after_the_command_name():
+    # pid (comm with ") " inside) state ... utime=14th, stime=15th field overall
+    line = "42 (python (x) y) S 1 42 42 0 -1 4194304 10 0 0 0 250 50 0 0 20 0 3 0\n"
+    assert parse_pid_stat(line, 100.0) == pytest.approx(3.0)
+    assert parse_pid_stat("garbage", 100.0) is None
+
+
+def test_group_cpu_counts_processes_seen_at_both_ends_in_one_core_units():
+    prev = {1: 10.0, 2: 5.0, 3: 1.0}
+    cur = {1: 10.5, 2: 5.25, 4: 9.0}  # 3 exited, 4 is new: neither counts
+    assert group_cpu_pct(prev, cur, 0.5) == (150.0, 100.0)
+    assert group_cpu_pct({}, cur, 0.5) is None
+
+
+def test_start_delays_are_seeded_per_step_and_within_one_chunk():
+    a = start_delays(8, 160, 7)
+    assert a == start_delays(8, 160, 7) and a != start_delays(16, 160, 7)[:8]
+    assert all(0 <= d <= 0.16 for d in a)
+
+
+def test_client_pool_splits_sessions_over_processes_and_keeps_the_order():
+    import threading
+
+    from raven_asr.stream.__main__ import ClientPool
+
+    pool = [_utt(i, 0.2) for i in range(6)]
+    clients = ClientPool(pool, 2)  # fork before the server thread exists
+    ready, holder = threading.Event(), {}
+
+    def serve() -> None:
+        loop = asyncio.new_event_loop()
+        holder["server"] = loop.run_until_complete(_mock_server(0.0, []))
+        holder["loop"] = loop
+        ready.set()
+        loop.run_forever()
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    ready.wait(5)
+    port = holder["server"].sockets[0].getsockname()[1]
+    try:
+        assert len(set(clients.pids())) == 3  # this process and two workers
+        records, errors = clients.run_step(f"ws://127.0.0.1:{port}", "org/m", 3, chunk_ms=100,
+                                           duration_s=0.1, done_timeout_s=5.0, seed=1)
+    finally:
+        clients.close()
+        holder["loop"].call_soon_threadsafe(holder["loop"].stop)
+    assert errors == [None, None, None]
+    assert sorted({r.session for r in records}) == [0, 1, 2]
+    by_session = {r.session: r.sample_id for r in records if r.index == 0}
+    assert by_session == {i: next(session_playlist(pool, i, 3)).sample_id for i in range(3)}
+
+
+def test_table_shows_the_busiest_client_and_server_process_when_recorded():
+    step = step_summary(1, [_rec(0, 0.2)], [None], {
+        "util_mean_pct": 40.0, "memory_used_max_mib": 9000,
+        "cpu_client_proc_max_pct": 97.4, "cpu_server_proc_max_pct": 61.0}, {}, 1.0)
+    curve = {"model": "org/m", "latency": "l", "chunk_ms": 80, "hardware_label": "1x GPU",
+             "params": {"threshold_s": 1.0}, "steps": [step], "max_n_within_threshold": 1,
+             "stopped_because": "x"}
+    table = render_table(curve)
+    assert "client CPU busiest proc % | server CPU busiest proc % |" in table
+    assert "| 40 | 9000 | 97 | 61 |" in table
+    header, sep = table.splitlines()[4:6]
+    assert header.count("|") == sep.count("|")

@@ -23,7 +23,6 @@ from raven_eval_core.wer import corpus_wer_strict_de_pct
 
 from ..capacity import pcts as _pcts
 from ..capacity import percentile
-
 from .session import UtteranceRecord
 
 DEFAULT_STEPS: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64, 128)
@@ -102,6 +101,10 @@ def render_table(curve: dict) -> str:
     """The short Markdown table of one curve (CPU columns for a CPU curve)."""
     cpu = curve.get("device") == "cpu"
     prec = curve.get("precision") or {}
+    # Curves recorded with per-process CPU get the busiest client process (and
+    # server) per step: ~100 % there means one event loop, not the GPU, was the cap.
+    procs = [k for k in ("client", "server")
+             if any(s["probes"].get(f"cpu_{k}_proc_max_pct") is not None for s in curve["steps"])]
     lines = [
         f"### {curve['model']} — live capacity",
         "",
@@ -111,8 +114,9 @@ def render_table(curve: dict) -> str:
         "",
         ("| N | p50 final s | p95 final s | p99 final s | p95 first partial s | errors | drops "
          + ("| WER stream % | WER offline % | CPU util mean % | server RSS max MiB |"
-            if cpu else "| WER stream % | WER offline % | GPU util mean % | VRAM max MiB |")),
-        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+            if cpu else "| WER stream % | WER offline % | GPU util mean % | VRAM max MiB |")
+         + "".join(f" {k} CPU busiest proc % |" for k in procs)),
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" + "---:|" * len(procs),
     ]
     for s in curve["steps"]:
         p = s["probes"]
@@ -122,6 +126,7 @@ def render_table(curve: dict) -> str:
             f"| {s['drops']} | {_f(s['wer_strict_pct'])} | {_f(s['offline_wer_strict_pct'])} "
             f"| {_f(p.get('cpu_util_mean_pct' if cpu else 'util_mean_pct'), '{:.0f}')} "
             f"| {_f(p.get('server_rss_max_mib' if cpu else 'memory_used_max_mib'), '{:.0f}')} |"
+            + "".join(f" {_f(p.get(f'cpu_{k}_proc_max_pct'), '{:.0f}')} |" for k in procs)
         )
     best = curve["max_n_within_threshold"] or "none"
     lines += ["", (f"Max N with p95 final ≤ {curve['params']['threshold_s']} s and no errors: "
