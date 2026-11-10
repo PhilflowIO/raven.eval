@@ -100,6 +100,9 @@ class _Outcome:
     # ``prediction`` is then the spoken text parsed out of it.
     raw_prediction: str | None = None
     segments: list[dict[str, object]] | None = None
+    # The word timestamps the server returned (seconds into the clip), None
+    # when it returned none (raven_asr.adapters.base.parse_word_timestamps).
+    words: list[dict[str, object]] | None = None
     # The request failed because of the endpoint, not this clip
     # (raven_asr.retry.is_endpoint_failure). Never written to the predictions.
     endpoint_failure: bool = False
@@ -250,6 +253,7 @@ async def _attempt(adapter: ASRAdapter, sample: Sample) -> _Outcome:
         latency_s=r.latency_s,
         raw_prediction=r.raw_text,
         segments=r.segments,
+        words=r.words,
     )
 
 
@@ -270,6 +274,8 @@ def _prediction_line(o: _Outcome) -> dict[str, object]:
         # the prediction was parsed from, so the parse can be audited and redone.
         line["raw_prediction"] = o.raw_prediction
         line["segments"] = o.segments
+    if o.words is not None:
+        line["words"] = o.words
     if o.error is not None:
         line["error"] = o.error
     return line
@@ -350,6 +356,7 @@ class _PredictionLog:
             latency_s=line.get("latency_s"),
             raw_prediction=line.get("raw_prediction"),
             segments=line.get("segments"),
+            words=line.get("words"),
         )
 
     def append(self, outcome: _Outcome) -> None:

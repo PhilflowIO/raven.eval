@@ -16,7 +16,8 @@ from ..serving import ServedModelMismatchError, ServingChangedError
 
 __all__ = [
     "ASRAdapter", "ServedModelMismatchError", "ServingChangedError",
-    "TranscribeResult", "encode_wav_pcm16", "resample_mono", "sync_from_async",
+    "TranscribeResult", "encode_wav_pcm16", "parse_word_timestamps", "resample_mono",
+    "sync_from_async",
 ]
 
 
@@ -33,6 +34,9 @@ class TranscribeResult:
             model has an output format and ``text`` was parsed out of it.
         segments: The speaker turns that format carried (JSON-ready dicts), or
             None when the model has no output format.
+        words: The word timestamps the server returned
+            (``[{"word", "start", "end"}]``, seconds from the start of the clip),
+            or None when it returned none (:func:`parse_word_timestamps`).
     """
 
     text: str
@@ -40,6 +44,7 @@ class TranscribeResult:
     raw: dict[str, object]
     raw_text: str | None = None
     segments: list[dict[str, object]] | None = None
+    words: list[dict[str, object]] | None = None
 
 
 class ASRAdapter(Protocol):
@@ -64,6 +69,39 @@ class ASRAdapter(Protocol):
     def transcribe(self, audio: np.ndarray, sample_rate: int) -> TranscribeResult:
         """Sync wrapper around ``atranscribe`` for legacy callers."""
         ...
+
+
+def parse_word_timestamps(body: dict[str, object]) -> list[dict[str, object]] | None:
+    """The word timestamps in a transcription response, or None when it has none.
+
+    Two shapes reach the harness. The NeMo server (serving/nemo/server.py,
+    ``_extract_timestamps``) answers every request with
+    ``timestamps: {"word": [{"word", "start", "end"}, ...], "segment": [...]}``;
+    an OpenAI ``verbose_json`` answer (vLLM, the transformers stand-in) carries
+    ``words: [{"word", "start", "end"}, ...]``. Both become one list of
+    ``{"word", "start", "end"}`` with float seconds. An entry without a usable
+    start/end is dropped rather than guessed; an empty list means the server
+    sent the field but no word in it.
+    """
+    nested = body.get("timestamps")
+    raw: object = nested.get("word") if isinstance(nested, dict) else None
+    if raw is None:
+        raw = body.get("words")
+    if not isinstance(raw, list):
+        return None
+    words: list[dict[str, object]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        text = str(entry.get("word") or entry.get("text") or "").strip()
+        try:
+            start = float(entry["start"])
+            end = float(entry["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if text:
+            words.append({"word": text, "start": start, "end": max(start, end)})
+    return words
 
 
 def sync_from_async(
