@@ -19,7 +19,11 @@ latency definition can be computed later:
   t_done        transcription.done arrived
 
   ttfp_s        t_first_text - t_start: time to first partial, counted from the
-                moment the speaker started
+                start of the utterance's audio — leading silence included
+  first_text_after_speech_s
+                t_first_text - (t_start + speech_onset_s): time until the first
+                words appear, counted from when speech starts in the audio
+                (pool.speech_onset_s); what a live-subtitle viewer waits for
   final_s       t_done - t_audio_end: final latency
   send_lag_s    the worst delay of a chunk behind its schedule; a large one means
                 the CLIENT fell behind, and the step's latencies are suspect
@@ -56,10 +60,17 @@ class UtteranceRecord:
     text: str | None = None
     send_lag_s: float = 0.0
     error: str | None = None
+    speech_onset_s: float | None = None
 
     @property
     def ttfp_s(self) -> float | None:
         return None if self.t_first_text is None else self.t_first_text - self.t_start
+
+    @property
+    def first_text_after_speech_s(self) -> float | None:
+        if self.t_first_text is None or self.speech_onset_s is None:
+            return None
+        return self.t_first_text - (self.t_start + self.speech_onset_s)
 
     @property
     def final_s(self) -> float | None:
@@ -70,6 +81,7 @@ class UtteranceRecord:
     def as_json(self) -> dict:
         d = asdict(self)
         d["ttfp_s"] = self.ttfp_s
+        d["first_text_after_speech_s"] = self.first_text_after_speech_s
         d["final_s"] = self.final_s
         return d
 
@@ -113,7 +125,7 @@ async def run_session(
         while clock() < session_end:
             utt = next(playlist)
             rec = UtteranceRecord(session, index, utt.sample_id, utt.subset, utt.reference,
-                                  utt.duration_s, t_start=0.0)
+                                  utt.duration_s, t_start=0.0, speech_onset_s=utt.onset_s)
             index += 1
             records.append(rec)
             await _play(ws, utt, rec, chunk_bytes, chunk_s, done_timeout_s, clock)

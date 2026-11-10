@@ -374,3 +374,59 @@ def test_sampler_measures_thread_cpu_over_whole_intervals_only():
             pass
     vals = s.proc_cpu["me"]
     assert vals and all(busiest <= 150.0 for _, busiest in vals)
+
+
+# ── first words after speech onset (#130) ───────────────────────────────────
+
+
+def test_speech_onset_is_the_leading_silence_of_the_audio():
+    from raven_asr.stream.pool import speech_onset_s
+
+    t = np.arange(int(SAMPLE_RATE * 1.0)) / SAMPLE_RATE
+    tone = 0.3 * np.sin(2 * np.pi * 220 * t)
+    hiss = 0.0005 * np.random.default_rng(0).standard_normal(int(SAMPLE_RATE * 1.5))
+    audio = np.concatenate([hiss, tone, hiss[:8000]])
+    assert speech_onset_s(to_pcm16(audio, SAMPLE_RATE)) == pytest.approx(1.5, abs=0.021)
+    assert speech_onset_s(to_pcm16(tone, SAMPLE_RATE)) == 0.0
+    assert speech_onset_s(to_pcm16(np.zeros(SAMPLE_RATE), SAMPLE_RATE)) == 0.0
+    assert speech_onset_s(b"") == 0.0
+
+
+def test_first_words_are_counted_from_speech_onset_not_utterance_start():
+    r = UtteranceRecord(0, 0, "s", "fleurs", "x", 10.0, t_start=100.0, t_first_text=103.6,
+                        t_done=110.2, t_audio_end=110.0, text="x", speech_onset_s=2.5)
+    assert r.ttfp_s == pytest.approx(3.6)
+    assert r.first_text_after_speech_s == pytest.approx(1.1)
+    assert r.as_json()["first_text_after_speech_s"] == pytest.approx(1.1)
+    legacy = UtteranceRecord(0, 0, "s", "fleurs", "x", 10.0, t_start=0.0, t_first_text=1.0)
+    assert legacy.first_text_after_speech_s is None  # curves recorded before #130
+
+
+def test_step_and_table_report_first_words_after_speech():
+    recs = []
+    for i in range(10):
+        r = _rec(i, 0.1)
+        r.speech_onset_s = 0.2  # _rec: t_start 0, first text at 0.5
+        recs.append(r)
+    step = step_summary(1, recs, [None], {"util_mean_pct": 10.0, "memory_used_max_mib": 1}, {}, 1.0)
+    assert step["first_text_after_speech_s"]["p95"] == pytest.approx(0.3)
+    assert step["ttfp_s"]["p95"] == pytest.approx(0.5)
+    curve = {"model": "m", "latency": "l", "chunk_ms": 80, "hardware_label": "1x GPU",
+             "params": {"threshold_s": 1.0}, "steps": [step], "max_n_within_threshold": 1,
+             "stopped_because": "x"}
+    table = render_table(curve)
+    assert "p95 first words after speech s" in table and "| 0.50 | 0.30 | 0.30 |" in table
+    header, sep = table.splitlines()[4:6]
+    assert header.count("|") == sep.count("|")
+
+
+def test_pool_records_each_utterances_onset():
+    t = np.arange(SAMPLE_RATE) / SAMPLE_RATE
+    audio = np.concatenate([np.zeros(SAMPLE_RATE // 2), 0.3 * np.sin(2 * np.pi * 200 * t)])
+
+    def loader(_):
+        return [Sample(audio=audio, sample_rate=SAMPLE_RATE, reference="hallo", sample_id="a1",
+                       subset="fleurs")]
+
+    pool, _ = build_pool(sources=(("fleurs", None),), loader_for=loader)
+    assert pool[0].onset_s == pytest.approx(0.5, abs=0.021)

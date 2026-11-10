@@ -61,6 +61,8 @@ def step_summary(
     errored = [r for r in recs if r.error is not None]
     finals = [r.final_s for r in done if r.final_s is not None]
     ttfps = [r.ttfp_s for r in done if r.ttfp_s is not None]
+    first_words = [r.first_text_after_speech_s for r in done
+                   if r.first_text_after_speech_s is not None]
     wer = off = None
     if done:
         refs = [r.reference for r in done]
@@ -84,6 +86,9 @@ def step_summary(
         "error_kinds": sorted({(r.error or "")[:120] for r in errored}),
         "audio_s": round(sum(r.duration_s for r in done), 1),
         "ttfp_s": _pcts(ttfps),
+        # from speech onset: the leading silence of a corpus utterance is not
+        # latency (ttfp_s counts it; p95 of that silence is ~3.5 s in the pool)
+        "first_text_after_speech_s": _pcts(first_words),
         "final_s": _pcts(finals),
         "send_lag_max_s": round(max((r.send_lag_s for r in recs), default=0.0), 4),
         "wer_strict_pct": wer,
@@ -103,6 +108,8 @@ def render_table(curve: dict) -> str:
     prec = curve.get("precision") or {}
     # Curves recorded with per-thread CPU get the busiest client (and server)
     # thread per step: ~100 % there means one event loop, not the GPU, was the cap.
+    words = any((s.get("first_text_after_speech_s") or {}).get("p95") is not None
+                for s in curve["steps"])
     procs = [k for k in ("client", "server")
              if any(s["probes"].get(f"cpu_{k}_thread_max_pct") is not None for s in curve["steps"])]
     lines = [
@@ -112,17 +119,23 @@ def render_table(curve: dict) -> str:
          f"{'CPU' if cpu else 'GPU'}, weights {prec.get('weights', '?')}; "
          f"threshold p95 final ≤ {curve['params']['threshold_s']} s"),
         "",
-        ("| N | p50 final s | p95 final s | p99 final s | p95 first partial s | errors | drops "
+        ("| N | p50 final s | p95 final s | p99 final s | p95 first partial s "
+         + ("| p50 first words after speech s | p95 first words after speech s " if words else "")
+         + "| errors | drops "
          + ("| WER stream % | WER offline % | CPU util mean % | server RSS max MiB |"
             if cpu else "| WER stream % | WER offline % | GPU util mean % | VRAM max MiB |")
          + "".join(f" {k} CPU busiest thread % |" for k in procs)),
-        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" + "---:|" * len(procs),
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+        + "---:|" * (len(procs) + 2 * words),
     ]
     for s in curve["steps"]:
         p = s["probes"]
         lines.append(
             f"| {s['n']} | {_f(s['final_s']['p50'])} | {_f(s['final_s']['p95'])} "
-            f"| {_f(s['final_s']['p99'])} | {_f(s['ttfp_s']['p95'])} | {s['errors']} "
+            f"| {_f(s['final_s']['p99'])} | {_f(s['ttfp_s']['p95'])} "
+            + (f"| {_f(s['first_text_after_speech_s']['p50'])} "
+               f"| {_f(s['first_text_after_speech_s']['p95'])} " if words else "")
+            + f"| {s['errors']} "
             f"| {s['drops']} | {_f(s['wer_strict_pct'])} | {_f(s['offline_wer_strict_pct'])} "
             f"| {_f(p.get('cpu_util_mean_pct' if cpu else 'util_mean_pct'), '{:.0f}')} "
             f"| {_f(p.get('server_rss_max_mib' if cpu else 'memory_used_max_mib'), '{:.0f}')} |"
