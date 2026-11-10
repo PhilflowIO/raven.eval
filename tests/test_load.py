@@ -182,6 +182,7 @@ def test_paired_delta_uses_the_same_reference_windows():
     bad = {"r": sc.score_recording(ref, [sc.Answer(0, 0, 1, bad_hyp)], window_words=10)}
     d = sc.paired_delta(bad, good)
     assert d["delta_pp"] == 25.0 and d["windows"] == 4
+    assert d["wer_pct"] == 25.0 and d["baseline_wer_pct"] == 0.0
 
 
 def test_vtt_onsets_compare_model_word_starts_with_cue_starts():

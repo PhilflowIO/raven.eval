@@ -327,7 +327,8 @@ def cmd_compare(args) -> int:
     base = json.loads((base_dir / f"score_{args.kind}.json").read_text())
     lines = [f"### Paired WER deltas vs {base['run']['model']} ({args.kind} blocks, "
              "audible reference windows)", "",
-             "| model | recording | WER % | Δ pp vs baseline [95 %] |", "|---|---|---:|---:|"]
+             "| model | recording | WER % | baseline WER % | Δ pp [95 %] | windows |",
+             "|---|---|---:|---:|---:|---:|"]
     out = {"baseline": base["run"]["model"], "kind": args.kind, "models": {}}
     for d in [x for x in args.runs.split(",") if x]:
         other = json.loads((Path(d) / f"score_{args.kind}.json").read_text())
@@ -340,17 +341,15 @@ def cmd_compare(args) -> int:
             b = {k: v for k, v in base["recordings"].items()
                  if flag is None or v["dialect"] == flag}
             if a:
-                res[gname] = {"wer_pct": sc.corpus_interval(a, audible=True)["wer_pct"],
-                              **sc.paired_delta(a, b, audible=True)}
+                res[gname] = sc.paired_delta(a, b, audible=True)
         for rid in other["recordings"]:
-            a = {rid: other["recordings"][rid]}
-            b = {rid: base["recordings"][rid]}
-            res[rid] = {"wer_pct": sc.corpus_interval(a, audible=True)["wer_pct"],
-                        **sc.paired_delta(a, b, audible=True)}
+            res[rid] = sc.paired_delta({rid: other["recordings"][rid]},
+                                       {rid: base["recordings"][rid]}, audible=True)
         out["models"][m] = res
         for k, v in res.items():
-            lines.append(f"| {m} | {k} | {v['wer_pct']:.2f} | {v['delta_pp']:+.2f} "
-                         f"[{v['ci95'][0]:+.2f}, {v['ci95'][1]:+.2f}] |")
+            lines.append(f"| {m} | {k} | {v['wer_pct']:.2f} | {v['baseline_wer_pct']:.2f} "
+                         f"| {v['delta_pp']:+.2f} [{v['ci95'][0]:+.2f}, {v['ci95'][1]:+.2f}] "
+                         f"| {v['windows']} |")
     if args.out:
         _write(Path(args.out) / f"compare_{args.kind}.json", out)
         (Path(args.out) / f"compare_{args.kind}.md").write_text("\n".join(lines) + "\n")

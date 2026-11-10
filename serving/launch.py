@@ -75,6 +75,12 @@ VLLM_MAX_AUDIO_MB = "512"
 #: whole-file window cut near 600 s (up to 720 s) was answered 400. 7200 s is the
 #: longest track Raven's production STT service accepts (MAX_AUDIO_DURATION).
 VLLM_MAX_AUDIO_S = "7200"
+#: …and refuses an upload whose decoded float32 PCM would exceed
+#: VLLM_MAX_AUDIO_DECODE_BYTES (256 MiB by default, ~70 min at 16 kHz mono), so
+#: the duration limit above alone still turned a 97-minute track away. Sized to
+#: the same 7200 s at the rate every self-hosted endpoint is sent (16 kHz mono,
+#: raven_asr.adapters.vllm_openai.INPUT_SAMPLE_RATE), 4 bytes a sample.
+VLLM_MAX_AUDIO_BYTES = str(int(VLLM_MAX_AUDIO_S) * 16_000 * 4)
 #: Placeholder for the snapshot path in ``--print`` (which never downloads).
 SNAPSHOT_PLACEHOLDER = "<snapshot>"
 
@@ -182,6 +188,9 @@ def build(
     )
     extra["VLLM_MAX_AUDIO_DECODE_DURATION_S"] = env.get(
         "VLLM_MAX_AUDIO_DECODE_DURATION_S", VLLM_MAX_AUDIO_S
+    )
+    extra["VLLM_MAX_AUDIO_DECODE_BYTES"] = env.get(
+        "VLLM_MAX_AUDIO_DECODE_BYTES", VLLM_MAX_AUDIO_BYTES
     )
     # Exactly the plugins the recipe names (recipe.VLLM_PLUGINS); "" loads none.
     # Unset, vLLM would load every plugin installed in the environment, so a

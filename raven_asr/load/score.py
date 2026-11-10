@@ -55,7 +55,11 @@ from dataclasses import dataclass
 import jiwer
 from jiwer.transformations import wer_standardize
 
-from raven_eval_core.bootstrap import bootstrap_ratio_ci, paired_bootstrap_ratio_delta
+from raven_eval_core.bootstrap import (
+    bootstrap_ratio_ci,
+    paired_bootstrap_ratio_delta,
+    ratio_pct,
+)
 from raven_eval_core.flozi_wer import normalize_flozi, runaway_stats
 
 WINDOW_REF_WORDS = 600
@@ -320,7 +324,12 @@ def paired_delta(a: dict[str, dict], b: dict[str, dict], audible: bool = False) 
     if audible:
         ha, hb = window_units(a, True), window_units(b, True)
         keys = [k for k in keys if k in ha and k in hb]
-    d = paired_bootstrap_ratio_delta([(ua[k], ub[k]) for k in keys], resamples=RESAMPLES,
-                                     seed=SEED, confidence=CONFIDENCE)
-    return {"delta_pp": round(d.point, 3), "ci95": [round(d.lo, 3), round(d.hi, 3)],
+    pairs = [(ua[k], ub[k]) for k in keys]
+    d = paired_bootstrap_ratio_delta(pairs, resamples=RESAMPLES, seed=SEED,
+                                     confidence=CONFIDENCE)
+    # Both WERs on exactly the windows the delta is over, so the three numbers
+    # add up: a's own audible WER can cover windows b's does not.
+    return {"wer_pct": round(ratio_pct([x for x, _ in pairs]), 3),
+            "baseline_wer_pct": round(ratio_pct([y for _, y in pairs]), 3),
+            "delta_pp": round(d.point, 3), "ci95": [round(d.lo, 3), round(d.hi, 3)],
             "windows": d.n}
