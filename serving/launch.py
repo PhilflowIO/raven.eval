@@ -70,6 +70,11 @@ DEFAULT_PORT = 8000
 #: vLLM's transcription endpoint rejects uploads above 25 MB by default; a
 #: 10-minute 16 kHz PCM16 clip is ~19 MB. Aligned with the shim's upload cap.
 VLLM_MAX_AUDIO_MB = "512"
+#: vLLM refuses audio longer than VLLM_MAX_AUDIO_DECODE_DURATION_S (600 s by
+#: default) before its own long-audio splitting runs, so a production-shaped
+#: whole-file window cut near 600 s (up to 720 s) was answered 400. 7200 s is the
+#: longest track Raven's production STT service accepts (MAX_AUDIO_DURATION).
+VLLM_MAX_AUDIO_S = "7200"
 #: Placeholder for the snapshot path in ``--print`` (which never downloads).
 SNAPSHOT_PLACEHOLDER = "<snapshot>"
 
@@ -174,6 +179,9 @@ def build(
         argv += [f"{name}={snap}/{sub}" for name, sub in recipe["lora_modules"].items()]
     extra["VLLM_MAX_AUDIO_CLIP_FILESIZE_MB"] = env.get(
         "VLLM_MAX_AUDIO_CLIP_FILESIZE_MB", VLLM_MAX_AUDIO_MB
+    )
+    extra["VLLM_MAX_AUDIO_DECODE_DURATION_S"] = env.get(
+        "VLLM_MAX_AUDIO_DECODE_DURATION_S", VLLM_MAX_AUDIO_S
     )
     # Exactly the plugins the recipe names (recipe.VLLM_PLUGINS); "" loads none.
     # Unset, vLLM would load every plugin installed in the environment, so a
