@@ -339,3 +339,25 @@ def test_ctc_word_times_come_from_the_frames_the_labels_fire_on():
                                lambda ids: "".join(spell[i] for i in ids), 0.08)
     assert words == [{"word": "hallo", "start": 0.08, "end": 0.4},
                      {"word": "welt", "start": 0.56, "end": 0.8}]
+
+
+def test_words_on_silence_count_as_a_runaway_answer():
+    ref = "guten morgen meine damen und herren"
+    answers = [sc.Answer(0, 0.0, 5.0, ref), sc.Answer(1, 50.0, 55.0, "applaus applaus danke schön")]
+    s = sc.score_recording(ref, answers)
+    assert s["runaway_answers"]["n"] == 1 and s["insertions"] == 4
+
+
+def test_reference_past_the_end_of_the_audio_is_set_apart():
+    ref = " ".join(f"w{i}" for i in range(40))
+    heard = " ".join(f"w{i}" for i in range(20))
+    # The model talked until the last second of a 100 s recording: the second
+    # half of the reference was never in the audio.
+    s = sc.score_recording(ref, [sc.Answer(0, 0.0, 100.0, heard)], window_words=10,
+                           duration_s=100.0)
+    assert s["wer_pct"] == 50.0 and s["wer_pct_audible"] == 0.0
+    assert s["windows_beyond_audio"] == 2 and s["dropout_windows"] == 0
+    # A model that stopped at 30 s of a 1000 s recording keeps its deletions.
+    s = sc.score_recording(ref, [sc.Answer(0, 0.0, 30.0, heard)], window_words=10,
+                           duration_s=1000.0)
+    assert s["wer_pct_audible"] == 50.0 and s["windows_beyond_audio"] == 0

@@ -29,6 +29,16 @@ baseline for how often edited speech itself trips the rule, on every reference
 window. A window whose hypothesis is more than 1.5x (runaway) or less than 0.5x
 (dropout) its reference length is flagged too.
 
+Reference beyond the audio. A protocol can run past the recording (the Bavarian
+one carries some 23,000 words after the last minute of the audio). Windows at
+the END of the reference that receive no hypothesis word at all, while the
+model's last words came within ``AUDIO_END_SLACK_S`` of the recording's end, are
+marked ``beyond_audio``: the audio ran out, not the model. ``wer_pct`` counts
+every reference word; ``wer_pct_audible`` and the corpus/paired numbers with
+``audible=True`` leave those windows out. A model that stops transcribing early
+keeps its deletions, because its last words then end far from the recording's
+end.
+
 Runaway. Each answer gets the reference words aligned to its own words (plus
 the deletions between them) and raven_eval_core.flozi_wer.runaway_stats — the
 leaderboard's rule, hypothesis words > 3x reference words — counts the answers
@@ -52,6 +62,7 @@ WINDOW_REF_WORDS = 600
 LOOP_MAX_N = 10
 LOOP_MIN_REPS = 3
 LOOP_MIN_WORDS = 12
+AUDIO_END_SLACK_S = 120.0
 RUNAWAY_WINDOW_RATIO = 1.5
 DROPOUT_WINDOW_RATIO = 0.5
 RESAMPLES = 2000
@@ -157,8 +168,13 @@ class Answer:
 
 
 def score_recording(reference: str, answers: Sequence[Answer], *,
-                    window_words: int = WINDOW_REF_WORDS) -> dict:
-    """Every accuracy number of one recording from its reference and its answers."""
+                    window_words: int = WINDOW_REF_WORDS,
+                    duration_s: float | None = None) -> dict:
+    """Every accuracy number of one recording from its reference and its answers.
+
+    ``duration_s`` (the recording's length) enables the beyond-the-audio rule;
+    without it every window counts as audible.
+    """
     answers = sorted(answers, key=lambda a: (a.source_start, a.index))
     ref = tokens(reference)
     hyp: list[str] = []
@@ -205,6 +221,17 @@ def score_recording(reference: str, answers: Sequence[Answer], *,
             "ref_loops": len(loop_spans(ref_words_w)),
         })
 
+    # Trailing reference the audio never reached (see the module doc).
+    with_words = [k for k, t in enumerate(per_answer) if t]
+    last_end = answers[with_words[-1]].source_end if with_words else 0.0
+    reached_end = duration_s is not None and last_end >= duration_s - AUDIO_END_SLACK_S
+    last_heard = max((w["i"] for w in windows if w["hyp_words"] > 0), default=-1)
+    for w in windows:
+        w["beyond_audio"] = reached_end and w["i"] > last_heard
+    audible = [w for w in windows if not w["beyond_audio"]]
+    aud_ref = sum(w["ref_words"] for w in audible)
+    aud_err = sum(w["errors"] for w in audible)
+
     # Reference words aligned to each answer, for the runaway rule.
     first = [None] * len(answers)
     last = [None] * len(answers)
@@ -240,13 +267,16 @@ def score_recording(reference: str, answers: Sequence[Answer], *,
         "errors": errs,
         "wer_pct": round(100.0 * errs / n_ref, 3) if n_ref else None,
         "wer_ci95": [round(ci.lo, 3), round(ci.hi, 3)],
+        "wer_pct_audible": round(100.0 * aud_err / aud_ref, 3) if aud_ref else None,
+        "ref_words_audible": aud_ref,
+        "windows_beyond_audio": len(windows) - len(audible),
         "insertion_rate_pct": round(100.0 * c["insert"] / n_ref, 3) if n_ref else None,
         "deletion_rate_pct": round(100.0 * c["delete"] / n_ref, 3) if n_ref else None,
         "hyp_over_ref": round(len(hyp) / n_ref, 4) if n_ref else None,
         "window_ref_words": window_words,
         "windows": windows,
         "runaway_windows": sum(1 for w in windows if w["runaway"]),
-        "dropout_windows": sum(1 for w in windows if w["dropout"]),
+        "dropout_windows": sum(1 for w in windows if w["dropout"] and not w["beyond_audio"]),
         "worst_window_wer_pct": max((w["wer_pct"] for w in windows if w["wer_pct"] is not None),
                                     default=None),
         "loops": loops,
@@ -258,25 +288,38 @@ def score_recording(reference: str, answers: Sequence[Answer], *,
     }
 
 
-def window_units(scores: dict[str, dict]) -> dict[str, tuple[float, float]]:
-    """``{"<recording>/<window>": (errors, ref words)}`` for the bootstrap."""
+def window_units(scores: dict[str, dict], audible: bool = False) -> dict[str, tuple[float, float]]:
+    """``{"<recording>/<window>": (errors, ref words)}`` for the bootstrap.
+
+    ``audible`` leaves out the windows the audio never reached.
+    """
     return {f"{rid}/{w['i']}": (float(w["errors"]), float(w["ref_words"]))
-            for rid, s in scores.items() for w in s["windows"]}
+            for rid, s in scores.items() for w in s["windows"]
+            if not (audible and w.get("beyond_audio"))}
 
 
-def corpus_interval(scores: dict[str, dict]) -> dict:
-    units = list(window_units(scores).values())
+def corpus_interval(scores: dict[str, dict], audible: bool = False) -> dict:
+    units = list(window_units(scores, audible).values())
     ci = bootstrap_ratio_ci(units, resamples=RESAMPLES, seed=SEED, confidence=CONFIDENCE)
     return {"wer_pct": round(ci.point, 3), "ci95": [round(ci.lo, 3), round(ci.hi, 3)],
             "windows": ci.n}
 
 
-def paired_delta(a: dict[str, dict], b: dict[str, dict]) -> dict:
-    """WER(a) − WER(b) in points with its paired 95 % interval over shared windows."""
-    ua, ub = window_units(a), window_units(b)
-    keys = [k for k in ua if k in ub]
-    if len(keys) != len(ua) or len(keys) != len(ub):
+def paired_delta(a: dict[str, dict], b: dict[str, dict], audible: bool = False) -> dict:
+    """WER(a) − WER(b) in points with its paired 95 % interval over shared windows.
+
+    With ``audible``, over the windows both runs heard (a window beyond the audio
+    for either is left out of both, so the pair stays on one partition).
+    """
+    if set(a) != set(b):
         raise ValueError("the two runs were not scored on the same recordings")
+    ua, ub = window_units(a), window_units(b)
+    if set(ua) != set(ub):
+        raise ValueError("the two runs were not scored on the same reference windows")
+    keys = list(ua)
+    if audible:
+        ha, hb = window_units(a, True), window_units(b, True)
+        keys = [k for k in keys if k in ha and k in hb]
     d = paired_bootstrap_ratio_delta([(ua[k], ub[k]) for k in keys], resamples=RESAMPLES,
                                      seed=SEED, confidence=CONFIDENCE)
     return {"delta_pp": round(d.point, 3), "ci95": [round(d.lo, 3), round(d.hi, 3)],
