@@ -97,7 +97,10 @@ def _header(args, prepared: list[Prepared], kind: str, timestamps: dict) -> dict
 
 
 async def _probe(args, prepared: list[Prepared], kind: str) -> dict:
-    it = all_items(prepared, kind)[0]
+    # Asked with a short VAD block whatever the run's workload: the probe is
+    # about the timestamp request, not about how long an input the server takes.
+    del kind
+    it = all_items(prepared, "vad")[0]
     async with httpx.AsyncClient() as c:
         return await probe_timestamps(c, args.url, args.model, _wav_of(prepared)(it),
                                       it.block.audio_s)
