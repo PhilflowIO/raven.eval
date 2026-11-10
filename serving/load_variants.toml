@@ -1,0 +1,27 @@
+# Named server settings for the offline load test (python -m raven_asr.load).
+#
+# A load variant serves a published recipe (recipes.toml) unchanged and sets only
+# host knobs of serving/launch.py — the settings a deployment decides, never the
+# model, its revision, precision or decoding. The published recipes stay what
+# the leaderboard measured; a variant exists only where production (or a
+# dedicated STT box) would run the same recipe with other knobs, and says why.
+#
+#   base    the recipe id it serves
+#   env     host knobs, from launch.py's environment list:
+#           RAVEN_SERVE_GPU_MEM, RAVEN_SERVE_MAX_NUM_SEQS (give the shim the same
+#           value), RAVEN_SERVE_NEMO_MAX_BATCH, RAVEN_SERVE_NEMO_BATCH_WAIT_MS
+#   reason  why production would set them, with the source
+#
+# The knobs are outside the recipe hash on purpose; the servers report the
+# batching they run with (x_raven.batching) and the load harness records the
+# variant id, its env and its reason next to every result.
+
+[variants."primeline-parakeet@prod-batch4"]
+base = "primeline-parakeet"
+env = { RAVEN_SERVE_NEMO_MAX_BATCH = "4", RAVEN_SERVE_NEMO_BATCH_WAIT_MS = "15" }
+reason = "Production's STT box batches at most 4 clips collected within 15 ms (Raven's deployment repository, the Parakeet STT service: compose BATCH_SIZE=4, parakeet_service/batchworker.py batch_ms=15.0); the published recipe batches up to 16 within 20 ms."
+
+[variants."cohere-transcribe-03-2026@dedicated"]
+base = "cohere-transcribe-03-2026"
+env = { RAVEN_SERVE_GPU_MEM = "0.85", RAVEN_SERVE_MAX_NUM_SEQS = "64" }
+reason = "The published recipe is sized to share a 24 GB card (gpu_mem 0.4, 16 sequences). A production STT box gives the engine the card (0.85 leaves room for the 1.4 GB co-tenant on the bench host) and as many sequences as the sweep sends at most (64), so the curve shows the engine's limit, not the recipe's sharing budget."

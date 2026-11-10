@@ -376,3 +376,20 @@ def test_the_flag_is_reported_with_the_decoding(load_shim):
     mod._frames_after_prompt = lambda *_a: 57
     x = _post(mod, VOXTRAL_RT).json()["x_raven"]
     assert x["decoding"] == {"mode": "greedy", "max_tokens": 1024, "stop_at_audio_end": True}
+
+
+def test_passthrough_forwards_the_timestamp_request(load_shim):
+    # The offline load harness asks every request for word timestamps, as
+    # production does; the shim must pass the ask to the engine, which decides.
+    mod, _ = load_shim(["Qwen/Qwen3-ASR-1.7B"])
+    bodies: list[bytes] = []
+    mod._http = httpx.AsyncClient(transport=_upstream(["Qwen/Qwen3-ASR-1.7B"], [], bodies))
+    r = TestClient(mod.app).post(
+        "/v1/audio/transcriptions",
+        files={"file": ("a.wav", b"RIFF....", "audio/wav")},
+        data={"model": "Qwen/Qwen3-ASR-1.7B", "language": "de",
+              "response_format": "verbose_json", "timestamp_granularities[]": ["word"]},
+    )
+    assert r.status_code == 200
+    sent = b"".join(bodies)
+    assert b'name="timestamp_granularities[]"' in sent and b"verbose_json" in sent

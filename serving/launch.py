@@ -28,6 +28,11 @@ Environment (everything a host decides, nothing a model decides):
     RAVEN_SERVE_GPU_MEM       VRAM budget fraction (default: the recipe's gpu_mem)
     RAVEN_SERVE_MAX_NUM_SEQS  vLLM --max-num-seqs (default: the recipe's). Give the
                               shim the same value: it reports it in x_raven.batching.
+    RAVEN_SERVE_NEMO_MAX_BATCH, RAVEN_SERVE_NEMO_BATCH_WAIT_MS
+                              the NeMo server's micro-batch size and wait (default:
+                              the recipe's max_batch / batch_wait_ms); the server
+                              reports both in x_raven.batching. Named load-test
+                              settings of these knobs: serving/load_variants.toml.
     RAVEN_SERVE_MIN_FREE_GB   if set, refuse to start a download unless the HF
                               cache keeps this much free beyond the weights
     HF_HOME, HF_TOKEN         as usual for huggingface_hub
@@ -65,6 +70,11 @@ DEFAULT_PORT = 8000
 #: vLLM's transcription endpoint rejects uploads above 25 MB by default; a
 #: 10-minute 16 kHz PCM16 clip is ~19 MB. Aligned with the shim's upload cap.
 VLLM_MAX_AUDIO_MB = "512"
+#: vLLM refuses audio longer than VLLM_MAX_AUDIO_DECODE_DURATION_S (600 s by
+#: default) before its own long-audio splitting runs, so a production-shaped
+#: whole-file window cut near 600 s (up to 720 s) was answered 400. 7200 s is the
+#: longest track Raven's production STT service accepts (MAX_AUDIO_DURATION).
+VLLM_MAX_AUDIO_S = "7200"
 #: Placeholder for the snapshot path in ``--print`` (which never downloads).
 SNAPSHOT_PLACEHOLDER = "<snapshot>"
 
@@ -109,8 +119,10 @@ def build(
             "BENCH_MODEL_REVISION": recipe["revision"],
             "BENCH_GPU_MEM_FRACTION": gpu_mem,
             "BENCH_LONGFORM": "true" if recipe.get("longform", True) else "false",
-            "NEMO_MAX_BATCH": str(recipe.get("max_batch", 16)),
-            "NEMO_BATCH_WAIT_MS": str(recipe.get("batch_wait_ms", 20)),
+            "NEMO_MAX_BATCH": _knob(env, "RAVEN_SERVE_NEMO_MAX_BATCH",
+                                    recipe.get("max_batch", 16)),
+            "NEMO_BATCH_WAIT_MS": _knob(env, "RAVEN_SERVE_NEMO_BATCH_WAIT_MS",
+                                        recipe.get("batch_wait_ms", 20)),
             "NEMO_BATCH_MAX_AUDIO_S": str(recipe.get("batch_max_audio_s", 40)),
         })
         argv = [python, "-m", "uvicorn", "server:app",
@@ -167,6 +179,9 @@ def build(
         argv += [f"{name}={snap}/{sub}" for name, sub in recipe["lora_modules"].items()]
     extra["VLLM_MAX_AUDIO_CLIP_FILESIZE_MB"] = env.get(
         "VLLM_MAX_AUDIO_CLIP_FILESIZE_MB", VLLM_MAX_AUDIO_MB
+    )
+    extra["VLLM_MAX_AUDIO_DECODE_DURATION_S"] = env.get(
+        "VLLM_MAX_AUDIO_DECODE_DURATION_S", VLLM_MAX_AUDIO_S
     )
     # Exactly the plugins the recipe names (recipe.VLLM_PLUGINS); "" loads none.
     # Unset, vLLM would load every plugin installed in the environment, so a

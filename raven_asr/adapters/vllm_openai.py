@@ -49,6 +49,7 @@ from .base import (
     ServingChangedError,
     TranscribeResult,
     encode_wav_pcm16,
+    parse_word_timestamps,
     resample_mono,
 )
 
@@ -261,8 +262,13 @@ class VllmOpenAIAdapter:
             "input_sample_rate": sample_rate,
             "sent_sample_rate": INPUT_SAMPLE_RATE,
         }
+        # Kept wherever the server sends them: the NeMo server answers every
+        # request with word timestamps, which this adapter used to drop.
+        words = parse_word_timestamps(body)
         if self._parse is None:
-            return TranscribeResult(text=served_text.strip(), latency_s=latency, raw=raw)
+            return TranscribeResult(
+                text=served_text.strip(), latency_s=latency, raw=raw, words=words
+            )
         parsed = self._parse(served_text)
         return TranscribeResult(
             text=parsed.text,
@@ -270,6 +276,7 @@ class VllmOpenAIAdapter:
             raw=raw,
             raw_text=served_text,
             segments=[seg.as_json() for seg in parsed.segments],
+            words=words,
         )
 
     def transcribe(self, audio: np.ndarray, sample_rate: int) -> TranscribeResult:
