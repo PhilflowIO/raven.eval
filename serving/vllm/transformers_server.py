@@ -41,6 +41,15 @@
 # skip_special_tokens=True), whose ParakeetTokenizer collapses the CTC repeats
 # and blanks. Non-autoregressive: one label per 80 ms encoder frame, no loop, so
 # decoding.max_tokens has nothing to bound here and is not applied.
+#
+# WORD TIMESTAMPS (response_format=verbose_json, timestamp_granularities[]=word):
+# a CTC model emits one label per encoder frame, so the frame a word's first
+# label fires on and the frame its last label ends on ARE the model's own word
+# times — no alignment model, the same frames the text is read from
+# (ctc_word_times). Words are split where a SentencePiece piece opens a word
+# ("▁"). The frame length is the clip length over the number of output frames
+# (80 ms for turboctc). A decoder without per-frame output (Moonshine) answers
+# verbose_json with 400, as vLLM does for a model class without timestamps.
 from __future__ import annotations
 
 import contextlib
@@ -237,7 +246,54 @@ def _moonshine(audio, max_tokens: int | None) -> str:
     return _processor.batch_decode(generated, skip_special_tokens=True)[0].strip()
 
 
-def _ctc(audio, max_tokens: int | None) -> str:
+WORD_OPENER = "\u2581"  # SentencePiece's word-initial marker
+
+
+def ctc_word_times(
+    frame_ids: list[int],
+    blank_id: int,
+    opens_word,
+    decode,
+    frame_s: float,
+) -> list[dict]:
+    """Word timestamps from one clip's per-frame greedy CTC labels.
+
+    ``frame_ids`` is the argmax label of every output frame (repeats and blanks
+    included). A run of one label is one token at the frame it starts on;
+    ``opens_word(token_id)`` says whether that token begins a new word (a
+    SentencePiece piece starting with "▁"); ``decode(token_ids)`` spells a word.
+    A word spans from the first frame of its first token to the end of the last
+    frame of its last token's run, in seconds (``frame_s`` per frame).
+    """
+    tokens: list[list[int]] = []  # [id, first frame, last frame]
+    prev = None
+    for i, t in enumerate(frame_ids):
+        if t != blank_id:
+            if t == prev and tokens:
+                tokens[-1][2] = i
+            else:
+                tokens.append([t, i, i])
+        prev = t
+    words: list[dict] = []
+    group: list[list[int]] = []
+
+    def flush() -> None:
+        if group:
+            text = decode([t for t, _, _ in group]).strip()
+            if text:
+                words.append({"word": text, "start": round(group[0][1] * frame_s, 3),
+                              "end": round((group[-1][2] + 1) * frame_s, 3)})
+
+    for tok in tokens:
+        if group and opens_word(tok[0]):
+            flush()
+            group = []
+        group.append(tok)
+    flush()
+    return words
+
+
+def _ctc(audio, max_tokens: int | None, want_words: bool = False):
     del max_tokens  # one forward pass, no loop to bound (see header)
     import torch
 
@@ -247,22 +303,46 @@ def _ctc(audio, max_tokens: int | None) -> str:
     inputs = inputs.to(_model.device, dtype=_model.dtype)
     with _infer_lock, torch.no_grad():
         ids = _model.generate(**inputs)
-    return _processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+    text = _processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+    if not want_words:
+        return text, None
+    tok = _processor.tokenizer
+    frames = ids[0].tolist()
+    frame_s = (len(audio) / SAMPLE_RATE) / max(1, len(frames))
+    ids_seen = sorted(set(frames))
+    opens = {i: p.startswith(WORD_OPENER)
+             for i, p in zip(ids_seen, tok.convert_ids_to_tokens(ids_seen), strict=True)}
+    words = ctc_word_times(
+        frames, tok.pad_token_id, lambda t: opens.get(t, False),
+        lambda group: tok.decode(group, group_tokens=False, skip_special_tokens=True),
+        frame_s,
+    )
+    return text, words
+
+
+def _moonshine_text(audio, max_tokens: int | None, want_words: bool = False):
+    if want_words:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{MODEL_CLASS} has no per-frame output: word timestamps unavailable",
+        )
+    return _moonshine(audio, max_tokens), None
 
 
 #: transformers class -> how a loaded model of that class transcribes one
-#: 16 kHz mono float32 clip. The recipe's model_class picks the entry.
+#: 16 kHz mono float32 clip, as ``(text, words or None)``. The recipe's
+#: model_class picks the entry.
 DECODERS = {
-    "MoonshineStreamingForConditionalGeneration": _moonshine,
+    "MoonshineStreamingForConditionalGeneration": _moonshine_text,
     "GraniteSpeech5ForCTC": _ctc,
 }
 
 
-def _transcribe(wav_path: str, max_tokens: int | None = None) -> str:
+def _transcribe(wav_path: str, max_tokens: int | None = None, want_words: bool = False):
     import soundfile as sf
 
     audio, _sr = sf.read(wav_path, dtype="float32", always_2d=False)
-    return DECODERS[MODEL_CLASS](audio, max_tokens)
+    return DECODERS[MODEL_CLASS](audio, max_tokens, want_words)
 
 
 @app.post("/v1/audio/transcriptions")
@@ -273,7 +353,13 @@ async def transcriptions(
     response_format: str = Form("json"),
     temperature: float = Form(0.0),  # noqa: ARG001 — greedy decode only
     max_completion_tokens: int | None = Form(None),
+    timestamp_granularities: list[str] = Form([], alias="timestamp_granularities[]"),
 ):
+    if response_format not in ("json", "text", "verbose_json"):
+        raise HTTPException(
+            status_code=400, detail=f"response_format {response_format!r} is not served"
+        )
+    want_words = response_format == "verbose_json" and "word" in timestamp_granularities
     if _model is None:
         if _load_error is not None:
             raise HTTPException(
@@ -303,7 +389,9 @@ async def transcriptions(
         wav = await run_in_threadpool(_normalize, tmp)
         try:
             t0 = time.monotonic()
-            text = await run_in_threadpool(_transcribe, wav, max_completion_tokens)
+            text, words = await run_in_threadpool(
+                _transcribe, wav, max_completion_tokens, want_words
+            )
             wall = time.monotonic() - t0
         finally:
             if wav != tmp and os.path.exists(wav):
@@ -319,12 +407,10 @@ async def transcriptions(
             os.remove(tmp)
     if response_format == "text":
         return PlainTextResponse(text)
-    return JSONResponse(
-        {
-            "text": text,
-            "x_raven": {"model": MODEL_ID, "wall_seconds": round(wall, 3)},
-        }
-    )
+    body: dict = {"text": text, "x_raven": {"model": MODEL_ID, "wall_seconds": round(wall, 3)}}
+    if words is not None:
+        body["words"] = words
+    return JSONResponse(body)
 
 
 if __name__ == "__main__":
