@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Live-Diktat — Latenz der Streaming-Modelle</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --fg:#e8eaed; --dim:#8a9099; --bg:#111418; --card:#1a1f26; --acc:#7cc4ff; --ok:#6fd08c; --warn:#f2c94c; --bad:#ff7b72; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 980px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--dim); margin: 0 0 20px; font-size: 14px; }
+  .bar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; background:var(--card); padding:12px 14px; border-radius:10px; }
+  select, input, button { font:inherit; color:var(--fg); background:#232a33; border:1px solid #333c47; border-radius:8px; padding:7px 10px; }
+  input[type=range] { padding:0; }
+  button { cursor:pointer; background:#2c6bd6; border-color:#2c6bd6; font-weight:600; min-width:120px; }
+  button.stop { background:#b3362f; border-color:#b3362f; }
+  label { color: var(--dim); font-size: 13px; display:flex; gap:6px; align-items:center; }
+  .meter { width:120px; height:8px; background:#232a33; border-radius:4px; overflow:hidden; }
+  .meter > div { height:100%; width:0; background:var(--ok); transition: width 60ms linear; }
+  .meter.speech > div { background: var(--acc); }
+  #status { color: var(--dim); font-size: 13px; margin-left:auto; }
+  .stats { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin:16px 0; }
+  .stat { background:var(--card); border-radius:10px; padding:12px 14px; }
+  .stat .k { color:var(--dim); font-size:12px; }
+  .stat .v { font-size:28px; font-weight:700; font-variant-numeric: tabular-nums; }
+  .stat .h { color:var(--dim); font-size:12px; }
+  #subtitle { background:#000; border-radius:10px; min-height:96px; padding:18px 22px; font-size:26px; line-height:1.35; }
+  #subtitle .partial { color:#c9ced6; }
+  #subtitle .placeholder { color:#555c66; font-size:18px; }
+  #live { color:var(--dim); font-size:13px; margin:8px 2px 18px; min-height: 18px; font-variant-numeric: tabular-nums; }
+  table { width:100%; border-collapse: collapse; font-size:14px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid #262d36; vertical-align: top; }
+  th { color:var(--dim); font-weight:500; font-size:12px; }
+  td.n { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
+  .good { color: var(--ok); } .mid { color: var(--warn); } .slow { color: var(--bad); }
+  details { margin-top: 18px; color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Live-Diktat: wie weit hinkt der Untertitel hinterher?</h1>
+  <p class="sub">Sprich ins Mikrofon. Oben steht der Text so, wie er als Untertitel erscheinen würde, darunter für jeden Satz die gemessene Verzögerung.</p>
+
+  <div class="bar">
+    <label>Modell
+      <select id="model">
+        <option value="8410|nvidia/nemotron-3.5-asr-streaming-0.6b">Nemotron 3.5 Streaming</option>
+        <option value="8411|nvidia/nemotron-labs-unified-asr-0.6b">Nemotron Unified (getunt)</option>
+      </select>
+    </label>
+    <label>Server <input id="host" value="127.0.0.1" size="12"></label>
+    <label>Satzende nach <input id="pause" type="range" min="300" max="1500" step="100" value="700"> <span id="pauseV">0,7 s</span> Pause</label>
+    <div class="meter" id="meter"><div></div></div>
+    <button id="go">Start</button>
+    <span id="status">bereit</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Erste Wörter nach Sprechbeginn</div><div class="v" id="s1">–</div><div class="h">Median · 95 %: <span id="s1p">–</span></div></div>
+    <div class="stat"><div class="k">Fertiger Text nach Satzende</div><div class="v" id="s2">–</div><div class="h">Median · 95 %: <span id="s2p">–</span></div></div>
+    <div class="stat"><div class="k">Davon Antwort des Servers</div><div class="v" id="s3">–</div><div class="h">nach dem Signal „Satz zu Ende“</div></div>
+    <div class="stat"><div class="k">Sätze</div><div class="v" id="s4">0</div><div class="h">in dieser Sitzung</div></div>
+  </div>
+
+  <div id="subtitle"><span class="placeholder">Hier erscheint dein Text …</span></div>
+  <div id="live"></div>
+
+  <table>
+    <thead><tr><th>#</th><th>Text</th><th class="n">erste Wörter</th><th class="n">fertig nach Satzende</th><th class="n">Satzlänge</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <details>
+    <summary>Wie gemessen wird</summary>
+    <p><b>Sprechbeginn</b> und <b>Satzende</b> erkennt die Seite selbst am Pegel (20-ms-Blöcke, Schwelle 12 dB über dem Grundrauschen). Ein Satz beginnt mit dem ersten lauten Block und endet, wenn die eingestellte Pause verstrichen ist. Erst dann bekommt der Server das Signal „Satz zu Ende“.</p>
+    <p><b>Erste Wörter</b> = Zeit vom ersten lauten Block bis zum ersten Text vom Server. <b>Fertiger Text</b> = Zeit vom letzten lauten Block bis zum endgültigen Text. Darin steckt die Pause, die die Seite abwartet. Die reine Antwortzeit des Servers danach steht separat.</p>
+    <p>Audio wird im Browser auf 16 kHz Mono umgerechnet und alle 80 ms gesendet. Die Aufnahme im Browser selbst kostet etwa 20–40 ms, die hier nicht mitgezählt sind.</p>
+  </details>
+</main>
+
+<script>
+const FRAME_MS = 20, SEND_MS = 80, SR = 16000, PREROLL_MS = 300;
+const $ = (id) => document.getElementById(id);
+const fmt = (s) => s == null ? "–" : s.toFixed(2).replace(".", ",") + " s";
+const cls = (s, a, b) => s == null ? "" : s <= a ? "good" : s <= b ? "mid" : "slow";
+
+let ctx, src, node, stream, ws, running = false;
+let state = "idle";            // idle | open | finishing
+let pending = [];              // Int16Array frames waiting to be sent while open
+let preroll = [];              // recent frames before speech
+let backlog = [];              // frames captured while waiting for the server's done
+let noiseDb = -60, lastSpeechT = 0, cur = null, n = 0;
+const res1 = [], res2 = [];
+
+$("pause").oninput = () => $("pauseV").textContent = ($("pause").value / 1000).toFixed(1).replace(".", ",") + " s";
+
+function pct(a, p) { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1) + 0.5))]; }
+function stats() {
+  $("s1").textContent = fmt(pct(res1, 0.5)); $("s1").className = "v " + cls(pct(res1, 0.5), 1.0, 2.0);
+  $("s1p").textContent = fmt(pct(res1, 0.5)) + " · " + fmt(pct(res1, 0.95));
+  $("s2").textContent = fmt(pct(res2, 0.5)); $("s2").className = "v " + cls(pct(res2, 0.5), 1.2, 2.5);
+  $("s2p").textContent = fmt(pct(res2, 0.5)) + " · " + fmt(pct(res2, 0.95));
+  $("s4").textContent = n;
+}
+
+function b64(int16s) {
+  let len = 0; for (const f of int16s) len += f.length;
+  const all = new Int16Array(len); let o = 0; for (const f of int16s) { all.set(f, o); o += f.length; }
+  const bytes = new Uint8Array(all.buffer); let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function flush() { if (pending.length) { send({ type: "input_audio_buffer.append", audio: b64(pending) }); pending = []; } }
+
+function render(finalText, partial) {
+  const el = $("subtitle"); el.innerHTML = "";
+  if (!finalText && !partial) { el.innerHTML = '<span class="placeholder">Hier erscheint dein Text …</span>'; return; }
+  el.append(document.createTextNode(finalText || ""));
+  const p = document.createElement("span"); p.className = "partial"; p.textContent = (partial || "").slice((finalText || "").length); el.append(p);
+}
+
+function openUtterance(onsetT, frames) {
+  cur = { onset: onsetT, lastSpeech: onsetT, firstText: null, commitFinalT: null, text: "" };
+  send({ type: "input_audio_buffer.commit" });
+  state = "open"; pending = frames.slice(); flush();
+}
+
+function onFrame(frame, t) {   // frame: Int16Array of 320 samples, t: performance.now() at end of frame
+  let sum = 0; for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+  const db = 10 * Math.log10(sum / frame.length / (32768 * 32768) + 1e-12);
+  const speech = db > Math.max(noiseDb + 12, -50);
+  if (!speech) noiseDb = noiseDb * 0.98 + db * 0.02; else if (db < noiseDb) noiseDb = db;
+  $("meter").firstElementChild.style.width = Math.max(0, Math.min(100, (db + 70) * 1.6)) + "%";
+  $("meter").classList.toggle("speech", speech);
+  if (speech) lastSpeechT = t;
+
+  if (state === "idle") {
+    preroll.push(frame); if (preroll.length > PREROLL_MS / FRAME_MS) preroll.shift();
+    if (speech) { const frames = preroll; preroll = []; openUtterance(t - FRAME_MS, frames); }
+    return;
+  }
+  if (state === "finishing") { backlog.push({ frame, t, speech }); return; }
+  // open
+  pending.push(frame);
+  if (speech) cur.lastSpeech = t;
+  if (pending.length * FRAME_MS >= SEND_MS) flush();
+  if (!cur.firstText) $("live").textContent = "spricht seit " + fmt((t - cur.onset) / 1000) + " · noch kein Text";
+  if (t - cur.lastSpeech >= +$("pause").value) {
+    flush(); send({ type: "input_audio_buffer.commit", final: true });
+    cur.commitFinalT = performance.now(); state = "finishing";
+  }
+}
+
+function onDone(text) {
+  const t = performance.now();
+  if (!cur) return;
+  const first = cur.firstText ? (cur.firstText - cur.onset) / 1000 : null;
+  const fin = (t - cur.lastSpeech) / 1000, server = (t - cur.commitFinalT) / 1000;
+  const dur = (cur.lastSpeech - cur.onset) / 1000;
+  if (text && text.trim()) {
+    n++; if (first != null) res1.push(first); res2.push(fin);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${n}</td><td></td><td class="n ${cls(first, 1.0, 2.0)}">${fmt(first)}</td><td class="n ${cls(fin, 1.2, 2.5)}">${fmt(fin)}</td><td class="n">${fmt(dur)}</td>`;
+    tr.children[1].textContent = text.trim();
+    $("rows").prepend(tr);
+    $("s3").textContent = fmt(server); $("s3").className = "v " + cls(server, 0.3, 0.8);
+    stats();
+  }
+  $("live").textContent = text && text.trim() ? "letzter Satz fertig " + fmt(fin) + " nach Satzende" : "nur Geräusch, kein Text";
+  render(text, "");
+  cur = null; state = "idle";
+  // replay what was captured while waiting for the server
+  const bl = backlog; backlog = [];
+  for (const b of bl) onFrame(b.frame, b.t);
+}
+
+function connect(port, model) {
+  return new Promise((resolve, reject) => {
+    const sock = new WebSocket(`ws://${$("host").value.trim()}:${port}/v1/realtime`);
+    sock.onerror = () => reject(new Error("Server nicht erreichbar"));
+    sock.onmessage = (m) => {
+      const ev = JSON.parse(m.data);
+      if (ev.type === "session.created") { sock.send(JSON.stringify({ type: "session.update", model })); resolve(sock); return; }
+      if (ev.type === "transcription.delta" || ev.type === "transcription.partial") {
+        if (cur) {
+          const txt = ev.type === "transcription.delta" ? (cur.text += ev.delta) : ev.text;
+          if (!cur.firstText && txt && txt.trim()) cur.firstText = performance.now();
+          render(cur.text, ev.type === "transcription.partial" ? ev.text : cur.text);
+          if (cur.firstText) $("live").textContent = "erste Wörter nach " + fmt((cur.firstText - cur.onset) / 1000);
+        }
+      } else if (ev.type === "transcription.done") onDone(ev.text);
+      else if (ev.type === "error") { $("status").textContent = "Fehler: " + ev.error; }
+    };
+    sock.onclose = () => { if (running) { $("status").textContent = "Verbindung getrennt"; stop(); } };
+  });
+}
+
+const WORKLET = `
+class Down extends AudioWorkletProcessor {
+  constructor(o) { super(); this.ratio = sampleRate / ${SR}; this.pos = 0; this.buf = []; this.prev = 0; }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0]; if (!ch) return true;
+    // linear resample to 16 kHz with a cheap box pre-filter
+    for (let i = 0; i < ch.length; i++) {
+      this.pos += 1;
+      if (this.pos >= this.ratio) { this.pos -= this.ratio; const v = Math.max(-1, Math.min(1, (ch[i] + this.prev) / 2)); this.buf.push(v * 32767); }
+      this.prev = ch[i];
+      if (this.buf.length >= ${SR * FRAME_MS / 1000}) { this.port.postMessage(Int16Array.from(this.buf)); this.buf = []; }
+    }
+    return true;
+  }
+}
+registerProcessor("down", Down);`;
+
+async function start() {
+  const [port, model] = $("model").value.split("|");
+  $("status").textContent = "verbinde …";
+  try { ws = await connect(port, model); } catch (e) { $("status").textContent = e.message + " (läuft der Server?)"; return; }
+  stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: true } });
+  ctx = new AudioContext();
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" })));
+  src = ctx.createMediaStreamSource(stream);
+  node = new AudioWorkletNode(ctx, "down");
+  node.port.onmessage = (m) => { if (running) onFrame(m.data, performance.now()); };
+  src.connect(node);
+  running = true; state = "idle"; preroll = []; backlog = []; pending = []; noiseDb = -60;
+  $("go").textContent = "Stopp"; $("go").classList.add("stop"); $("model").disabled = true;
+  $("status").textContent = "hört zu · " + $("model").selectedOptions[0].text + " · Mikrofon " + Math.round(ctx.sampleRate / 1000) + " kHz";
+}
+function stop() {
+  running = false;
+  try { if (state === "open") { flush(); send({ type: "input_audio_buffer.commit", final: true }); } } catch {}
+  setTimeout(() => { try { ws && ws.close(); } catch {} }, 1500);
+  try { src && src.disconnect(); node && node.disconnect(); ctx && ctx.close(); stream && stream.getTracks().forEach(t => t.stop()); } catch {}
+  $("go").textContent = "Start"; $("go").classList.remove("stop"); $("model").disabled = false;
+  $("status").textContent = "gestoppt"; $("meter").firstElementChild.style.width = "0";
+}
+$("go").onclick = () => running ? stop() : start();
+</script>
+</body>
+</html>
