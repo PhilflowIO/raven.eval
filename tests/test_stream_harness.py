@@ -266,8 +266,8 @@ def test_pid_stat_reads_utime_and_stime_after_the_command_name():
 
 
 def test_group_cpu_counts_processes_seen_at_both_ends_in_one_core_units():
-    prev = {1: 10.0, 2: 5.0, 3: 1.0}
-    cur = {1: 10.5, 2: 5.25, 4: 9.0}  # 3 exited, 4 is new: neither counts
+    prev = {"1/task/1": 10.0, "1/task/2": 5.0, "1/task/3": 1.0}
+    cur = {"1/task/1": 10.5, "1/task/2": 5.25, "1/task/4": 9.0}  # 3 ended, 4 is new: neither counts
     assert group_cpu_pct(prev, cur, 0.5) == (150.0, 100.0)
     assert group_cpu_pct({}, cur, 0.5) is None
 
@@ -346,14 +346,16 @@ def test_threads_lists_this_process_and_its_threads():
     import os
     import threading
 
-    from raven_asr.stream.__main__ import threads
+    from raven_asr.probes import proc_cpu_s, threads
 
     stop = threading.Event()
-    t = threading.Thread(target=stop.wait)
+    t = threading.Thread(target=lambda: (sum(range(3_000_000)), stop.wait()))
     t.start()
     try:
-        tids = threads(os.getpid())
-        assert os.getpid() in tids and len(tids) >= 2
+        keys = threads(os.getpid())
+        assert f"{os.getpid()}/task/{os.getpid()}" in keys and len(keys) >= 2
+        # per thread, not the main thread's /proc/<pid>/stat (the whole process)
+        assert sum(proc_cpu_s(k) or 0.0 for k in keys) <= proc_cpu_s(str(os.getpid())) + 0.05
     finally:
         stop.set()
         t.join()

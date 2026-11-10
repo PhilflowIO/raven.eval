@@ -14,7 +14,8 @@ running and waiting requests and KV-cache use. ``waiting > 0`` means sessions
 queued in the scheduler: the engine, not the GPU, was the cap.
 
 Processes: the CPU of named groups of threads (the harness's own client
-processes, the server) from /proc/<tid>/stat, in percent of ONE core. A Python
+processes, the server) from /proc/<pid>/task/<tid>/stat, in percent of ONE core
+(not /proc/<tid>/stat: for the main thread that file is the whole process). A Python
 event loop runs on one thread, so a group whose busiest thread sits near 100 %
 was the bottleneck of the step, whatever the GPU did: for the client that means
 the step measured the harness, for the server its event loop or stepper.
@@ -57,7 +58,7 @@ class Sampler:
 
     def __init__(self, metrics_url: str | None = None, interval_s: float = 0.5,
                  stats_url: str | None = None,
-                 processes: dict[str, Callable[[], list[int]]] | None = None) -> None:
+                 processes: dict[str, Callable[[], list[str]]] | None = None) -> None:
         self.metrics_url = metrics_url
         self.stats_url = stats_url
         self.cpu: list[float] = []  # whole-host CPU busy %, per interval
@@ -173,23 +174,32 @@ def parse_pid_stat(text: str, clk_tck: float) -> float | None:
         return None
 
 
-def proc_cpu_s(pid: int) -> float | None:
+def threads(pid: int) -> list[str]:
+    """Every thread of ``pid`` as ``"<pid>/task/<tid>"``, its stat file under /proc."""
     try:
-        with open(f"/proc/{pid}/stat") as fh:
+        return [f"{pid}/task/{tid}" for tid in os.listdir(f"/proc/{pid}/task")]
+    except OSError:
+        return []
+
+
+def proc_cpu_s(key: str) -> float | None:
+    """CPU seconds of ``/proc/<key>/stat``: a process (``"<pid>"``) or a thread."""
+    try:
+        with open(f"/proc/{key}/stat") as fh:
             return parse_pid_stat(fh.read(), float(os.sysconf("SC_CLK_TCK")))
     except (OSError, ValueError):
         return None
 
 
-def _group_cpu_s(pids: list[int]) -> dict[int, float]:
+def _group_cpu_s(keys: list[str]) -> dict[str, float]:
     out = {}
-    for pid in pids:
-        if (v := proc_cpu_s(pid)) is not None:
-            out[pid] = v
+    for key in keys:
+        if (v := proc_cpu_s(key)) is not None:
+            out[key] = v
     return out
 
 
-def group_cpu_pct(prev: dict[int, float], cur: dict[int, float],
+def group_cpu_pct(prev: dict[str, float], cur: dict[str, float],
                   wall_s: float) -> tuple[float, float] | None:
     """``(sum, busiest)`` in % of one core over ``wall_s``, from ids seen at both ends."""
     deltas = [max(0.0, cur[p] - prev[p]) / wall_s * 100.0 for p in cur.keys() & prev.keys()]

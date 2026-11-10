@@ -55,7 +55,7 @@ from raven_eval_core.run_manifest import build_run_manifest
 from ..capacity import max_n_within, next_action
 from ..config import OUTPUT_FORMATS
 from ..output_formats import parser_for
-from ..probes import Sampler, gpu_identity
+from ..probes import Sampler, gpu_identity, threads
 from .curve import (
     DEFAULT_STEPS,
     DEFAULT_THRESHOLD_S,
@@ -119,14 +119,6 @@ def apply_health(step: dict, health: dict | None) -> dict:
         step["server_error"] = str(health.get("error") or "server unhealthy")[:300]
         step["within_threshold"] = False
     return step
-
-
-def threads(pid: int) -> list[int]:
-    """Every thread of ``pid`` (its tids read like pids in /proc)."""
-    try:
-        return [int(t) for t in os.listdir(f"/proc/{pid}/task")]
-    except OSError:
-        return []
 
 
 def spoken_text(model: str):
@@ -215,7 +207,7 @@ class ClientPool:
     def pids(self) -> list[int]:
         return [os.getpid(), *(p.pid for p in self._mp._pool)]
 
-    def tids(self) -> list[int]:
+    def tids(self) -> list[str]:
         return [t for pid in self.pids() for t in threads(pid)]
 
     def run_step(self, url: str, model: str, n: int, *, chunk_ms: int, duration_s: float,
