@@ -1,0 +1,436 @@
+{
+  "schema": "raven.stream-capacity/1",
+  "started_utc": "2026-11-09T19:55:23+00:00",
+  "stream": {
+    "id": "nvidia-nemotron-labs-unified-asr-0.6b",
+    "sha256": "2806be5f7e913c7986637790524eeb7cd29440cfefb4c36a03c45de28f4c1b6e"
+  },
+  "base_recipe": {
+    "id": "nvidia-nemotron-labs-unified-asr-0.6b",
+    "sha256": "2e9384b3d79f7989436826f9b35c1d5e35c8811f7cd05927591067c453c52e69"
+  },
+  "model": "nvidia/nemotron-labs-unified-asr-0.6b",
+  "revision": "023ce907267a09a308a5cb69239447cb3d0c1597",
+  "protocol": "nemo-pipeline",
+  "chunk_ms": 160,
+  "latency": "left 5.6 s / chunk 0.16 s / right 0.40 s: 0.56 s latency, buffered",
+  "precision": {
+    "weights": "fp32",
+    "activations": "fp32",
+    "scheme": "none",
+    "tensor_parallel": 1,
+    "checkpoint": {
+      "source": "published",
+      "dtype": "fp32"
+    }
+  },
+  "engine": {
+    "name": "nemo",
+    "model": "nvidia/nemotron-labs-unified-asr-0.6b",
+    "engine": {
+      "name": "nemo",
+      "nemo_toolkit": "3.1.0+b19b1a79d",
+      "torch": "2.14.1"
+    },
+    "pipeline": "buffered",
+    "att_context_size": [
+      70,
+      2,
+      5
+    ],
+    "frame_ms": 160.0,
+    "lang": "de",
+    "precision": {
+      "weights": "fp32",
+      "activations": "fp32",
+      "scheme": "none",
+      "tensor_parallel": 1,
+      "checkpoint": {
+        "source": "published",
+        "dtype": "fp32"
+      }
+    },
+    "compute_dtype": "float32",
+    "matmul_precision": "highest",
+    "batch_size": 128
+  },
+  "hardware_label": "1x RTX 3090 24 GB, shared with a running 1.4 GB text-embedding server (TEI); harness on the same host",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 3090",
+    "memory_total_mib": 24576.0,
+    "driver": "615.71.09"
+  },
+  "pool": {
+    "seed": 20261109,
+    "sources": [
+      {
+        "dataset": "fleurs",
+        "take": null,
+        "selected": 862,
+        "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd"
+      },
+      {
+        "dataset": "avemio-german-mixed-test",
+        "take": 2000,
+        "selected": 2000,
+        "revision": "17bcbc196567bca7eae3e94942588b5678fd748e"
+      }
+    ],
+    "n_utterances": 2862,
+    "audio_s": 30920.4,
+    "ids_sha256": "1bfdb49670d9183b37d01d585bdc4199a44661b82d30448889e61f95647d4c48"
+  },
+  "offline_predictions": true,
+  "params": {
+    "steps": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "duration_s": 180.0,
+    "threshold_s": 1.0,
+    "done_timeout_s": 30.0,
+    "pause_s": 10.0,
+    "start_stagger": "uniform within one chunk, seeded",
+    "seed": 20261109
+  },
+  "run_manifest": {
+    "git": {
+      "sha": "b69bad50f6c74090d985501c446af9f341909489",
+      "dirty": false
+    },
+    "uv_lock_sha256": "f92a954b7d17dcfeff41d442ce940c0e3d4c68ca940c6235d3c88d19b826ce11",
+    "python": "3.11.15",
+    "platform": "Linux-7.2.9-arch1-1-x86_64-with-glibc2.44",
+    "libraries": {
+      "jiwer": "4.0.0",
+      "num2words": "0.5.14",
+      "numpy": "2.4.6",
+      "pyannote.core": "6.0.1",
+      "pyannote.metrics": "4.1",
+      "raven-eval-core": "0.1.0",
+      "sacrebleu": "2.6.0",
+      "text2num": "3.0.2",
+      "unidecode": "1.4.0",
+      "websockets": "17.1"
+    },
+    "gpu": null,
+    "config_sha256": "08cc8e90f529ba89d25110c4275340621b2f3dfdb1bcc14a4d7b4d1fa2169beb",
+    "argv": [
+      "python",
+      "-m",
+      "raven_asr.stream",
+      "--stream",
+      "nvidia-nemotron-labs-unified-asr-0.6b",
+      "--url",
+      "ws://127.0.0.1:8095/v1/realtime",
+      "--http",
+      "http://127.0.0.1:8095",
+      "--hardware-label",
+      "1x RTX 3090 24 GB, shared with a running 1.4 GB text-embedding server (TEI); harness on the same host",
+      "--out",
+      "/mnt/daten/stt-bench/results-stream/2026-11-09/nvidia-nemotron-labs-unified-asr-0.6b",
+      "--offline-predictions",
+      "/mnt/daten/stt-bench/results/nvidia__nemotron-labs-unified-asr-0.6b/nvidia-nemotron-labs-unified-asr-0.6b"
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "utterances": 17,
+      "completed": 17,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 189.7,
+      "ttfp_s": {
+        "p50": 1.7822,
+        "p95": 2.7416,
+        "p99": 3.2538
+      },
+      "final_s": {
+        "p50": 0.0198,
+        "p95": 0.0392,
+        "p99": 0.0398
+      },
+      "send_lag_max_s": 0.0023,
+      "wer_strict_pct": 4.692,
+      "offline_wer_strict_pct": 2.933,
+      "probes": {
+        "samples": 381,
+        "util_mean_pct": 10.2,
+        "util_max_pct": 18.0,
+        "memory_used_max_mib": 4455.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "python",
+            "memory_mib": 3000.0
+          }
+        ]
+      },
+      "within_threshold": true,
+      "wall_s": 190.3
+    },
+    {
+      "n": 2,
+      "utterances": 33,
+      "completed": 33,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 383.2,
+      "ttfp_s": {
+        "p50": 1.7834,
+        "p95": 3.5737,
+        "p99": 5.4978
+      },
+      "final_s": {
+        "p50": 0.0195,
+        "p95": 0.0386,
+        "p99": 0.0696
+      },
+      "send_lag_max_s": 0.003,
+      "wer_strict_pct": 5.684,
+      "offline_wer_strict_pct": 9.063,
+      "probes": {
+        "samples": 388,
+        "util_mean_pct": 20.2,
+        "util_max_pct": 38.0,
+        "memory_used_max_mib": 4521.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "python",
+            "memory_mib": 3066.0
+          }
+        ]
+      },
+      "within_threshold": true,
+      "wall_s": 193.9
+    },
+    {
+      "n": 4,
+      "utterances": 65,
+      "completed": 65,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 747.1,
+      "ttfp_s": {
+        "p50": 1.9409,
+        "p95": 4.1896,
+        "p99": 5.3496
+      },
+      "final_s": {
+        "p50": 0.0191,
+        "p95": 0.0396,
+        "p99": 0.0509
+      },
+      "send_lag_max_s": 0.003,
+      "wer_strict_pct": 4.662,
+      "offline_wer_strict_pct": 5.828,
+      "probes": {
+        "samples": 388,
+        "util_mean_pct": 35.7,
+        "util_max_pct": 66.0,
+        "memory_used_max_mib": 4607.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "python",
+            "memory_mib": 3152.0
+          }
+        ]
+      },
+      "within_threshold": true,
+      "wall_s": 194.0
+    },
+    {
+      "n": 8,
+      "utterances": 134,
+      "completed": 134,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 1486.2,
+      "ttfp_s": {
+        "p50": 1.8037,
+        "p95": 4.6645,
+        "p99": 5.3618
+      },
+      "final_s": {
+        "p50": 0.0276,
+        "p95": 0.0466,
+        "p99": 0.0504
+      },
+      "send_lag_max_s": 0.0025,
+      "wer_strict_pct": 4.93,
+      "offline_wer_strict_pct": 4.538,
+      "probes": {
+        "samples": 388,
+        "util_mean_pct": 66.4,
+        "util_max_pct": 92.0,
+        "memory_used_max_mib": 4797.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "python",
+            "memory_mib": 3342.0
+          }
+        ]
+      },
+      "within_threshold": true,
+      "wall_s": 194.0
+    },
+    {
+      "n": 16,
+      "utterances": 281,
+      "completed": 281,
+      "errors": 0,
+      "drops": 0,
+      "error_kinds": [],
+      "audio_s": 2999.1,
+      "ttfp_s": {
+        "p50": 1.8073,
+        "p95": 4.8337,
+        "p99": 5.8678
+      },
+      "final_s": {
+        "p50": 0.057,
+        "p95": 0.0874,
+        "p99": 0.1034
+      },
+      "send_lag_max_s": 0.02,
+      "wer_strict_pct": 4.793,
+      "offline_wer_strict_pct": 3.969,
+      "probes": {
+        "samples": 430,
+        "util_mean_pct": 83.3,
+        "util_max_pct": 96.0,
+        "memory_used_max_mib": 5133.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "python",
+            "memory_mib": 3678.0
+          }
+        ]
+      },
+      "within_threshold": true,
+      "wall_s": 215.0
+    },
+    {
+      "n": 32,
+      "utterances": 330,
+      "completed": 329,
+      "errors": 1,
+      "drops": 1,
+      "error_kinds": [
+        "no transcription.done within 30 s"
+      ],
+      "audio_s": 3525.5,
+      "ttfp_s": {
+        "p50": 3.176,
+        "p95": 6.8829,
+        "p99": 9.7538
+      },
+      "final_s": {
+        "p50": 6.459,
+        "p95": 13.793,
+        "p99": 18.0798
+      },
+      "send_lag_max_s": 0.0207,
+      "wer_strict_pct": 5.426,
+      "offline_wer_strict_pct": 3.693,
+      "probes": {
+        "samples": 391,
+        "util_mean_pct": 73.4,
+        "util_max_pct": 100.0,
+        "memory_used_max_mib": 5371.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "python",
+            "memory_mib": 3916.0
+          }
+        ]
+      },
+      "within_threshold": false,
+      "wall_s": 195.5
+    },
+    {
+      "n": 64,
+      "utterances": 443,
+      "completed": 432,
+      "errors": 11,
+      "drops": 11,
+      "error_kinds": [
+        "no transcription.done within 30 s"
+      ],
+      "audio_s": 4613.9,
+      "ttfp_s": {
+        "p50": 4.2073,
+        "p95": 9.3616,
+        "p99": 12.2177
+      },
+      "final_s": {
+        "p50": 11.7868,
+        "p95": 25.4276,
+        "p99": 28.1883
+      },
+      "send_lag_max_s": 0.0051,
+      "wer_strict_pct": 5.465,
+      "offline_wer_strict_pct": 4.12,
+      "probes": {
+        "samples": 398,
+        "util_mean_pct": 94.8,
+        "util_max_pct": 100.0,
+        "memory_used_max_mib": 5959.0,
+        "apps": [
+          {
+            "process": "text-embeddings-router",
+            "memory_mib": 1426.0
+          },
+          {
+            "process": "python",
+            "memory_mib": 4428.0
+          }
+        ]
+      },
+      "within_threshold": false,
+      "wall_s": 198.9
+    }
+  ],
+  "max_n_within_threshold": 16,
+  "stopped_because": "one step recorded beyond the first step over the rule",
+  "warmup": {
+    "sample_id": "fleurs-208",
+    "final_s": 0.037374907988123596
+  },
+  "finished_utc": "2026-11-09T20:19:37+00:00",
+  "output_format": "nemotron-locale-tags"
+}
