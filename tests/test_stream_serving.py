@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import sys
 import tomllib
 from pathlib import Path
@@ -395,16 +396,18 @@ def test_variant_resolution_never_shadows_the_published_recipe():
 
 
 def test_buffered_contexts_are_whole_encoder_frames_and_chunk_ms_is_the_chunk():
-    # The server sets the chunked attention masks in 80 ms encoder frames and
-    # NeMo's buffered pipeline rounds every context UP to whole frames: a
-    # context that is no whole frame would silently serve another setting.
+    # The server sets the chunked attention masks in round(seconds / 80 ms)
+    # encoder frames; NeMo's BufferedRNNTPipeline sizes its buffer with
+    # math.ceil(seconds / model_stride) and, stateful, snaps every context to
+    # that. The two must agree in floating point: 0.56 / 0.08 is
+    # 7.000000000000001, which NeMo serves as 8 frames (0.64 s) — the server
+    # refused such a recipe at startup in the 2026-11-10 preflight.
     streams, _ = streaming.load_streams()
     for sid, s in streams.items():
         if s.get("pipeline") != "buffered":
             continue
         for key in ("left_context_s", "chunk_s", "right_context_s"):
-            frames = s[key] / 0.08
-            assert abs(frames - round(frames)) < 1e-6, (sid, key)
+            assert math.ceil(s[key] / 0.08) == round(s[key] / 0.08), (sid, key)
         assert round(s["chunk_s"] * 1000) == s["chunk_ms"], sid
         assert s["left_context_s"] >= 2.0, sid  # the card: not below 2 s
 
