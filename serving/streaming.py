@@ -47,9 +47,12 @@ PROTOCOL_KEYS: dict[str, frozenset[str]] = {
     # The vendor runtime: its own package, model files and precision, on the
     # device it ships for. Nothing of the base recipe's engine is used; the base
     # names the checkpoint the vendor build was exported from.
+    # How the sessions share it (moonshine/stream_server.py): one Transcriber
+    # or one per live session, and ONNX Runtime's thread pools as the vendor
+    # leaves them or single-threaded sessions.
     "moonshine-voice": frozenset({
         "runtime", "device", "model_url", "model_arch", "update_interval_s",
-        "precision", "files",
+        "precision", "files", "transcribers", "ort_threads",
     }),
 }
 PROTOCOL_REQUIRED: dict[str, frozenset[str]] = {
@@ -66,6 +69,8 @@ PROTOCOL_ENGINE = {"vllm-realtime": "vllm", "nemo-pipeline": "nemo",
                    "moonshine-voice": "transformers"}
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 MATMUL = frozenset({"highest", "high", "medium"})
+MOONSHINE_TRANSCRIBERS = frozenset({"shared", "per_stream"})
+MOONSHINE_ORT_THREADS = frozenset({"vendor", "single"})
 
 
 def _problem(sid: str, s: dict[str, Any], recipes: dict[str, dict[str, Any]]) -> str:
@@ -132,6 +137,10 @@ def _moonshine_problem(s: dict[str, Any]) -> str:
         return "precision needs weights, activations, scheme and checkpoint"
     if prec["checkpoint"].get("source") != "vendor" or prec["checkpoint"].get("url") != s["model_url"]:
         return "precision.checkpoint must name the vendor build at model_url"
+    if s["transcribers"] not in MOONSHINE_TRANSCRIBERS:
+        return f"transcribers must be one of {sorted(MOONSHINE_TRANSCRIBERS)}"
+    if s["ort_threads"] not in MOONSHINE_ORT_THREADS:
+        return f"ort_threads must be one of {sorted(MOONSHINE_ORT_THREADS)}"
     return ""
 
 
