@@ -339,3 +339,10 @@ def test_ctc_word_times_come_from_the_frames_the_labels_fire_on():
                                lambda ids: "".join(spell[i] for i in ids), 0.08)
     assert words == [{"word": "hallo", "start": 0.08, "end": 0.4},
                      {"word": "welt", "start": 0.56, "end": 0.8}]
+
+
+def test_words_on_silence_count_as_a_runaway_answer():
+    ref = "guten morgen meine damen und herren"
+    answers = [sc.Answer(0, 0.0, 5.0, ref), sc.Answer(1, 50.0, 55.0, "applaus applaus danke schön")]
+    s = sc.score_recording(ref, answers)
+    assert s["runaway_answers"]["n"] == 1 and s["insertions"] == 4
