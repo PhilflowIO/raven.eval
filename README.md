@@ -237,6 +237,10 @@ is in [`CHANGELOG.md`](./CHANGELOG.md).
   the pinned `pyannote-community-1` diarizer → score DER at both collars → gold/hyp
   RTTMs. Heavy deps behind the `diar` extra. Optional `make dscore-check` cross-checks
   against `nryant/dscore`.
+- **`serving/`** — the pinned serving recipes every self-hosted number ran under
+  (`recipes.toml`, `streaming.toml`). `serving/quantize/` builds our own quantized
+  checkpoints; the one in the published tables is
+  [PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16](https://huggingface.co/PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16).
 - **`artifacts/`** — the committed proof: per-file references + hypotheses +
   `expected.json` for every published number, re-scored by `make verify`.
 - **`scripts/verify.py`** — the Tier-1 re-scorer. Checks `artifacts/SHA256SUMS`

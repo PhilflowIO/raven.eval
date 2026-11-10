@@ -777,7 +777,10 @@ ARTIFACT=<quantized> COMPARE=<control>`, 10,000 resamples):
 
 The Raven benchmark page scores with its own strict-de lens and shows the same
 comparison as +0.01 pp [−0.05, +0.07] and +0.07 pp [−0.04, +0.20]; both lenses
-say the same thing. The Nemotron W8A16 checkpoint is our own quantization. A
+say the same thing. The Nemotron W8A16 checkpoint is our own quantization,
+published at
+[PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16](https://huggingface.co/PhilflowIO/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-W8A16)
+(built by `serving/quantize/nemotron_transcribe_w8a16.py`). A
 first bf16 control of Nemotron returned 110.7 % WER because offloaded Mamba
 layers convolved with unloaded memory (#101, fixed in #103); it was discarded and
 re-measured, and is not among the artifacts.
