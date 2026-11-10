@@ -195,3 +195,18 @@ transcribers = "per_stream"
 ort_threads = "single"
 latency = "vendor default: transcript update every 0.5 s of input, ~80 ms encoder lookahead"
 notes = "Tuned serving of the published recipe moonshine-streaming-small-de: same package, files, precision, update interval and chunking, so the same model output per pass; only how the live sessions share the CPU changes. transcribers = per_stream: one Transcriber per live session (a pool, reused across utterances), because moonshine-voice 0.1.6 keeps one decode state per Transcriber and serializes every stream's pass under one mutex, resetting the state and re-encoding the segment whenever the pass belongs to another segment than the last (core/transcriber.cpp, transcribe_segment_with_streaming_model). ort_threads = single: the library's MOONSHINE_ORT_SINGLE_THREAD switch (intra- and inter-op 1, sequential), because on Linux the library keeps ONNX Runtime's default pools, one spin-waiting thread per physical core in each of a Transcriber's five sessions; with one Transcriber per session the default would oversubscribe the cores N times over. Measured on a Threadripper PRO 3955WX (2026-11-10, free-running probe): vendor default 4.3 CPU-s per audio-s at one stream and no throughput gain with more streams; this configuration 0.40 CPU-s per audio-s and linear scaling to the 16 cores (issue #126). https://huggingface.co/moonshine-ai/moonshine-streaming-small-de"
+
+[streams."nvidia-nemotron-labs-unified-asr-0.6b-tf32-chunk032"]
+base = "nvidia-nemotron-labs-unified-asr-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "buffered"
+left_context_s = 5.6
+chunk_s = 0.32
+right_context_s = 0.24
+chunk_ms = 320
+lang = "de"
+batch_size = 128
+matmul_precision = "high"
+gpu_mem = 0.85
+latency = "left 5.6 s / chunk 0.32 s / right 0.24 s: 0.56 s latency, buffered; TF32 matmuls"
+notes = "Combination of the levers measured on 2026-11-10 (raven.eval#119), one per bottleneck: TF32 matmuls cut the GPU's encoder time at no accuracy cost (the -tf32 variant: transcripts identical to the card config on all 840 paired utterances), and the 0.56 s latency split as chunk 0.32 s + right 0.24 s halves the pipeline steps per second of audio, which is what the single stepping thread spends its time on (the -chunk032 variant, +0.3 pp WER on the same 840 utterances, as much as cutting the left context to 3.04 s). The card's full 5.6 s left context. fp32 weights and activations as published. The card allows the split: 'other combinations of left context, chunk and right context can be chosen depending on the application'. https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"

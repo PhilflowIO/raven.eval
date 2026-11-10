@@ -75,18 +75,20 @@ class Sampler:
     def _run(self) -> None:
         client = httpx.Client(timeout=2.0) if (self.metrics_url or self.stats_url) else None
         prev = cpu_times()
-        prev_proc = {name: _group_cpu_s(pids()) for name, pids in self.processes.items()}
-        prev_t = time.monotonic()
+        # The first pass only takes the baseline: a delta over the microseconds
+        # between start and the first pass turns one clock tick into 10^5 %.
+        prev_proc: dict[str, dict[str, float]] | None = None
+        prev_t = 0.0
         while not self._stop.is_set():
             t = time.monotonic()
-            if self.processes and t > prev_t:
-                for name, pids in self.processes.items():
-                    cur_proc = _group_cpu_s(pids())
-                    pct = group_cpu_pct(prev_proc[name], cur_proc, t - prev_t)
-                    if pct is not None:
-                        self.proc_cpu[name].append(pct)
-                    prev_proc[name] = cur_proc
-                prev_t = t
+            if self.processes:
+                cur_procs = {name: _group_cpu_s(pids()) for name, pids in self.processes.items()}
+                if prev_proc is not None and t > prev_t:
+                    for name, cur_proc in cur_procs.items():
+                        pct = group_cpu_pct(prev_proc[name], cur_proc, t - prev_t)
+                        if pct is not None:
+                            self.proc_cpu[name].append(pct)
+                prev_proc, prev_t = cur_procs, t
             try:
                 out = subprocess.run(
                     ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used",
