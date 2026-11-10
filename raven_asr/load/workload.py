@@ -8,8 +8,10 @@ production's ffmpeg call (raven_asr.load.vad.decode_and_detect), runs
 silencedetect in the same pass, and caches under ``<cache>/<id>/``:
 
   source.wav   the decoded working copy (never leaves the host; not committed)
-  plan.json    silences, speech islands, both workloads' blocks, which path
-               production would take, and the sha256 of the source file
+  plan.json    silences, speech islands, both workloads' blocks (VAD blocks with
+               islands over 30 s split at their quietest instant — see
+               raven_asr.load.vad), what the unsplit VAD plan would have sent,
+               which path production would take, the sha256 of the source file
 
 A request's audio is the spliced PCM of its block, framed as a 16 kHz mono
 PCM16 WAV in memory (:meth:`Prepared.wav_bytes`) — the bytes production uploads.
@@ -139,7 +141,8 @@ def prepare(rec: Recording, cache: Path) -> Prepared:
     params = {"noise_floor_db": vad.NOISE_FLOOR_DB, "min_silence_s": vad.MIN_SILENCE_S,
               "pad_s": vad.PAD_S, "min_island_s": vad.MIN_ISLAND_S,
               "merge_gap_s": vad.MERGE_GAP_S, "max_block_s": vad.MAX_BLOCK_S,
-              "window_s": vad.WINDOW_S, "window_leeway": vad.WINDOW_LEEWAY}
+              "window_s": vad.WINDOW_S, "window_leeway": vad.WINDOW_LEEWAY,
+              "split_long_islands_s": vad.MAX_BLOCK_S, "quiet_window_s": vad.QUIET_WINDOW_S}
     if plan_path.exists() and wav.exists():
         plan = json.loads(plan_path.read_text())
         if plan.get("source_sha256") == src_sha and plan.get("params") == params:
@@ -151,6 +154,10 @@ def prepare(rec: Recording, cache: Path) -> Prepared:
     silences = vad.parse_silence_log(stderr, duration)
     islands = vad.build_speech_islands(silences, duration)
     speech = sum(e - s for s, e in islands)
+    off, _ = wav_data_offset(wav)
+    pcm = np.memmap(wav, dtype="<i2", mode="r", offset=off, shape=(total_frames,))
+    vad_split = vad.vad_blocks(islands, total_frames,
+                               cut_at=lambda lo, hi: vad.quietest_instant(pcm, lo, hi))
     plan = {
         "schema": PLAN_SCHEMA,
         "recording": rec.rid,
@@ -163,8 +170,9 @@ def prepare(rec: Recording, cache: Path) -> Prepared:
         "production_path": vad.production_path(duration, islands),
         "n_silences": len(silences),
         "islands": islands,
+        "vad_unsplit": vad.unsplit_stats(islands),
         "workloads": {
-            "vad": [b.as_json() for b in vad.vad_blocks(islands, total_frames)],
+            "vad": [b.as_json() for b in vad_split],
             "window": [b.as_json() for b in vad.window_blocks(duration, silences, total_frames)],
         },
     }

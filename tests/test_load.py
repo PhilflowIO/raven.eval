@@ -93,6 +93,24 @@ def test_production_path_follows_the_density_and_length_guards():
     assert vad.production_path(600.0, [(0.0, 100.0)]) == "vad"
 
 
+def test_long_islands_are_split_in_the_second_half_of_the_ceiling():
+    # 70 s island, ceiling 30: cuts searched in [15, 30], then [cut+15, cut+30].
+    pieces = vad.split_long_islands([(0.0, 70.0)], max_seconds=30.0, cut_at=lambda lo, hi: lo + 1)
+    assert pieces == [(0.0, 16.0), (16.0, 32.0), (32.0, 48.0), (48.0, 70.0)]
+    # A cut_at answer outside the window is clamped into it.
+    assert vad.split_long_islands([(0.0, 40.0)], max_seconds=30.0, cut_at=lambda lo, hi: 99.0) == [
+        (0.0, 30.0), (30.0, 40.0)]
+
+
+def test_quietest_instant_finds_the_pause():
+    import numpy as np
+
+    pcm = np.full(16000 * 4, 8000, dtype=np.int16)
+    pcm[int(2.5 * 16000):int(2.6 * 16000)] = 0  # a 100 ms breath at 2.5 s
+    t = vad.quietest_instant(pcm, 2.0, 3.0)
+    assert 2.5 <= t <= 2.6
+
+
 def test_vad_blocks_carry_their_own_time_map():
     islands = [(0.0, 20.0), (30.0, 45.0)]
     blocks = vad.vad_blocks(islands, total_frames=16000 * 60)

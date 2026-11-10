@@ -20,10 +20,21 @@ LiveKit egress track per speaker. Before upload a track goes one of two ways:
 
 Both are reproduced here as pure functions over the silence list, so a load test
 can send exactly the request shapes production sends. The functions mirror the
-production ones line for line; where this module differs it says so. Parliament
-recordings are dense, so production would send them whole — the harness
-prepares BOTH shapes from every recording and records which one production
-would have picked (:func:`production_path`).
+production ones line for line; where this module differs it says so.
+
+Long islands. On a sparse track (a listener's microphone) silencedetect finds
+a pause every few seconds and blocks come out ≤ 30 s. A dense recording at
+−40 dB does not: measured on the five parliament recordings (2026-11-10), the
+speech ratio is 0.92-0.99 and single islands run up to 33 minutes, because the
+room never falls below the floor. Production would send such a track whole
+(:func:`production_path`), so the VAD path never meets those islands. To still
+measure the short-block request shape on real speech, the ``vad`` workload
+splits islands longer than the 30 s block ceiling at their quietest 50 ms
+instant — production's own ``split_long_islands`` and ``_quietest_instant``
+(``_vad.py``, the bounded planner, #9336) with the Parakeet block ceiling as
+ceiling — before ``plan_blocks``. Every block then carries ≤ 30 s of speech cut
+in a breath, the shape a sparse track's blocks have. What the unsplit plan
+would have sent is recorded next to it (:func:`unsplit_stats`).
 """
 
 from __future__ import annotations
@@ -31,7 +42,7 @@ from __future__ import annotations
 import math
 import re
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 #: flow.raven api/app/config.py, stt_vad_* (master 2026-11-09).
@@ -111,6 +122,67 @@ def build_speech_islands(
         else:
             merged.append((start, end))
     return [(s, e) for s, e in merged if e - s >= min_island]
+
+
+def split_long_islands(
+    islands: Sequence[tuple[float, float]],
+    *,
+    max_seconds: float = MAX_BLOCK_S,
+    cut_at: Callable[[float, float], float],
+) -> list[tuple[float, float]]:
+    """Split every island longer than ``max_seconds`` into abutting pieces (_vad.py, same name).
+
+    ``cut_at(lo, hi)`` picks the cut inside the second half of the allowed
+    length, so no piece is shorter than half the ceiling unless it is the
+    island's remainder.
+    """
+    if max_seconds <= 0:
+        raise ValueError("max_seconds must be positive")
+    pieces: list[tuple[float, float]] = []
+    for start, end in islands:
+        cursor = start
+        while end - cursor > max_seconds:
+            lo = cursor + max_seconds / 2
+            hi = cursor + max_seconds
+            cut = min(hi, max(lo, cut_at(lo, hi)))
+            pieces.append((cursor, cut))
+            cursor = cut
+        if end > cursor:
+            pieces.append((cursor, end))
+    return pieces
+
+
+#: _vad.py _QUIET_WINDOW_SECONDS: short enough to land between two words.
+QUIET_WINDOW_S = 0.05
+
+
+def quietest_instant(pcm, lo: float, hi: float, rate: int = SAMPLE_RATE) -> float:
+    """Centre of the lowest-energy 50 ms window in ``[lo, hi]`` (_vad.py ``_quietest_instant``).
+
+    ``pcm`` is the decoded mono int16 signal. Non-overlapping windows from
+    ``lo``, as in production; a stretch shorter than one window answers ``hi``.
+    """
+    import numpy as np
+
+    first = max(0, math.floor(lo * rate))
+    last = min(len(pcm), math.floor(hi * rate))
+    window = max(1, int(QUIET_WINDOW_S * rate))
+    if last - first < window:
+        return hi
+    x = np.asarray(pcm[first:last], dtype=np.int64)
+    n = (len(x) // window) * window
+    energy = (x[:n].reshape(-1, window) ** 2).sum(axis=1)
+    best = int(np.argmin(energy))
+    return (first + best * window + window / 2) / rate
+
+
+def unsplit_stats(islands: Sequence[tuple[float, float]], max_seconds: float = MAX_BLOCK_S) -> dict:
+    """What production's unsplit VAD plan would have sent: islands over the ceiling."""
+    long = [e - s for s, e in islands if e - s > max_seconds]
+    speech = sum(e - s for s, e in islands)
+    return {"islands": len(islands), "islands_over_ceiling": len(long),
+            "speech_share_in_long_islands": round(sum(long) / speech, 4) if speech else 0.0,
+            "longest_island_s": round(max((e - s for s, e in islands), default=0.0), 1)}
 
 
 def plan_blocks(
@@ -311,8 +383,15 @@ class Block:
                    tuple(tuple(p) for p in d["pieces"]))  # type: ignore[arg-type]
 
 
-def vad_blocks(islands: Sequence[tuple[float, float]], total_frames: int) -> list[Block]:
-    """Production's VAD blocks of one track (no density guard: see the module doc)."""
+def vad_blocks(islands: Sequence[tuple[float, float]], total_frames: int,
+               cut_at: Callable[[float, float], float] | None = None) -> list[Block]:
+    """Production's VAD blocks of one track (no density guard: see the module doc).
+
+    With ``cut_at`` (the quietest-instant search), islands over the 30 s ceiling
+    are split first (:func:`split_long_islands`); without it they stay whole.
+    """
+    if cut_at is not None:
+        islands = split_long_islands(islands, max_seconds=MAX_BLOCK_S, cut_at=cut_at)
     out: list[Block] = []
     for planned in plan_blocks(islands):
         ranges, pieces = block_pieces(planned, total_frames)
