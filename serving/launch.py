@@ -298,6 +298,11 @@ def build_stream(
         return argv, extra
     host = _knob(env, "RAVEN_SERVE_HOST", DEFAULT_HOST)
     port = _knob(env, "RAVEN_SERVE_PORT", DEFAULT_PORT)
+    if s["protocol"] == "moonshine-voice":
+        # The server fetches and checks the vendor's files itself (streaming.toml).
+        return ([python, "-m", "uvicorn", "stream_server:app", "--app-dir",
+                 str(SERVING_DIR / "moonshine"), "--host", host, "--port", port],
+                {"RAVEN_STREAM_RECIPE": sid})
     extra = {
         "RAVEN_SERVING_RECIPE": s["base"],
         "RAVEN_STREAM_RECIPE": sid,
@@ -341,9 +346,10 @@ def _main_streaming(args: argparse.Namespace, recipes: dict[str, dict[str, Any]]
         return 0
     served = streaming.served_recipe(sid, streams, recipes)
     try:
-        _gpus(env, served["precision"]["tensor_parallel"])
+        if s.get("device", "cuda") != "cpu":
+            _gpus(env, served["precision"]["tensor_parallel"])
         _disk_floor(served, env)
-        snapshot, checkpoint = _fetch(served)
+        snapshot, checkpoint = (None, None) if s["protocol"] == "moonshine-voice" else _fetch(served)
     except LaunchError as exc:
         print(f"[launch] refusing {sid}: {exc}", file=sys.stderr)
         return 1

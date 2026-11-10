@@ -130,15 +130,19 @@ def _f(v, fmt: str = "{:.2f}") -> str:
 
 
 def render_table(curve: dict) -> str:
-    """The short Markdown table of one curve."""
+    """The short Markdown table of one curve (CPU columns for a CPU curve)."""
+    cpu = curve.get("device") == "cpu"
+    prec = curve.get("precision") or {}
     lines = [
         f"### {curve['model']} — live capacity",
         "",
         (f"{curve['latency']}; chunk {curve['chunk_ms']} ms; {curve['hardware_label']}; "
+         f"{'CPU' if cpu else 'GPU'}, weights {prec.get('weights', '?')}; "
          f"threshold p95 final ≤ {curve['params']['threshold_s']} s"),
         "",
         ("| N | p50 final s | p95 final s | p99 final s | p95 first partial s | errors | drops "
-         "| WER stream % | WER offline % | GPU util mean % | VRAM max MiB |"),
+         + ("| WER stream % | WER offline % | CPU util mean % | server RSS max MiB |"
+            if cpu else "| WER stream % | WER offline % | GPU util mean % | VRAM max MiB |")),
         "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for s in curve["steps"]:
@@ -147,8 +151,8 @@ def render_table(curve: dict) -> str:
             f"| {s['n']} | {_f(s['final_s']['p50'])} | {_f(s['final_s']['p95'])} "
             f"| {_f(s['final_s']['p99'])} | {_f(s['ttfp_s']['p95'])} | {s['errors']} "
             f"| {s['drops']} | {_f(s['wer_strict_pct'])} | {_f(s['offline_wer_strict_pct'])} "
-            f"| {_f(p.get('util_mean_pct'), '{:.0f}')} "
-            f"| {_f(p.get('memory_used_max_mib'), '{:.0f}')} |"
+            f"| {_f(p.get('cpu_util_mean_pct' if cpu else 'util_mean_pct'), '{:.0f}')} "
+            f"| {_f(p.get('server_rss_max_mib' if cpu else 'memory_used_max_mib'), '{:.0f}')} |"
         )
     best = curve["max_n_within_threshold"] or "none"
     lines += ["", (f"Max N with p95 final ≤ {curve['params']['threshold_s']} s and no errors: "

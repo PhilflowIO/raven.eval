@@ -37,7 +37,8 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   and add each model's documented streaming mode at one latency class (~0.5 s);
   `serving/nemo/stream_server.py` serves the NeMo models live over vLLM's
   realtime websocket protocol through NeMo's own streaming pipeline.
-  moonshine-streaming-small-de is skipped with its reason on record.
+  moonshine-streaming-small-de streams through the vendor's own runtime
+  (`moonshine-voice`, int8, CPU only; #114), its curve labelled CPU and int8.
 
 ### Changed
 - **The Nemotron prompt models' locale tag is not scored inside a transcript

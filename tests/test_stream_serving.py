@@ -34,8 +34,9 @@ def test_streaming_toml_loads_and_names_its_skips():
         "voxtral-mini-4b-realtime-2602",
         "nvidia-nemotron-3.5-asr-streaming-0.6b",
         "nvidia-nemotron-labs-unified-asr-0.6b",
+        "moonshine-streaming-small-de",
     }
-    assert "moonshine-streaming-small-de" in skipped
+    assert skipped == {}
     for sid in streams:
         assert len(streaming.stream_sha256(sid)) == 64
 
@@ -261,3 +262,109 @@ def test_streaming_toml_is_valid_toml_with_card_urls():
     data = tomllib.loads((SERVING / "streaming.toml").read_text())
     for sid, s in data["streams"].items():
         assert "https://huggingface.co/" in s["notes"], sid
+
+
+# ── moonshine-voice (vendor runtime) ────────────────────────────────────────
+
+
+def test_moonshine_recipe_pins_runtime_files_precision_and_device():
+    streams, _ = streaming.load_streams()
+    m = streams["moonshine-streaming-small-de"]
+    assert m["runtime"] == "moonshine-voice==0.1.6"
+    assert m["device"] == "cpu" and m["precision"]["weights"] == "int8"
+    assert len(m["files"]) == 8
+    req = (SERVING / "moonshine" / "requirements.txt").read_text()
+    assert m["runtime"] in req
+
+
+@pytest.mark.parametrize("edit, msg", [
+    (('runtime = "moonshine-voice==0.1.6"', 'runtime = "moonshine-voice"'), "pin"),
+    (('"adapter.ort" = "be43', '"adapter.ort" = "zz43'), "sha256"),
+    (('device = "cpu"', 'device = "tpu"'), "device"),
+    (('update_interval_s = 0.5\n', ''), "needs"),
+])
+def test_moonshine_recipe_rejects(tmp_path, edit, msg):
+    text = (SERVING / "streaming.toml").read_text()
+    assert edit[0] in text
+    with pytest.raises(recipe.RecipeError, match=msg):
+        _load(tmp_path, text.replace(*edit, 1))
+
+
+def test_launch_moonshine_runs_its_own_server_without_a_gpu():
+    recipes = recipe.load_recipes()
+    streams, _ = streaming.load_streams(recipes=recipes)
+    sid = "moonshine-streaming-small-de"
+    argv, env = launch.build_stream(sid, streams, recipes, {}, python="/p")
+    assert argv[:4] == ["/p", "-m", "uvicorn", "stream_server:app"]
+    assert argv[argv.index("--app-dir") + 1].endswith("serving/moonshine")
+    assert env == {"RAVEN_STREAM_RECIPE": sid}
+    served = streaming.served_recipe(sid, streams, recipes)
+    assert served["precision"]["weights"] == "int8"  # the vendor build, not the base fp32
+
+
+class FakeMoonshineStream:
+    """Completes a line every 3 chunks, like a VAD pause; partial on every chunk."""
+
+    def __init__(self, on_partial, on_line):
+        self.on_partial, self.on_line, self.n, self.closed = on_partial, on_line, 0, False
+
+    def add_audio(self, audio, sample_rate):
+        assert sample_rate == 16000 and isinstance(audio, list)
+        self.n += 1
+        self.on_partial(f"wort{self.n}")
+        if self.n % 3 == 0:
+            self.on_line(f"satz{self.n // 3}.")
+
+    def stop(self):
+        if self.n % 3:
+            self.on_line("rest.")
+
+    def close(self):
+        self.closed = True
+
+
+class FakeMoonshineEngine:
+    model = "moonshine-ai/fake"
+
+    def __init__(self):
+        self.streams = []
+
+    def open(self, on_partial, on_line):
+        s = FakeMoonshineStream(on_partial, on_line)
+        self.streams.append(s)
+        return s
+
+    def info(self):
+        return {"stream": {"id": "m", "sha256": "0" * 64}, "device": "cpu"}
+
+
+def test_moonshine_server_speaks_the_same_protocol():
+    sys.path.insert(0, str(SERVING / "moonshine"))
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "moonshine_stream_server", SERVING / "moonshine" / "stream_server.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    from fastapi.testclient import TestClient
+
+    eng = FakeMoonshineEngine()
+    with TestClient(mod.create_app(eng)) as client, \
+            client.websocket_connect("/v1/realtime") as ws:
+        assert json.loads(ws.receive_text())["type"] == "session.created"
+        ws.send_text(json.dumps({"type": "session.update", "model": "moonshine-ai/fake"}))
+        for _ in range(2):
+            ws.send_text(json.dumps({"type": "input_audio_buffer.commit"}))
+            for _ in range(4):
+                ws.send_text(json.dumps({"type": "input_audio_buffer.append", "audio": _pcm(0.1)}))
+            ws.send_text(json.dumps({"type": "input_audio_buffer.commit", "final": True}))
+            events = []
+            while True:
+                ev = json.loads(ws.receive_text())
+                events.append(ev)
+                if ev["type"] == "transcription.done":
+                    break
+            assert events[-1]["text"] == "satz1. rest."
+            assert any(e["type"] == "transcription.partial" for e in events)
+        assert client.get("/v1/stream/stats").json()["active_streams"] == 0
+    assert all(s.closed for s in eng.streams) and len(eng.streams) == 2
