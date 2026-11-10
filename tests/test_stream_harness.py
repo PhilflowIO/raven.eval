@@ -360,3 +360,17 @@ def test_threads_lists_this_process_and_its_threads():
         stop.set()
         t.join()
     assert threads(2**31 - 1) == []
+
+
+def test_sampler_measures_thread_cpu_over_whole_intervals_only():
+    import os
+    import time
+
+    from raven_asr.probes import Sampler, threads
+
+    with Sampler(interval_s=0.05, processes={"me": lambda: threads(os.getpid())}) as s:
+        end = time.monotonic() + 0.4
+        while time.monotonic() < end:  # one busy thread: at most ~100 % of one core
+            pass
+    vals = s.proc_cpu["me"]
+    assert vals and all(busiest <= 150.0 for _, busiest in vals)
