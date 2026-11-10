@@ -291,7 +291,7 @@ def render_score(res: dict) -> str:
     lines = [f"### {run.get('model', '?')} — long-form accuracy, {res['kind']} blocks", "",
              f"Lens: {res['lens']}. Windows of {sc.WINDOW_REF_WORDS} reference words.", "",
              ("| recording | min | WER % [95 %] | ins % | del % | hyp/ref | worst window % "
-              "| runaway win | dropout win | loops (ref) | runaway answers | failed |"),
+              "| runaway win | dropout win | loops (ref) | runaway answers | unanswered |"),
              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for rid, s in res["recordings"].items():
         ra = s["runaway_answers"] or {}
@@ -301,7 +301,7 @@ def render_score(res: dict) -> str:
             f"| {s['insertion_rate_pct']:.2f} | {s['deletion_rate_pct']:.2f} "
             f"| {s['hyp_over_ref']:.3f} | {s['worst_window_wer_pct']} | {s['runaway_windows']} "
             f"| {s['dropout_windows']} | {s['loop_count']} ({s['ref_loop_count']}) "
-            f"| {ra.get('n', '–')}/{ra.get('of', '–')} | {s['failed_answers'] + s['never_sent']} |")
+            f"| {ra.get('n', '–')}/{ra.get('of', '–')} | {s['failed_answers']} |")
     for name in ("corpus", "corpus_standard_german", "corpus_dialect"):
         c = res.get(name)
         if c:
