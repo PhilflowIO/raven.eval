@@ -1,0 +1,17 @@
+# Measuring-host environment for arms 0-4 and the Testset A builder
+# (python -m raven_asr.vad_ab). Not part of this repository's install: the
+# engines stay out of uv.lock, as the serving/ engines do. Versions are the ones
+# the 2026-11-11 run used (CPU wheels of torch from download.pytorch.org/whl/cpu).
+numpy==2.5.4
+soundfile==0.14.0
+soxr==1.1.0
+pyarrow==26.0.1
+onnxruntime==1.31.1
+silero-vad==6.2.3          # MIT; only its bundled ONNX file is used, our own I/O runs it
+fireredvad[cpu]==0.0.2     # Apache-2.0; weights FireRedTeam/FireRedVAD@7990aaccc6b7, VAD/
+kaldi-native-fbank==1.23.0
+kaldiio==2.18.1
+torch==2.15.0              # +cpu, FireRedVAD only
+webrtc-noise-gain==1.3.0   # WebRTC APM noise suppression for the browser chain
+# Forced alignment: Montreal Forced Aligner 3.4.1 with german_mfa (acoustic + dictionary),
+# run from its own container, not this environment.

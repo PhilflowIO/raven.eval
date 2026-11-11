@@ -1,0 +1,7 @@
+# Separate environment for arm 5 (NVIDIA Frame-VAD Multilingual MarbleNet v2.0,
+# NVIDIA Open Model License; weights nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0@9d25eb877d9e).
+# NeMo pins its own stack; keep it apart from the arms 0-4 environment.
+nemo_toolkit[asr]==3.0.0
+torch==2.15.0              # +cpu
+numpy==2.5.4
+soundfile==0.14.0
