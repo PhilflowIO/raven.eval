@@ -410,3 +410,156 @@ def window_blocks(duration: float, silences: Sequence[tuple[float, float]],
         if pieces:
             out.append(Block(len(out), ranges, pieces))
     return out
+
+
+# ── Second island source: frame decisions instead of the silencedetect log ──
+#
+# A speech detector that answers per frame (a neural VAD, a level threshold)
+# enters the same planner through its silences: runs of non-speech frames at
+# least ``MIN_SILENCE_S`` long. Everything after that — pad, merge, minimum
+# island, blocks — is the production code above, so two detectors differ only in
+# where they put the silences, never in how islands are built from them.
+
+
+def silences_from_mask(
+    speech: Sequence[bool], hop: float, *, min_silence: float = MIN_SILENCE_S
+) -> list[tuple[float, float]]:
+    """Runs of non-speech frames lasting at least ``min_silence`` → ``[(start, end), ...]``.
+
+    ``speech[i]`` covers ``[i*hop, (i+1)*hop)``. The silencedetect counterpart is
+    :func:`parse_silence_log`; feed either into :func:`build_speech_islands`.
+    """
+    import numpy as np
+
+    mask = np.asarray(speech, dtype=bool)
+    if mask.size == 0:
+        return []
+    quiet = np.concatenate(([False], ~mask, [False]))
+    edges = np.flatnonzero(np.diff(quiet.astype(np.int8)))
+    starts, ends = edges[0::2], edges[1::2]
+    # Compare in frames: (end-start)*hop >= min_silence with float hop drifts.
+    need = math.ceil(min_silence / hop - 1e-9)
+    return [(s * hop, e * hop) for s, e in zip(starts.tolist(), ends.tolist(), strict=True)
+            if e - s >= need]
+
+
+def silencedetect_silences(
+    samples, rate: int, *, noise_db: float = NOISE_FLOOR_DB, min_silence: float = MIN_SILENCE_S
+) -> list[tuple[float, float]]:
+    """ffmpeg ``silencedetect=noise=<dB>:d=<s>`` on mono PCM, without ffmpeg.
+
+    ``af_silencedetect`` counts consecutive samples whose magnitude is below the
+    noise amplitude; a run that reaches ``d`` seconds is a silence from its first
+    sample to the first louder sample (a run still open at the end is closed at
+    the end). ``samples`` are floats in [-1, 1] (int16 / 32768). This lets a
+    threshold sweep run without one ffmpeg decode per threshold; the parity with
+    :func:`decode_and_detect` at −40 dB is a test.
+    """
+    import numpy as np
+
+    x = np.abs(np.asarray(samples, dtype=np.float32))
+    amp = 10.0 ** (noise_db / 20.0)
+    duration = len(x) / rate
+    quiet = np.concatenate(([False], x < amp, [False]))
+    edges = np.flatnonzero(np.diff(quiet.astype(np.int8)))
+    starts, ends = edges[0::2], edges[1::2]
+    need = min_silence * rate
+    return [(s / rate, min(duration, e / rate))
+            for s, e in zip(starts.tolist(), ends.tolist(), strict=True) if e - s >= need]
+
+
+# ── Raven's per-track floor (the bounded path), ported for the A/B ──────────
+#
+# flow.raven api/app/providers/_vad.py: window_levels, adaptive_floor,
+# silences_from_levels and their constants (master 2026-11-11). Production runs
+# this only on the enclave's bounded path; the A/B puts it on the Parakeet path
+# as arm 1. ``window_levels`` here takes decoded samples instead of a WAV path.
+
+LEVEL_WINDOW_S = 0.05
+DIGITAL_SILENCE_DB = -90.0
+BOUNDED_NOISE_FLOOR_DB = -60.0
+BOUNDED_FLOOR_PERCENTILE = 10
+BOUNDED_FLOOR_MARGIN_DB = 8.0
+ROOM_PLATEAU_DB = 3.0
+ROOM_PLATEAU_MIN_SHARE = 0.4
+
+
+def window_levels(samples_int16, rate: int = SAMPLE_RATE, window: float = LEVEL_WINDOW_S) -> list[float]:
+    """dBFS of every ``window``-second stretch, in order (_vad.py ``window_levels``).
+
+    The last stretch may be shorter, as in production's ``readframes`` loop.
+    """
+    import numpy as np
+
+    x = np.asarray(samples_int16, dtype=np.float64)
+    frames = max(1, int(rate * window))
+    levels: list[float] = []
+    for start in range(0, len(x), frames):
+        chunk = x[start:start + frames]
+        energy = float(np.dot(chunk, chunk)) / max(1, len(chunk))
+        levels.append(DIGITAL_SILENCE_DB * 2 if energy <= 0
+                      else 10 * math.log10(energy / 32768.0**2))
+    return levels
+
+
+def _percentile(values: Sequence[float], pct: float) -> float:
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(pct / 100 * len(ordered)))]
+
+
+def adaptive_floor(levels: Sequence[float], *, lowest_db: float = BOUNDED_NOISE_FLOOR_DB,
+                   highest_db: float = NOISE_FLOOR_DB,
+                   margin_db: float = BOUNDED_FLOOR_MARGIN_DB) -> float:
+    """The level below which this track is room, not speech (_vad.py, same name).
+
+    10th percentile of the open-microphone windows plus ``margin_db``, held in
+    ``[lowest_db, highest_db]``; ``lowest_db`` when the track has no room plateau.
+    """
+    open_mic = [level for level in levels if level > DIGITAL_SILENCE_DB]
+    if not open_mic:
+        return lowest_db
+    room = _percentile(open_mic, BOUNDED_FLOOR_PERCENTILE)
+    plateau = sum(1 for level in open_mic if abs(level - room) <= ROOM_PLATEAU_DB)
+    if plateau / len(open_mic) < ROOM_PLATEAU_MIN_SHARE:
+        return lowest_db
+    return min(highest_db, max(lowest_db, room + margin_db))
+
+
+def silences_from_levels(levels: Sequence[float], floor_db: float, *, window: float = LEVEL_WINDOW_S,
+                         min_silence: float = MIN_SILENCE_S) -> list[tuple[float, float]]:
+    """Runs of windows below ``floor_db`` lasting at least ``min_silence`` (_vad.py, same name)."""
+    silences: list[tuple[float, float]] = []
+    start: int | None = None
+    for index, level in enumerate([*levels, float("inf")]):
+        if level < floor_db:
+            if start is None:
+                start = index
+            continue
+        if start is not None and (index - start) * window >= min_silence:
+            silences.append((start * window, min(index, len(levels)) * window))
+        start = None
+    return silences
+
+
+def adaptive_islands(levels: Sequence[float], duration: float, *,
+                     offset_db: float = 0.0) -> tuple[float, list[tuple[float, float]]]:
+    """Production's bounded-path islands of one track: ``(floor_db, islands)``.
+
+    ``_build_bounded_plan_sync`` up to the islands, including the fallback to
+    the lowest floor when nothing rose above the per-track floor but the
+    microphone was open. ``offset_db`` shifts the floor for a threshold sweep;
+    the fallback only applies at the production setting (``offset_db == 0``).
+    """
+    floor = adaptive_floor(levels) + offset_db
+
+    def at(f: float) -> list[tuple[float, float]]:
+        return build_speech_islands(silences_from_levels(levels, f), duration)
+
+    islands = at(floor)
+    lowest = BOUNDED_NOISE_FLOOR_DB
+    if (offset_db == 0.0 and not islands and floor > lowest
+            and any(level >= lowest for level in levels)):
+        fallback = at(lowest)
+        if fallback:
+            return lowest, fallback
+    return floor, islands
