@@ -152,24 +152,30 @@ def _slim(p: dict | None) -> dict | None:
                               "blocks_per_audio_h") if k in p}
 
 
-def crosstalk_ab(tracks: Sequence[dict], results: str, arm_name: str, threshold: float | None = None,
-                 *, read: Callable[[str], np.ndarray] = read_pcm16) -> dict:
-    """The winner with the cross-track flag off and on (Testset A, two tracks per meeting)."""
+def crosstalk_islands(tracks: Sequence[dict], results: str, arm_name: str, threshold: float | None = None,
+                      *, read: Callable[[dict], np.ndarray] = lambda t: read_pcm16(t["wav"])) -> dict[str, dict]:
+    """Per track: the arm's islands with the cross-track flag off and on, and the veto mask.
+
+    Partners are the other tracks of the same meeting; a partner's speech mask
+    is its own detector output at ``threshold`` (default: the arm's production
+    setting). ``read`` returns a track's PCM16 samples. Shared by the frame
+    A/B (:func:`crosstalk_ab`) and the word count (``deletions``), so both
+    measure the same islands. Returns ``{track id: {"n", "off", "on", "veto"}}``.
+    """
     arm = ARMS[arm_name]
     if arm.kind != "neural":
         raise ValueError("the cross-track flag is wired for frame-probability arms")
     thr = arm.default if threshold is None else threshold
-    ids = [t["id"] for t in tracks]
-    runs = load_arm(results, arm_name, ids)
     by_id = {t["id"]: t for t in tracks}
-    levels, masks = {}, {}
+    runs = load_arm(results, arm_name, list(by_id))
     from .frames import hysteresis
 
+    levels, masks = {}, {}
     for tid, r in runs.items():
         n = n_frames(r["duration_s"])
-        levels[tid] = xt.frame_levels(read(by_id[tid]["wav"]), n)
+        levels[tid] = xt.frame_levels(read(by_id[tid]), n)
         masks[tid] = hysteresis(r["score10"][:n], thr, arm.off(thr))
-    off, on = [], []
+    out: dict[str, dict] = {}
     for t in tracks:
         tid = t["id"]
         if tid not in runs:
@@ -180,11 +186,28 @@ def crosstalk_ab(tracks: Sequence[dict], results: str, arm_name: str, threshold:
                     if p["id"] != tid and p["meta"].get("meeting") == t["meta"].get("meeting")
                     and p["id"] in runs]
         v = xt.veto(levels[tid], partners)
-        isl_off = neural_islands(r["score10"][:n], arm, thr, r["duration_s"])
-        isl_on = neural_islands(r["score10"][:n], arm, thr, r["duration_s"], veto=v)
-        c_off, c_on = _counts_for(t, isl_off, n), _counts_for(t, isl_on, n)
+        out[tid] = {"n": n, "veto": v,
+                    "off": neural_islands(r["score10"][:n], arm, thr, r["duration_s"]),
+                    "on": neural_islands(r["score10"][:n], arm, thr, r["duration_s"], veto=v)}
+    return out
+
+
+def crosstalk_ab(tracks: Sequence[dict], results: str, arm_name: str, threshold: float | None = None,
+                 *, read: Callable[[str], np.ndarray] = read_pcm16) -> dict:
+    """The winner with the cross-track flag off and on (Testset A, two tracks per meeting)."""
+    arm = ARMS[arm_name]
+    thr = arm.default if threshold is None else threshold
+    isl = crosstalk_islands(tracks, results, arm_name, thr, read=lambda t: read(t["wav"]))
+    off, on = [], []
+    for t in tracks:
+        tid = t["id"]
+        if tid not in isl:
+            continue
+        x = isl[tid]
+        n = x["n"]
+        c_off, c_on = _counts_for(t, x["off"], n), _counts_for(t, x["on"], n)
         target, _ = _labels(t, n)
-        c_on["vetoed_target_s"] = float((v & target).sum()) * 0.01
+        c_on["vetoed_target_s"] = float((x["veto"] & target).sum()) * 0.01
         c_off["track"] = c_on["track"] = tid
         off.append(c_off)
         on.append(c_on)
