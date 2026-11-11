@@ -330,3 +330,55 @@ def test_deletion_scorer_blocks_and_reference():
                             {"role": "leak", "start_s": 1.0, "text": "fremd"},
                             {"role": "own", "start_s": 1.0, "text": "eins"}]}
     assert Dl.reference_text(track) == "eins zwei"
+
+
+def test_foreign_insertions_count_only_leaked_words_once_each():
+    from raven_asr.vad_ab import deletions as Dl
+
+    from raven_asr.load.score import align
+
+    ref = ["guten", "morgen"]
+    hyp = ["guten", "und", "und", "morgen", "zug", "quatsch"]
+    ops = align(ref, hyp)
+    # "und" leaked once: one of its two insertions is foreign; "zug" leaked; "quatsch" never said.
+    assert Dl.foreign_insertions(ops, hyp, ["und", "zug"]) == 2
+    assert Dl.foreign_insertions(ops, hyp, []) == 0
+    track = {"utterances": [{"role": "leak", "start_s": 2.0, "text": "b"},
+                            {"role": "own", "start_s": 0.0, "text": "x"},
+                            {"role": "leak", "start_s": 1.0, "text": "a"}]}
+    assert Dl.leaked_text(track) == "a b"
+
+
+def test_word_summary_reports_rates_per_level():
+    from raven_asr.vad_ab import deletions as Dl
+
+    def tr(level, ref, d, i, f):
+        return {"ref_words": ref, "delete": d, "insert": i, "foreign_insert": f, "substitute": 0,
+                "equal": ref - d, "blocks": 1, "failed_blocks": 0, "sent_s": 1.0, "level_dbfs": level}
+
+    s = Dl.summarise_words({"a": tr(-20.0, 100, 1, 10, 8), "b": tr(-55.0, 100, 9, 30, 20)})
+    assert s["deletion_pct"] == 5.0 and s["foreign_insertion_pct"] == 14.0
+    assert list(s["deletion_pct_by_level"]) == ["-20.0", "-55.0"]
+    assert s["foreign_insertion_pct_by_level"] == {"-20.0": 8.0, "-55.0": 20.0}
+
+
+def test_crosstalk_islands_flag_on_removes_the_leak_and_off_matches_the_arm(tmp_path):
+    """Two-track meeting: B's track carries A's voice 20 dB down. Flag on drops it; off is the plain arm."""
+    arm = A.ARMS["3-silero-0.3-norm"]
+    rng = np.random.default_rng(7)
+    dur, n = 6.0, 600
+    env = np.repeat(rng.uniform(0.2, 1.0, 60), RATE // 10)  # A's level moves every 100 ms
+    voice = env * np.sin(2 * np.pi * 220 * np.arange(env.size) / RATE)
+    pcm = {"a": (0.3 * voice * 32767).astype(np.int16),
+           "b": (0.03 * voice * 32767).astype(np.int16)}  # -20 dB, same envelope
+    speech = np.ones(n, np.float32)
+    (tmp_path / arm.name).mkdir()
+    tracks = []
+    for tid in ("a", "b"):
+        np.save(tmp_path / arm.name / f"{tid}.npy", speech)
+        (tmp_path / arm.name / f"{tid}.json").write_text(json.dumps({"duration_s": dur}))
+        tracks.append({"id": tid, "wav": f"{tid}.wav", "meta": {"meeting": "m"}})
+    isl = R.crosstalk_islands(tracks, str(tmp_path), arm.name, read=lambda t: pcm[t["id"]])
+    assert isl["a"]["on"] == isl["a"]["off"] == A.neural_islands(speech, arm, arm.default, dur)
+    assert isl["b"]["veto"][50:550].mean() > 0.9
+    assert isl["b"]["on"] == []
