@@ -317,3 +317,16 @@ def test_ffmpeg_silencedetect_cpu_is_measured(tmp_path):
     p = _speech_like_wav(tmp_path)
     assert A.ffmpeg_silencedetect_cpu(p) >= 0.0
     subprocess.run(["true"], check=True)
+
+
+def test_deletion_scorer_blocks_and_reference():
+    from raven_asr.vad_ab import deletions as Dl
+
+    pcm = np.arange(RATE * 10, dtype=np.int16)
+    blocks = Dl.block_wavs(pcm, [(1.0, 2.0), (3.0, 4.5)])
+    assert len(blocks) == 1 and blocks[0][1] == pytest.approx(2.5)
+    assert len(blocks[0][0]) == 44 + 2 * int(2.5 * RATE)
+    track = {"utterances": [{"role": "own", "start_s": 5.0, "text": "zwei"},
+                            {"role": "leak", "start_s": 1.0, "text": "fremd"},
+                            {"role": "own", "start_s": 1.0, "text": "eins"}]}
+    assert Dl.reference_text(track) == "eins zwei"
