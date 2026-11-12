@@ -233,6 +233,27 @@ def test_crosstalk_veto_flags_a_correlated_leak_but_not_a_real_overlap():
     assert v[320:580].mean() < 0.1
 
 
+def test_floor_guard_spares_a_quiet_track_and_leaves_a_loud_one_alone():
+    rng = np.random.default_rng(3)
+    env = -30 + 10 * np.sin(np.linspace(0, 20, 300)) + rng.normal(0, 1, 300)
+    partner = [(env, np.ones(300, bool))]
+    leak = env - 20                                   # p95 of the own mask ≈ -41 dBFS
+    own_speech = np.ones(300, bool)
+    plain = xt.veto(leak, partner)
+    assert plain[20:280].mean() > 0.9
+    assert np.array_equal(xt.veto(leak, partner, own_speech=own_speech, floor_db=-50.0), plain)
+    assert not xt.veto(leak, partner, own_speech=own_speech, floor_db=-35.0).any()
+    with pytest.raises(ValueError):
+        xt.veto(leak, partner, floor_db=-50.0)
+
+
+def test_own_speech_level_is_the_p95_inside_the_own_mask():
+    levels = np.concatenate([np.full(50, -80.0), np.linspace(-60, -40, 101)])
+    mask = np.concatenate([np.zeros(50, bool), np.ones(101, bool)])
+    assert xt.own_speech_level(levels, mask) == pytest.approx(-41.0)
+    assert xt.own_speech_level(levels, np.zeros(151, bool)) == xt._FLOOR_DB
+
+
 def test_rolling_corr_of_identical_series_is_one():
     a = np.sin(np.linspace(0, 10, 200))
     assert np.allclose(xt.rolling_corr(a, a, 21)[15:185], 1.0)
@@ -360,6 +381,18 @@ def test_word_summary_reports_rates_per_level():
     assert s["deletion_pct"] == 5.0 and s["foreign_insertion_pct"] == 14.0
     assert list(s["deletion_pct_by_level"]) == ["-20.0", "-55.0"]
     assert s["foreign_insertion_pct_by_level"] == {"-20.0": 8.0, "-55.0": 20.0}
+    assert s["recognised_pct"] == 95.0
+    assert s["recognised_pct_by_level"] == {"-20.0": 99.0, "-55.0": 91.0}
+
+
+def test_crosstalk_arm_names_parse_base_and_floor():
+    from raven_asr.vad_ab import deletions as Dl
+
+    assert Dl.parse_xt("3-silero-0.3-norm+xt") == ("3-silero-0.3-norm", None)
+    assert Dl.parse_xt("3-silero-0.3-norm+xt-f48") == ("3-silero-0.3-norm", -48.0)
+    assert Dl.parse_xt("3-silero-0.3-norm+xt-f47.5") == ("3-silero-0.3-norm", -47.5)
+    assert Dl.parse_xt("3-silero-0.3-norm") is None
+    assert Dl.parse_xt("oracle") is None
 
 
 def test_crosstalk_islands_flag_on_removes_the_leak_and_off_matches_the_arm(tmp_path):
@@ -382,3 +415,10 @@ def test_crosstalk_islands_flag_on_removes_the_leak_and_off_matches_the_arm(tmp_
     assert isl["a"]["on"] == isl["a"]["off"] == A.neural_islands(speech, arm, arm.default, dur)
     assert isl["b"]["veto"][50:550].mean() > 0.9
     assert isl["b"]["on"] == []
+    # floor guard: B's own speech level sits ~20 dB under A's; a floor between the two spares B only
+    gap = (isl["a"]["own_level_db"] + isl["b"]["own_level_db"]) / 2
+    guarded = R.crosstalk_islands(tracks, str(tmp_path), arm.name, read=lambda t: pcm[t["id"]], floor_db=gap)
+    assert not guarded["b"]["veto"].any() and guarded["b"]["on"] == guarded["b"]["off"]
+    assert guarded["a"]["on"] == isl["a"]["on"]
+    low = R.crosstalk_islands(tracks, str(tmp_path), arm.name, read=lambda t: pcm[t["id"]], floor_db=-90.0)
+    assert np.array_equal(low["b"]["veto"], isl["b"]["veto"])

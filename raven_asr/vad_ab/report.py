@@ -153,14 +153,18 @@ def _slim(p: dict | None) -> dict | None:
 
 
 def crosstalk_islands(tracks: Sequence[dict], results: str, arm_name: str, threshold: float | None = None,
-                      *, read: Callable[[dict], np.ndarray] = lambda t: read_pcm16(t["wav"])) -> dict[str, dict]:
+                      *, read: Callable[[dict], np.ndarray] = lambda t: read_pcm16(t["wav"]),
+                      floor_db: float | None = None) -> dict[str, dict]:
     """Per track: the arm's islands with the cross-track flag off and on, and the veto mask.
 
     Partners are the other tracks of the same meeting; a partner's speech mask
     is its own detector output at ``threshold`` (default: the arm's production
     setting). ``read`` returns a track's PCM16 samples. Shared by the frame
     A/B (:func:`crosstalk_ab`) and the word count (``deletions``), so both
-    measure the same islands. Returns ``{track id: {"n", "off", "on", "veto"}}``.
+    measure the same islands. ``floor_db`` turns on the floor guard
+    (:func:`raven_asr.vad_ab.crosstalk.veto`): levels are read from the raw
+    samples, so the normalisation gain never lifts a quiet track over the floor.
+    Returns ``{track id: {"n", "off", "on", "veto", "own_level_db"}}``.
     """
     arm = ARMS[arm_name]
     if arm.kind != "neural":
@@ -185,8 +189,8 @@ def crosstalk_islands(tracks: Sequence[dict], results: str, arm_name: str, thres
         partners = [(levels[p["id"]], masks[p["id"]]) for p in tracks
                     if p["id"] != tid and p["meta"].get("meeting") == t["meta"].get("meeting")
                     and p["id"] in runs]
-        v = xt.veto(levels[tid], partners)
-        out[tid] = {"n": n, "veto": v,
+        v = xt.veto(levels[tid], partners, own_speech=masks[tid], floor_db=floor_db)
+        out[tid] = {"n": n, "veto": v, "own_level_db": xt.own_speech_level(levels[tid], masks[tid]),
                     "off": neural_islands(r["score10"][:n], arm, thr, r["duration_s"]),
                     "on": neural_islands(r["score10"][:n], arm, thr, r["duration_s"], veto=v)}
     return out

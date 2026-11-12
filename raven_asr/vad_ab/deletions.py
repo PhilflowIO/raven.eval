@@ -12,10 +12,16 @@ the partner text leaked into this track are counted as foreign words. Arm
 ASR-only floor. ``<arm>+xt`` is the arm with the cross-track crosstalk flag
 on (:func:`raven_asr.vad_ab.report.crosstalk_islands`, partners from the same
 meeting) — the flag's word effect: own words it costs, foreign words it removes.
+``<arm>+xt-f<N>`` adds the floor guard at −N dBFS: a track whose own speech
+level is below it is not vetoed. Next to deletions the summary reports
+recognised own words (aligned equal): on a very quiet track a deletion can
+trade against a substitution, so deletions alone can move without any own word
+being lost.
 
     python -m raven_asr.vad_ab.deletions --manifest A/manifest.json --results R \
         --wav-dir A --arms oracle,0-silencedetect,3-silero-0.3-norm --url http://…/v1/audio/transcriptions --out D.json
     python -m raven_asr.vad_ab.deletions … --arms 3-silero-0.3-norm,3-silero-0.3-norm+xt --out X.json
+    python -m raven_asr.vad_ab.deletions … --arms 3-silero-0.3-norm+xt,3-silero-0.3-norm+xt-f48 --plan-only
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
@@ -38,8 +45,16 @@ from raven_asr.load.workload import wav_header
 from .arms import ARMS, read_pcm16
 from .frames import HOP, n_frames, to_grid
 
-#: Arm-name suffix for "this arm with the cross-track crosstalk flag on".
-XT_SUFFIX = "+xt"
+#: Crosstalk arm names: ``<base>+xt`` (flag on), ``<base>+xt-f<N>`` (flag on, floor guard at −N dBFS).
+_XT_ARM = re.compile(r"^(?P<base>.+)\+xt(?:-f(?P<floor>\d+(?:\.\d+)?))?$")
+
+
+def parse_xt(arm: str) -> tuple[str, float | None] | None:
+    """``"<base>+xt"`` → ``(base, None)``; ``"<base>+xt-f48"`` → ``(base, -48.0)``; other arms → ``None``."""
+    m = _XT_ARM.match(arm)
+    if not m:
+        return None
+    return m["base"], (-float(m["floor"]) if m["floor"] else None)
 
 
 def track_islands(track: dict, results: str, arm: str) -> list[tuple[float, float]]:
@@ -52,11 +67,14 @@ def track_islands(track: dict, results: str, arm: str) -> list[tuple[float, floa
 
 
 def flagged_islands(tracks: list[dict], results: str, arm: str, wav_dir: str) -> dict[str, list]:
-    """``<arm>+xt``: per track, the base arm's islands at its default with the crosstalk veto applied."""
+    """``<arm>+xt[-fN]``: per track, the base arm's islands at its default with the crosstalk veto applied."""
     from .report import crosstalk_islands
 
-    base = arm.removesuffix(XT_SUFFIX)
-    isl = crosstalk_islands(tracks, results, base,
+    parsed = parse_xt(arm)
+    if parsed is None:
+        raise ValueError(f"not a crosstalk arm: {arm}")
+    base, floor_db = parsed
+    isl = crosstalk_islands(tracks, results, base, floor_db=floor_db,
                             read=lambda t: read_pcm16(str(Path(wav_dir, Path(t["wav"]).name))))
     return {tid: x["on"] for tid, x in isl.items()}
 
@@ -107,8 +125,9 @@ def summarise_words(per_track: dict) -> dict:
     tot = {k: sum(v[k] for v in per_track.values()) for k in keys}
     by_level: dict = {}
     for v in per_track.values():
-        g = by_level.setdefault(str(v["level_dbfs"]), {"ref": 0, "delete": 0, "insert": 0, "foreign_insert": 0})
-        for k in ("delete", "insert", "foreign_insert"):
+        g = by_level.setdefault(str(v["level_dbfs"]),
+                                {"ref": 0, "delete": 0, "insert": 0, "foreign_insert": 0, "equal": 0})
+        for k in ("delete", "insert", "foreign_insert", "equal"):
             g[k] += v[k]
         g["ref"] += v["ref_words"]
 
@@ -122,9 +141,11 @@ def summarise_words(per_track: dict) -> dict:
         "insertion_pct": pct(tot["insert"], ref),
         "foreign_insertion_pct": pct(tot["foreign_insert"], ref),
         "wer_pct": pct(tot["delete"] + tot["insert"] + tot["substitute"], ref),
+        "recognised_pct": pct(tot["equal"], ref),
         "deletion_pct_by_level": {k: pct(g["delete"], g["ref"]) for k, g in levels},
         "insertion_pct_by_level": {k: pct(g["insert"], g["ref"]) for k, g in levels},
         "foreign_insertion_pct_by_level": {k: pct(g["foreign_insert"], g["ref"]) for k, g in levels},
+        "recognised_pct_by_level": {k: pct(g["equal"], g["ref"]) for k, g in levels},
         "per_track": per_track,
     }
 
@@ -133,7 +154,7 @@ def plan(tracks: list[dict], a: argparse.Namespace) -> dict:
     """No server: per arm the blocks and seconds a run would send (readiness check, GPU-time estimate)."""
     out: dict = {"arms": {}}
     for arm in a.arms.split(","):
-        flagged = flagged_islands(tracks, a.results, arm, a.wav_dir) if arm.endswith(XT_SUFFIX) else None
+        flagged = flagged_islands(tracks, a.results, arm, a.wav_dir) if parse_xt(arm) else None
         blocks = sent = done = 0
         for t in tracks:
             if flagged is not None and t["id"] not in flagged:
@@ -159,7 +180,7 @@ async def run(a: argparse.Namespace) -> dict:
         for arm in a.arms.split(","):
             per_track = {}
             flagged = (flagged_islands(tracks, a.results, arm, a.wav_dir)
-                       if arm.endswith(XT_SUFFIX) else None)
+                       if parse_xt(arm) else None)
 
             async def one(t: dict, arm: str = arm, flagged: dict | None = flagged,
                           per_track: dict = per_track) -> None:
@@ -189,9 +210,10 @@ async def run(a: argparse.Namespace) -> dict:
             out["arms"][arm] = summarise_words(per_track)
             r = out["arms"][arm]
             print(f"{arm}: D {r['deletion_pct']} %  I {r['insertion_pct']} %  "
-                  f"foreign {r['foreign_insertion_pct']} %  WER {r['wer_pct']} %  failed {r['failed_blocks']}\n"
+                  f"foreign {r['foreign_insertion_pct']} %  recognised {r['recognised_pct']} %  WER {r['wer_pct']} %  failed {r['failed_blocks']}\n"
                   f"  D by level {r['deletion_pct_by_level']}\n"
-                  f"  foreign by level {r['foreign_insertion_pct_by_level']}", flush=True)
+                  f"  foreign by level {r['foreign_insertion_pct_by_level']}\n"
+                  f"  recognised by level {r['recognised_pct_by_level']}", flush=True)
             Path(a.out).write_text(json.dumps(out, indent=1))
     return out
 

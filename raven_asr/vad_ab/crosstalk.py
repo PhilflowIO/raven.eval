@@ -14,6 +14,14 @@ frame on track A is vetoed as crosstalk when, at the same time,
 A real overlap — A talks while the partner talks — keeps A's own voice on A's
 track at A's level, so the partner's lead is small and A is not vetoed. That is
 the case the flag must not break; Testset A contains it on purpose.
+
+Floor guard (optional, ``floor_db``): a track whose own speech level
+(:func:`own_speech_level`, p95 of the raw 10 ms levels inside the track's own
+detector mask) is below the floor is never vetoed. A very quiet speaker's own
+voice sits near the leak level, so the lead test is least trustworthy there.
+A per-frame floor (no veto where the own frame is quiet) was rejected: vetoed
+leak frames are quiet on the own track by nature, so it would undo most of the
+veto (raven.eval#142).
 """
 
 from __future__ import annotations
@@ -28,6 +36,8 @@ MIN_LEAD_DB = 10.0
 MIN_CORR = 0.5
 CORR_WINDOW_S = 1.0
 LEVEL_SMOOTH_FRAMES = 5
+#: Percentile of the own-mask frame levels that stands for a track's speech level.
+OWN_LEVEL_PERCENTILE = 95
 _FLOOR_DB = -100.0
 
 
@@ -67,16 +77,36 @@ def rolling_corr(a: np.ndarray, b: np.ndarray, window: int) -> np.ndarray:
     return r
 
 
+def own_speech_level(levels: np.ndarray, speech: np.ndarray) -> float:
+    """A track's own speech level in dBFS: p95 of its :func:`frame_levels` inside its own speech mask.
+
+    ``levels`` must come from the raw samples (before any normalisation gain);
+    ``speech`` is the track's own detector mask on the same grid. No speech →
+    the level floor (:data:`_FLOOR_DB`).
+    """
+    m = min(levels.size, speech.size)
+    inside = levels[:m][speech[:m]]
+    return float(np.percentile(inside, OWN_LEVEL_PERCENTILE)) if inside.size else _FLOOR_DB
+
+
 def veto(own_levels: np.ndarray, partners: Sequence[tuple[np.ndarray, np.ndarray]], *,
          min_lead_db: float = MIN_LEAD_DB, min_corr: float = MIN_CORR,
-         corr_window_s: float = CORR_WINDOW_S) -> np.ndarray:
+         corr_window_s: float = CORR_WINDOW_S, own_speech: np.ndarray | None = None,
+         floor_db: float | None = None) -> np.ndarray:
     """Grid mask of frames on this track that are another participant's voice.
 
     ``partners`` are ``(levels, speech_mask)`` of every other track of the
-    meeting on the same grid.
+    meeting on the same grid. With ``floor_db``, ``own_speech`` (this track's
+    detector mask) is required and the track is not vetoed at all when its
+    :func:`own_speech_level` is below the floor.
     """
     n = own_levels.size
     out = np.zeros(n, dtype=bool)
+    if floor_db is not None:
+        if own_speech is None:
+            raise ValueError("floor_db needs the track's own speech mask")
+        if own_speech_level(own_levels, own_speech) < floor_db:
+            return out
     window = max(3, int(round(corr_window_s / HOP)))
     for levels, speech in partners:
         m = min(n, levels.size, speech.size)
