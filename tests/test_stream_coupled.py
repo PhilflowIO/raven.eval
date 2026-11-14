@@ -154,3 +154,12 @@ def test_the_slots128_variant_differs_from_the_published_recipe_in_slots_only():
     keep = ("num_slots", "latency", "notes")
     assert {k: v for k, v in s.items() if k not in keep} == \
         {k: v for k, v in pub.items() if k not in keep}
+
+
+def test_pool_cache_round_trips_every_utterance(tmp_path):
+    pool = [Utterance(f"u{i}", "fleurs", f"ref {i}", _pcm(_tone(0.1 * (i + 1))), 0.01 * i)
+            for i in range(3)]
+    coupled.save_pool_cache(pool, {"seed": 7, "n_utterances": 3}, tmp_path / "c")
+    back, spec = coupled.load_pool_cache(tmp_path / "c")
+    assert spec == {"seed": 7, "n_utterances": 3}
+    assert back == pool

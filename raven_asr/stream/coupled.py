@@ -38,6 +38,13 @@ Without ``--final-url`` only the stream model runs (the same utterances, the
 same endpoint), so its latency under other load can be compared with the
 coupled runs.
 
+``--pool-cache DIR``: the decoded pool as one PCM file plus an index, written
+once by ``--build-pool-cache`` and read by every later run. Decoding the corpus
+through ``datasets`` peaks at several GB of host RAM (4.4 GB for FLEURS German
+test, measured on dave 2026-11-14) while the pool itself is ~0.3 GB; on a host
+whose RAM is shared with production services that peak must not coincide with
+the load the run measures.
+
 ``--hold-file F``: no step starts while F exists (an outside guard pauses the
 load by creating it and appends ``<unix time> <reason>`` to ``F.log``), and a
 step during which F existed is flagged ``held_during_step`` and repeated once.
@@ -103,6 +110,36 @@ def endpointed_playlist(pool: list[Utterance], session: int, n: int, pause_s: fl
         cut, end = endpointed(utt, pause_s)
         ends[cut.sample_id] = end
         yield cut
+
+
+POOL_CACHE_SCHEMA = "raven.stream-pool-cache/1"
+
+
+def save_pool_cache(pool: list[Utterance], spec: dict, cache: Path) -> None:
+    """``cache/pool.pcm`` (every utterance's PCM16, concatenated) + ``cache/pool.json``."""
+    cache.mkdir(parents=True, exist_ok=True)
+    rows, off = [], 0
+    with (cache / "pool.pcm").open("wb") as fh:
+        for u in pool:
+            fh.write(u.pcm16)
+            rows.append({"sample_id": u.sample_id, "subset": u.subset, "reference": u.reference,
+                         "onset_s": u.onset_s, "offset": off, "bytes": len(u.pcm16)})
+            off += len(u.pcm16)
+    (cache / "pool.json").write_text(json.dumps(
+        {"schema": POOL_CACHE_SCHEMA, "spec": spec, "rows": rows}, ensure_ascii=False))
+
+
+def load_pool_cache(cache: Path) -> tuple[list[Utterance], dict]:
+    meta = json.loads((cache / "pool.json").read_text())
+    if meta.get("schema") != POOL_CACHE_SCHEMA:
+        raise SystemExit(f"{cache}: not a pool cache ({meta.get('schema')})")
+    pool = []
+    with (cache / "pool.pcm").open("rb") as fh:
+        for r in meta["rows"]:
+            fh.seek(r["offset"])
+            pool.append(Utterance(r["sample_id"], r["subset"], r["reference"],
+                                  fh.read(r["bytes"]), r["onset_s"]))
+    return pool, meta["spec"]
 
 
 def wav_of(pcm16: bytes) -> bytes:
@@ -361,13 +398,13 @@ def wait_while_held(hold: Path | None) -> float:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--stream", required=True, help="stream recipe id (serving/streaming.toml)")
+    ap.add_argument("--stream", help="stream recipe id (serving/streaming.toml)")
     ap.add_argument("--url", default="ws://127.0.0.1:8000/v1/realtime")
     ap.add_argument("--http", default="http://127.0.0.1:8000")
     ap.add_argument("--final-url", help="the batch server's /transcribe; omit for stream only")
-    ap.add_argument("--hardware-label", required=True)
-    ap.add_argument("--case", required=True, help="what else runs, e.g. 'batch server idle'")
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--hardware-label")
+    ap.add_argument("--case", help="what else runs, e.g. 'batch server idle'")
+    ap.add_argument("--out", type=Path)
     ap.add_argument("--steps", default=",".join(map(str, DEFAULT_STEPS)))
     ap.add_argument("--duration-s", type=float, default=300.0)
     ap.add_argument("--endpoint-pause-s", type=float, default=DEFAULT_PAUSE_S)
@@ -380,14 +417,31 @@ def main(argv: list[str] | None = None) -> int:
                     help="pool sources, 'dataset[:take],…' (default: FLEURS German test only)")
     ap.add_argument("--server-pid", type=int, help="the stream server's pid (CPU per step)")
     ap.add_argument("--hold-file", type=Path, help="no step runs while this file exists")
+    ap.add_argument("--pool-cache", type=Path, help="read the decoded pool from this dir")
+    ap.add_argument("--build-pool-cache", action="store_true",
+                    help="decode --pool into --pool-cache and exit")
     args = ap.parse_args(argv)
 
+    sources = tuple((d, int(t) if t else None) for d, _, t in
+                    (x.partition(":") for x in args.pool.split(",") if x))
+    if args.build_pool_cache:
+        if args.pool_cache is None:
+            ap.error("--build-pool-cache needs --pool-cache")
+        pool, pool_spec = build_pool(sources=sources, seed=args.seed)
+        save_pool_cache(pool, pool_spec, args.pool_cache)
+        print(json.dumps(pool_spec))
+        return 0
+    if not (args.stream and args.hardware_label and args.case and args.out):
+        ap.error("--stream, --hardware-label, --case and --out are required for a run")
     stream, base, identity, base_identity = _stream_recipe(args.stream)
     model = base["model"]
     engine = server_engine(args.http, stream["protocol"], model, identity)
-    sources = tuple((d, int(t) if t else None) for d, _, t in
-                    (x.partition(":") for x in args.pool.split(",") if x))
-    pool, pool_spec = build_pool(sources=sources, seed=args.seed)
+    if args.pool_cache is not None:
+        pool, pool_spec = load_pool_cache(args.pool_cache)
+        if pool_spec["seed"] != args.seed:
+            raise SystemExit(f"{args.pool_cache} holds seed {pool_spec['seed']}, not {args.seed}")
+    else:
+        pool, pool_spec = build_pool(sources=sources, seed=args.seed)
     spoken = spoken_text(model)
     steps_n = [int(x) for x in args.steps.split(",")]
     args.out.mkdir(parents=True, exist_ok=True)
