@@ -71,6 +71,27 @@ def speech_onset_s(pcm16: bytes) -> float:
     return float(np.argmax(loud)) * frame / SAMPLE_RATE if loud.any() else 0.0
 
 
+def speech_offset_s(pcm16: bytes) -> float:
+    """Where speech ends in 16 kHz PCM16 audio: the end of the last frame that
+    :func:`speech_onset_s` would call speech (same relative rule, from the back).
+
+    The audio's full length for silence throughout, so an utterance without a
+    loud frame is never cut short.
+    """
+    frame = round(ONSET_FRAME_S * SAMPLE_RATE)
+    x = np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
+    n = len(x) // frame
+    if n == 0:
+        return len(x) / SAMPLE_RATE
+    rms = np.sqrt((x[: n * frame].reshape(n, frame) ** 2).mean(axis=1) + 1e-12)
+    db = 20.0 * np.log10(rms)
+    loud = db > max(float(db.max()) - ONSET_REL_DB, ONSET_FLOOR_DBFS)
+    if not loud.any():
+        return len(x) / SAMPLE_RATE
+    last = n - 1 - int(np.argmax(loud[::-1]))
+    return (last + 1) * frame / SAMPLE_RATE
+
+
 def to_pcm16(audio: np.ndarray, sample_rate: int) -> bytes:
     """Float audio in [-1, 1] at any rate -> 16 kHz mono PCM16 bytes."""
     audio = np.asarray(audio, dtype=np.float32)

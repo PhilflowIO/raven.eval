@@ -210,3 +210,17 @@ matmul_precision = "high"
 gpu_mem = 0.85
 latency = "left 5.6 s / chunk 0.32 s / right 0.24 s: 0.56 s latency, buffered; TF32 matmuls"
 notes = "Combination of the levers measured on 2026-11-10 (raven.eval#119), one per bottleneck: TF32 matmuls cut the GPU's encoder time at no accuracy cost (the -tf32 variant: transcripts identical to the card config on all 840 paired utterances), and the 0.56 s latency split as chunk 0.32 s + right 0.24 s halves the pipeline steps per second of audio, which is what the single stepping thread spends its time on (the -chunk032 variant, +0.3 pp WER on the same 840 utterances, as much as cutting the left context to 3.04 s). The card's full 5.6 s left context. fp32 weights and activations as published. The card allows the split: 'other combinations of left context, chunk and right context can be chosen depending on the application'. https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
+
+[streams."nvidia-nemotron-3.5-asr-streaming-0.6b-slots128"]
+base = "nvidia-nemotron-3.5-asr-streaming-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "cache_aware"
+att_context_size = [56, 6]
+chunk_ms = 560
+lang = "de-DE"
+batch_size = 128
+num_slots = 128
+matmul_precision = "highest"
+gpu_mem = 0.85
+latency = "att_context_size [56, 6]: chunk of 7 x 80 ms = 0.56 s, cache-aware (128 slots, 128 per step)"
+notes = "The published recipe sized for a card it shares with production STT and diarization (dave, 2026-11-14): num_slots 128 instead of 256, so the context manager's slot cache (~5 MiB per slot, see the slots1024 notes) holds half as much VRAM; 128 live streams is twice the largest step of the mixed-load runs (64). batch_size 128 as published. Same card setting, precision and language prompt as the published recipe. https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b"

@@ -35,7 +35,7 @@ import asyncio
 import base64
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 
 from .pool import SAMPLE_RATE, Utterance
@@ -97,11 +97,16 @@ async def run_session(
     start_delay_s: float = 0.0,
     done_timeout_s: float = DONE_TIMEOUT_S,
     clock=time.monotonic,
+    on_utterance: Callable[[Utterance, UtteranceRecord], None] | None = None,
 ) -> tuple[list[UtteranceRecord], str | None]:
     """Play utterances until ``duration_s`` of session time has passed.
 
     Returns ``(records, session_error)``. A session error (the connection could
     not be opened or broke) ends the session: that is a drop.
+
+    ``on_utterance(utt, rec)`` is called on the session's loop the moment an
+    utterance's audio starts (``rec.t_start`` is set), so a caller can schedule
+    work against the utterance's real-time clock (raven_asr.stream.coupled).
     """
     from websockets.asyncio.client import connect
     from websockets.exceptions import ConnectionClosed
@@ -128,7 +133,8 @@ async def run_session(
                                   utt.duration_s, t_start=0.0, speech_onset_s=utt.onset_s)
             index += 1
             records.append(rec)
-            await _play(ws, utt, rec, chunk_bytes, chunk_s, done_timeout_s, clock)
+            await _play(ws, utt, rec, chunk_bytes, chunk_s, done_timeout_s, clock,
+                        on_utterance)
             if rec.error is not None:
                 return records, rec.error
     except ConnectionClosed as exc:
@@ -141,7 +147,7 @@ async def run_session(
 
 
 async def _play(ws, utt: Utterance, rec: UtteranceRecord, chunk_bytes: int, chunk_s: float,
-                done_timeout_s: float, clock) -> None:
+                done_timeout_s: float, clock, on_utterance=None) -> None:
     done = asyncio.Event()
 
     async def reader() -> None:
@@ -169,6 +175,8 @@ async def _play(ws, utt: Utterance, rec: UtteranceRecord, chunk_bytes: int, chun
     try:
         pcm = utt.pcm16
         t0 = rec.t_start = clock()
+        if on_utterance is not None:
+            on_utterance(utt, rec)
         n_chunks = max(1, -(-len(pcm) // chunk_bytes))
         for k in range(n_chunks):
             due = t0 + (k + 1) * chunk_s if k < n_chunks - 1 else t0 + utt.duration_s
