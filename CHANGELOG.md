@@ -41,6 +41,18 @@ would have to guess at (`raven_eval_core/run_manifest.py`).
   (`moonshine-voice`, int8, CPU only; #114), its curve labelled CPU and int8.
 
 ### Changed
+- **A failed live pipeline step reaches its sessions as an error** (#124). When
+  a step of the NeMo stream server failed — every step of the #119 preflight ran
+  out of CUDA memory — each utterance it carried ended with an ordinary
+  `transcription.done` holding whatever text it had, before its audio ended; the
+  step looked perfect (0 errors, WER 99.98 %) and only `/health` knew. The server
+  now sends the protocol's `error` event (`out_of_memory` or `pipeline_error`),
+  frees those streams' pipeline state and cache slots, empties the CUDA cache
+  after an out of memory, and keeps serving every other session; `/health` counts
+  the failed steps and is unhealthy only when that cleanup failed. The harness
+  counts such utterances as errors and their sessions as drops. The change moves
+  the hash of every `nemo-pipeline` stream recipe; the published 2026-11-09
+  Nemotron curves keep the hash they were measured under.
 - **The Nemotron prompt models' locale tag is not scored inside a transcript
   either** (#98). nemotron-3.5-asr-streaming and nemotron-labs-unified write
   `<de-DE>` after every sentence; the NeMo server removed only the last one, so

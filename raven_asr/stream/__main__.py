@@ -28,11 +28,14 @@ records the CPU of the client processes (and of the server with
 ``--server-pid``) in % of one core, per thread: a busiest client thread near
 100 % means the step measured the harness, not the server.
 
-After every step the harness asks the server's ``/health``. A NeMo stream
-server whose pipeline step failed (out of memory, say) ends the affected
-utterances with an ordinary ``transcription.done`` — the transcript is empty,
-the latency looks excellent — and reports the failure only there; such a step
-breaks the rule, with the server's error on record, however good it looks.
+A NeMo stream server whose pipeline step failed (out of memory, say) ends the
+utterances of that step with an ``error`` event (``out_of_memory`` or
+``pipeline_error``), so they count as errors and their sessions as drops. Before
+#124 it sent an ordinary ``transcription.done`` instead — the transcript empty,
+the latency excellent — and reported the failure only on ``/health``. The
+harness still asks ``/health`` after every step: a server that could not free
+the failed streams reports itself unhealthy there, and such a step breaks the
+rule, with the server's error on record, however good it looks.
 """
 
 from __future__ import annotations

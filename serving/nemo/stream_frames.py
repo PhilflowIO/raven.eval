@@ -13,7 +13,10 @@ counterpart, with the streamer's frame rules:
 * when the audio ends exactly on a frame boundary, the frame that held the last
   samples was already stepped without ``is_last``: the stream then closes with
   one padded frame of a single zero sample, 1/16000 s, the least audio that
-  lets the pipeline finalize.
+  lets the pipeline finalize;
+* a stream whose step failed (``fail``) gets no further frames: its buffered
+  audio is dropped, audio the client still sends for it is discarded, and its
+  entry goes when the client ends it.
 
 When more streams are ready than one step takes, the ones whose oldest unsent
 audio has waited longest go first, so an overloaded GPU delays every stream
@@ -45,6 +48,7 @@ class _Live:
     waiting_since: float | None = None
     sent_first: bool = False
     ended: bool = False
+    failed: bool = False
 
 
 class FrameCutter:
@@ -70,6 +74,8 @@ class FrameCutter:
             return
         with self._lock:
             live = self._live[stream_id]
+            if live.failed:
+                return
             if live.ended:
                 raise ValueError(f"stream {stream_id} has ended")
             live.chunks.append(np.asarray(samples, dtype=np.float32))
@@ -82,12 +88,30 @@ class FrameCutter:
     def end(self, stream_id: int) -> None:
         with self._lock:
             live = self._live.get(stream_id)
+            if live is not None and live.failed:
+                del self._live[stream_id]
+                return
             if live is None or live.ended:
                 return
             live.ended = True
             if live.waiting_since is None:
                 live.waiting_since = self._clock()
             self.ready_event.set()
+
+    def fail(self, stream_id: int) -> None:
+        """The stream's step failed: it is never stepped again. Gone at once if
+        its client had already ended it, otherwise when the client does."""
+        with self._lock:
+            live = self._live.get(stream_id)
+            if live is None:
+                return
+            if live.ended:
+                del self._live[stream_id]
+                return
+            live.failed = True
+            live.chunks.clear()
+            live.buffered = 0
+            live.waiting_since = None
 
     def is_open(self, stream_id: int) -> bool:
         with self._lock:

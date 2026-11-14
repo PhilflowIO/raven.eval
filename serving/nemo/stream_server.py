@@ -13,6 +13,15 @@ the capacity harness measures a NeMo model and a vLLM model with one client:
     server: transcription.done {text}                 -> the utterance's transcript
     (repeat from the first commit for the next utterance)
 
+A pipeline step that fails ends every utterance it carried with the protocol's
+``error`` event instead of ``transcription.done`` — code ``out_of_memory`` when
+the GPU ran out of memory, ``pipeline_error`` for any other failure — because
+the frame the step consumed is lost and the transcript would silently miss it.
+The server then frees those streams' pipeline state (and, after an out of
+memory, the allocator's cached blocks) and keeps stepping every other session;
+``/health`` counts the failed steps and turns unhealthy only when that cleanup
+itself failed.
+
 One addition, ignored by a vLLM client: ``transcription.partial {text}``, the
 pipeline's current partial hypothesis after a step that changed it, so the
 harness sees the first words before the pipeline finalizes them.
@@ -67,6 +76,8 @@ class StepResult:
     final: str = ""      # text finalized in this step
     partial: str = ""    # the current partial hypothesis after this step
     is_last: bool = False
+    error: str | None = None  # the step failed: the utterance ends with this error
+    code: str | None = None   # its protocol error code
 
 
 class StreamEngine(Protocol):
@@ -75,7 +86,16 @@ class StreamEngine(Protocol):
     max_batch: int
 
     def step(self, frames: list[FrameSpec]) -> list[StepResult]: ...
+    def discard(self, stream_ids: list[int]) -> None:
+        """Forget the streams of a failed step: they get no further frames."""
     def info(self) -> dict[str, Any]: ...
+
+
+def _is_out_of_memory(exc: BaseException) -> bool:
+    """A CUDA out of memory. torch is never imported here: without it loaded no
+    step can have run out of GPU memory."""
+    torch = sys.modules.get("torch")
+    return torch is not None and isinstance(exc, torch.cuda.OutOfMemoryError)
 
 
 # ── the NeMo engine ─────────────────────────────────────────────────────────
@@ -202,6 +222,29 @@ class NemoPipelineEngine:
             results.append(StepResult(f.stream_id, final, out.partial_transcript, f.is_last))
         return results
 
+    def discard(self, stream_ids: list[int]) -> None:
+        """Free what the pipeline holds for streams whose step failed.
+
+        The pipeline frees a stream only on its ``is_last`` frame, which these
+        streams will never send. Left alone, their state would stay in the pool
+        and, in the cache-aware pipeline, hold their cache slots until no slot
+        is free for a new session. The same calls the pipeline makes on
+        ``is_last`` (base_pipeline.transcribe_step, the bufferers' update, the
+        context manager's reset_slots at the NeMo pin)."""
+        pipe = self.pipeline
+        for sid in stream_ids:
+            self._text.pop(sid, None)
+            pipe.delete_state(sid)
+        if self.stream["pipeline"] == "cache_aware":
+            held = pipe.bufferer.streamidx2slotidx
+            pipe.bufferer.free_slots([held[s] for s in stream_ids if s in held])
+            ctx = pipe.context_manager
+            cached = [s for s in stream_ids if s in ctx.streamidx2slotidx]
+            ctx.reset_slots(cached, [True] * len(cached))
+        else:
+            for sid in stream_ids:
+                pipe.bufferer.rm_bufferer(sid)
+
     def info(self) -> dict[str, Any]:
         def ver(name: str) -> str | None:
             try:
@@ -254,7 +297,8 @@ class _Hub:
 
 def create_app(engine: StreamEngine | None = None) -> FastAPI:
     """The app; ``engine`` None builds the NeMo engine from the environment at startup."""
-    state: dict[str, Any] = {"engine": engine, "next_id": 0, "error": None}
+    state: dict[str, Any] = {"engine": engine, "next_id": 0, "error": None,
+                             "failed_steps": 0, "last_step_error": None}
     hub = _Hub()
     stop = threading.Event()
 
@@ -271,14 +315,40 @@ def create_app(engine: StreamEngine | None = None) -> FastAPI:
                 continue
             try:
                 results = eng.step(frames)
-            except Exception as exc:  # the pipeline failed: every live session learns it
-                log.exception("pipeline step failed")
-                state["error"] = f"pipeline step failed: {exc}"
-                for f in frames:
-                    hub.deliver(StepResult(f.stream_id, is_last=True))
+            except Exception as exc:  # noqa: BLE001 - every failure reaches its sessions
+                fail_step(eng, cutter, frames, exc)
                 continue
             for r in results:
                 hub.deliver(r)
+
+    def fail_step(eng: StreamEngine, cutter: FrameCutter, frames: list[FrameSpec],
+                  exc: Exception) -> None:
+        """End the step's utterances with an error and free their streams.
+
+        The step consumed one frame of each stream it carried; whatever the
+        pipeline does with those streams next, their transcript misses that
+        audio. So each of them ends here, with the error, and no other stream
+        is touched."""
+        ids = [f.stream_id for f in frames]
+        oom = _is_out_of_memory(exc)
+        code = "out_of_memory" if oom else "pipeline_error"
+        what = "the GPU ran out of memory" if oom else f"{type(exc).__name__}: {exc}"
+        msg = f"pipeline step of {len(ids)} streams failed: {what}"
+        log.error("%s (streams %s)", msg, ids, exc_info=exc)
+        state["failed_steps"] += 1
+        state["last_step_error"] = msg
+        for sid in ids:
+            cutter.fail(sid)
+        try:
+            if oom:
+                sys.modules["torch"].cuda.empty_cache()
+            eng.discard(ids)
+        except Exception as cleanup:  # the server cannot vouch for itself
+            log.exception("freeing the failed streams failed")
+            state["error"] = (f"{msg}; freeing its streams failed: "
+                              f"{type(cleanup).__name__}: {cleanup}")
+        for sid in ids:
+            hub.deliver(StepResult(sid, is_last=True, error=msg, code=code))
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -296,7 +366,9 @@ def create_app(engine: StreamEngine | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health() -> JSONResponse:
-        return JSONResponse({"ok": state["error"] is None, "error": state["error"]})
+        return JSONResponse({"ok": state["error"] is None, "error": state["error"],
+                             "failed_steps": state["failed_steps"],
+                             "last_step_error": state["last_step_error"]})
 
     @app.get("/v1/stream/info")
     async def info() -> JSONResponse:
@@ -315,6 +387,9 @@ def create_app(engine: StreamEngine | None = None) -> FastAPI:
         async def send_events(u: _Utterance) -> None:
             while True:
                 r: StepResult = await u.queue.get()
+                if r.error is not None:
+                    await error(r.error, r.code or "pipeline_error")
+                    return
                 if r.final:
                     u.text += r.final
                     await ws.send_text(json.dumps({"type": "transcription.delta", "delta": r.final}))
@@ -352,6 +427,8 @@ def create_app(engine: StreamEngine | None = None) -> FastAPI:
                     if sender is not None and not sender.done():
                         await error("Generation already in progress", "busy")
                         continue
+                    if utt is not None:
+                        cutter.end(utt.stream_id)  # a failed one the client never closed
                     sid = state["next_id"]
                     state["next_id"] += 1
                     utt = _Utterance(sid, asyncio.Queue())
