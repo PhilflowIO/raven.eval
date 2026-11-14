@@ -325,6 +325,34 @@ def test_table_shows_the_busiest_client_and_server_process_when_recorded():
     assert header.count("|") == sep.count("|")
 
 
+def test_an_out_of_memory_error_event_is_an_error_not_an_empty_transcript():
+    """#124: the NeMo server's error event for a failed step, as the harness reads it."""
+    async def go():
+        from websockets.asyncio.server import serve
+
+        async def handler(ws):
+            await ws.send(json.dumps({"type": "session.created"}))
+            async for raw in ws:
+                if json.loads(raw).get("final"):
+                    await ws.send(json.dumps({
+                        "type": "error", "code": "out_of_memory",
+                        "error": "pipeline step of 512 streams failed: the GPU ran out of memory"}))
+
+        server = await serve(handler, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        out = await run_session(f"ws://127.0.0.1:{port}", "org/m", iter([_utt(0, 0.1)]),
+                                session=0, chunk_ms=50, duration_s=1.0)
+        server.close()
+        return out
+
+    recs, err = asyncio.run(go())
+    assert "out_of_memory" in err
+    assert recs[0].error.startswith("server error: out_of_memory") and recs[0].text is None
+    step = step_summary(1, recs, [err], {}, {"u0": "hallo welt 0"}, 1.0)
+    assert step["errors"] == 1 and step["drops"] == 1 and step["completed"] == 0
+    assert not step["within_threshold"]
+
+
 def test_a_step_the_server_reported_failing_breaks_the_rule_and_is_on_the_table():
     from raven_asr.stream.__main__ import apply_health
 

@@ -186,6 +186,25 @@ def test_stream_without_audio_closes_outside_the_pipeline():
     assert c.take(8) == ([], [7])
 
 
+def test_a_failed_stream_is_never_stepped_again_and_goes_when_ended():
+    c = FrameCutter(4)
+    c.open(1)
+    c.open(2)
+    c.append(1, np.ones(6, dtype=np.float32))
+    c.append(2, np.ones(4, dtype=np.float32))
+    c.fail(1)
+    c.append(1, np.ones(8, dtype=np.float32))  # the client did not know yet: discarded
+    frames, _ = c.take(8)
+    assert [f.stream_id for f in frames] == [2]
+    assert c.take(8) == ([], [])
+    assert c.is_open(1)
+    c.end(1)
+    assert not c.is_open(1) and len(c) == 1
+    c.end(2)
+    c.fail(2)  # failed after the client ended it: gone at once
+    assert len(c) == 0
+
+
 # ── server protocol ─────────────────────────────────────────────────────────
 
 
@@ -248,6 +267,111 @@ def test_server_speaks_the_vllm_realtime_protocol():
             assert events[-1]["text"] == deltas == "w2 w4 "
         assert client.get("/v1/stream/info").json()["frame_ms"] == 100.0
     assert max(eng.batches) <= FakeEngine.max_batch
+
+
+class _FakeOutOfMemoryError(RuntimeError):
+    """Stands in for torch.cuda.OutOfMemoryError (a RuntimeError subclass)."""
+
+
+class FailingEngine(FakeEngine):
+    """Steps one frame at a time and raises on stream 0's second frame, once."""
+
+    max_batch = 1
+
+    def __init__(self, exc: Exception):
+        super().__init__()
+        self.exc = exc
+        self.discarded: list[list[int]] = []
+
+    def step(self, frames):
+        if any(f.stream_id == 0 and not f.is_first for f in frames) and self.exc is not None:
+            exc, self.exc = self.exc, None
+            raise exc
+        return super().step(frames)
+
+    def discard(self, stream_ids):
+        self.discarded.append(list(stream_ids))
+        for sid in stream_ids:
+            self.seen.pop(sid, None)
+
+
+def _utterance(ws, seconds: float = 0.3) -> list[dict]:
+    """Play one utterance in 100 ms chunks; the events up to done or error."""
+    ws.send_text(json.dumps({"type": "input_audio_buffer.commit"}))
+    for _ in range(round(seconds / 0.1)):
+        ws.send_text(json.dumps({"type": "input_audio_buffer.append", "audio": _pcm(0.1)}))
+    ws.send_text(json.dumps({"type": "input_audio_buffer.commit", "final": True}))
+    events = []
+    while True:
+        ev = json.loads(ws.receive_text())
+        events.append(ev)
+        if ev["type"] in ("transcription.done", "error"):
+            return events
+
+
+@pytest.fixture
+def fake_torch(monkeypatch):
+    """A loaded ``torch`` whose cuda counts empty_cache() calls."""
+    import types
+
+    calls: list[None] = []
+    cuda = types.SimpleNamespace(OutOfMemoryError=_FakeOutOfMemoryError,
+                                 empty_cache=lambda: calls.append(None))
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=cuda))
+    return calls
+
+
+@pytest.mark.parametrize("oom", [True, False], ids=["out_of_memory", "other_failure"])
+def test_a_failed_step_sends_its_session_an_error_and_the_server_keeps_serving(fake_torch, oom):
+    """#124: a step that ran out of GPU memory used to end its utterances with an
+    ordinary transcription.done carrying whatever text they had."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from stream_server import create_app
+
+    exc = _FakeOutOfMemoryError("CUDA out of memory") if oom else ValueError("bad shape")
+    eng = FailingEngine(exc)
+    with TestClient(create_app(eng)) as client, \
+            client.websocket_connect("/v1/realtime") as a, \
+            client.websocket_connect("/v1/realtime") as b:
+        for ws in (a, b):
+            assert json.loads(ws.receive_text())["type"] == "session.created"
+            ws.send_text(json.dumps({"type": "session.update", "model": "org/fake"}))
+        failed = _utterance(a)  # stream 0
+        assert failed[-1]["type"] == "error"
+        assert "transcription.done" not in [e["type"] for e in failed]
+        assert failed[-1]["code"] == ("out_of_memory" if oom else "pipeline_error")
+        assert ("ran out of memory" if oom else "ValueError: bad shape") in failed[-1]["error"]
+        assert eng.discarded == [[0]]
+        assert len(fake_torch) == (1 if oom else 0)
+
+        done = _utterance(b)  # another session, after the failure
+        assert done[-1]["type"] == "transcription.done"
+        assert done[-1]["text"].startswith("w2 ")  # w3 or w4 last: when the end arrived
+        again = _utterance(a)  # the failed session's next utterance
+        assert again[-1]["type"] == "transcription.done" and again[-1]["text"]
+
+        health = client.get("/health").json()
+        assert health["ok"] and health["error"] is None
+        assert health["failed_steps"] == 1 and health["last_step_error"] == failed[-1]["error"]
+
+
+def test_a_server_that_cannot_free_a_failed_stream_reports_itself_unhealthy(fake_torch):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from stream_server import create_app
+
+    class Stuck(FailingEngine):
+        def discard(self, stream_ids):
+            raise RuntimeError("slot map out of sync")
+
+    with TestClient(create_app(Stuck(_FakeOutOfMemoryError("oom")))) as client, \
+            client.websocket_connect("/v1/realtime") as ws:
+        ws.receive_text()
+        ws.send_text(json.dumps({"type": "session.update", "model": "org/fake"}))
+        assert _utterance(ws)[-1]["code"] == "out_of_memory"
+        health = client.get("/health").json()
+        assert not health["ok"] and "slot map out of sync" in health["error"]
 
 
 def test_server_rejects_another_model():
