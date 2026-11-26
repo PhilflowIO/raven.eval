@@ -120,6 +120,21 @@ gpu_mem = 0.85
 latency = "att_context_size [56, 6]: chunk of 7 x 80 ms = 0.56 s, cache-aware (1024 slots, 256 per step)"
 notes = "The published recipe with room for more live streams: num_slots 1024 (the context manager holds one cache slot per live stream, so 256 slots cap the curve at 256 sessions) and batch_size 256 (frames per pipeline step). 512 per step does not fit next to 1024 slots in the 0.85 budget: the slot cache is ~5 MiB per slot, and NeMo's CacheAwareContextManager copies a step's slots out and back (get_context, update_cache's index_select), ~2.5 GiB transient per 512-frame step, which ran out of memory in the preflight (2026-11-10). Same card setting, precision and language prompt as the published recipe. https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b"
 
+[streams."nvidia-nemotron-labs-unified-asr-0.6b-latency112"]
+base = "nvidia-nemotron-labs-unified-asr-0.6b"
+protocol = "nemo-pipeline"
+pipeline = "buffered"
+left_context_s = 5.6
+chunk_s = 0.56
+right_context_s = 0.56
+chunk_ms = 560
+lang = "de"
+batch_size = 128
+matmul_precision = "highest"
+gpu_mem = 0.85
+latency = "left 5.6 s / chunk 0.56 s / right 0.56 s: 1.12 s latency, buffered"
+notes = "Latency lever: the card's recommended context table, row 'Left 5.6 / Chunk 0.56 / Right 0.56 / Latency (C+R) 1.12', the setting of the card's streaming example (chunk_secs=0.56, right_context_secs=0.56) and the latency its streaming WER metrics are reported at ('WER (1.12s latency)'). Twice the 0.56 s class's latency, so its curve is not comparable with the others; it shows what the extra right context buys. Same pipeline and chunked masks as the 0.56 s row (7 encoder frames of 80 ms each for chunk and right context). Needs the NeMo fork pin (serving/nemo/requirements.txt): at b19b1a79 NeMo counted 0.56 s as 8 frames and the server refused to start. https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b"
+
 [streams."nvidia-nemotron-labs-unified-asr-0.6b-tf32"]
 base = "nvidia-nemotron-labs-unified-asr-0.6b"
 protocol = "nemo-pipeline"

@@ -19,6 +19,16 @@
 # The package reports 3.1.0 at this commit. Every NeMo recipe runs on it.
 # Move to the 3.1.0 release once it is on PyPI and contains this commit.
 #
+# Installed from a fork commit: b19b1a79 plus one fix, so the buffered streaming
+# pipelines count a context that is a whole number of encoder frames exactly.
+# At b19b1a79 they used math.ceil(seconds / 0.08), and 0.56 / 0.08 is
+# 7.000000000000001, so the card's 1.12 s row (5.6 / 0.56 / 0.56) ran 640 ms
+# chunks. The fix changes only nemo/collections/asr/inference (streaming), not
+# offline transcribe(). Proposed upstream as
+# https://github.com/NVIDIA-NeMo/Speech/pull/16749 (issue
+# https://github.com/NVIDIA-NeMo/Speech/issues/16748); move back to an
+# NVIDIA-NeMo/Speech commit or release once it is merged (#145).
+#
 # torch: the default PyPI wheel bundles the CUDA runtime (torch 2.14.1 ->
 # CUDA 13.0), so the host needs only the NVIDIA driver, R580 or newer, no CUDA
 # toolkit. torch 2.15 is NOT used yet: its wheels bundle CUDA 13.2 (driver
@@ -38,7 +48,7 @@
 #   uv pip install --python <venv>/bin/python "numba==0.68.1"
 #   uv pip install --python <venv>/bin/python -r serving/nemo/requirements.txt
 numba==0.68.1
-nemo_toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git@b19b1a79d86ec30c1de078682b4b3ed0f59098bb
+nemo_toolkit[asr] @ git+https://github.com/PhilflowIO/Speech.git@a6ef9dca7f577a0c377f62b71b0aac8457329337
 torch==2.14.1
 fastapi==0.162.0
 uvicorn[standard]==0.54.0
